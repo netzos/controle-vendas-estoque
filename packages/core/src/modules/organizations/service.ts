@@ -36,7 +36,7 @@ export const getOrganization = defineService({
   risk: 1,
   input: z.object({}),
   async handler({ tx, actor }) {
-    const { rows } = await tx.query<Organization>(`SELECT ${ORG_COLUMNS} FROM erp.organizations WHERE id = $1`, [
+    const { rows } = await tx.query<Organization>(`SELECT ${ORG_COLUMNS} FROM controle_vendas_estoque.organizations WHERE id = $1`, [
       actor.organizationId,
     ]);
     if (!rows[0]) throw notFound("Empresa");
@@ -57,12 +57,12 @@ export const updateOrganization = defineService({
   }),
   async handler({ tx, actor, audit, emit }, input) {
     const before = await tx.query<Organization>(
-      `SELECT ${ORG_COLUMNS} FROM erp.organizations WHERE id = $1 FOR UPDATE`,
+      `SELECT ${ORG_COLUMNS} FROM controle_vendas_estoque.organizations WHERE id = $1 FOR UPDATE`,
       [actor.organizationId],
     );
     if (!before.rows[0]) throw notFound("Empresa");
     const { rows } = await tx.query<Organization>(
-      `UPDATE erp.organizations SET name = $2, legal_name = $3, document = $4, timezone = $5
+      `UPDATE controle_vendas_estoque.organizations SET name = $2, legal_name = $3, document = $4, timezone = $5
         WHERE id = $1 RETURNING ${ORG_COLUMNS}`,
       [actor.organizationId, input.name, input.legalName || null, input.document || null, input.timezone],
     );
@@ -92,7 +92,7 @@ export const listBranches = defineService({
   input: z.object({ includeInactive: z.boolean().default(false) }),
   async handler({ tx }, input) {
     const { rows } = await tx.query<Branch>(
-      `SELECT ${BRANCH_COLUMNS} FROM erp.branches
+      `SELECT ${BRANCH_COLUMNS} FROM controle_vendas_estoque.branches
         WHERE ($1 OR status = 'active') ORDER BY is_headquarters DESC, name`,
       [input.includeInactive],
     );
@@ -117,10 +117,10 @@ export const createBranch = defineService({
   risk: 3,
   input: branchFields,
   async handler({ tx, actor, audit, emit }, input) {
-    const dup = await tx.query("SELECT 1 FROM erp.branches WHERE code = $1", [input.code]);
+    const dup = await tx.query("SELECT 1 FROM controle_vendas_estoque.branches WHERE code = $1", [input.code]);
     if (dup.rowCount) throw new AppError("conflict", `Já existe uma filial com o código ${input.code}.`);
     const { rows } = await tx.query<Branch>(
-      `INSERT INTO erp.branches (organization_id, name, code, document)
+      `INSERT INTO controle_vendas_estoque.branches (organization_id, name, code, document)
        VALUES ($1, $2, $3, $4) RETURNING ${BRANCH_COLUMNS}`,
       [actor.organizationId, input.name, input.code, input.document || null],
     );
@@ -141,16 +141,16 @@ export const updateBranch = defineService({
     status: z.enum(["active", "inactive"]),
   }),
   async handler({ tx, audit, emit }, input) {
-    const before = await tx.query<Branch>(`SELECT ${BRANCH_COLUMNS} FROM erp.branches WHERE id = $1 FOR UPDATE`, [input.id]);
+    const before = await tx.query<Branch>(`SELECT ${BRANCH_COLUMNS} FROM controle_vendas_estoque.branches WHERE id = $1 FOR UPDATE`, [input.id]);
     const current = before.rows[0];
     if (!current) throw notFound("Filial");
     if (current.isHeadquarters && input.status === "inactive") {
       throw new AppError("conflict", "A matriz não pode ser desativada.");
     }
-    const dup = await tx.query("SELECT 1 FROM erp.branches WHERE code = $1 AND id <> $2", [input.code, input.id]);
+    const dup = await tx.query("SELECT 1 FROM controle_vendas_estoque.branches WHERE code = $1 AND id <> $2", [input.code, input.id]);
     if (dup.rowCount) throw new AppError("conflict", `Já existe uma filial com o código ${input.code}.`);
     const { rows } = await tx.query<Branch>(
-      `UPDATE erp.branches SET name = $2, code = $3, document = $4, status = $5 WHERE id = $1 RETURNING ${BRANCH_COLUMNS}`,
+      `UPDATE controle_vendas_estoque.branches SET name = $2, code = $3, document = $4, status = $5 WHERE id = $1 RETURNING ${BRANCH_COLUMNS}`,
       [input.id, input.name, input.code, input.document || null, input.status],
     );
     const after = rows[0]!;

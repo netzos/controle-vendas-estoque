@@ -1,4 +1,4 @@
-# Netz ERP
+# Controle de vendas e estoque
 
 ERP multiempresa de vendas, estoque e financeiro, operado pelo painel web e por um assistente de IA no Telegram. O painel e o assistente são duas formas de operar a mesma plataforma: usam os mesmos serviços, as mesmas permissões e a mesma auditoria.
 
@@ -21,7 +21,7 @@ ERP multiempresa de vendas, estoque e financeiro, operado pelo painel web e por 
 Requisitos: Node 22, pnpm 10 e PostgreSQL 16 (ou Docker).
 
 ```bash
-docker compose up -d          # PostgreSQL com os papéis erp_owner e erp_app_login
+docker compose up -d          # PostgreSQL com os papéis erp_owner e controle_vendas_estoque_app_login
 cp .env.example .env
 pnpm install
 pnpm db:migrate               # usa MIGRATION_DATABASE_URL
@@ -39,11 +39,11 @@ pnpm test        # testes do núcleo contra PostgreSQL real (banco erp_test)
 pnpm typecheck
 ```
 
-Os testes recriam o schema `erp` do banco de teste. Nunca aponte `TEST_*_DATABASE_URL` para um banco com dados.
+Os testes recriam o schema `controle_vendas_estoque` do banco de teste. Nunca aponte `TEST_*_DATABASE_URL` para um banco com dados.
 
 ## Papéis do banco
 
 - **Dono das tabelas** (`MIGRATION_DATABASE_URL`): aplica migrations e sincroniza o catálogo de permissões. Não é usado pela aplicação.
-- **`erp_app`**: papel da aplicação, sujeito a Row Level Security. A conta de login da web e do worker deve ser membro dele (`CREATE ROLE ... LOGIN IN ROLE erp_app`).
+- **`controle_vendas_estoque_app`**: papel da aplicação, sujeito a Row Level Security. A conta de login da web e do worker deve ser membro dele (`CREATE ROLE ... LOGIN IN ROLE controle_vendas_estoque_app`).
 
 Com isso, mesmo um erro de código que esqueça um filtro por empresa não consegue ler nem gravar dados de outra empresa.

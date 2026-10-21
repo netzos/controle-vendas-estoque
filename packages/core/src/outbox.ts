@@ -22,7 +22,7 @@ export async function emitEvent<T extends EventType>(
   event: { type: T; payload: DomainEvents[T]; aggregateType?: string; aggregateId?: string; actorUserId?: string | null },
 ): Promise<string> {
   const { rows } = await tx.query<{ id: string }>(
-    `INSERT INTO erp.outbox_events (organization_id, event_type, aggregate_type, aggregate_id, payload, actor_user_id)
+    `INSERT INTO controle_vendas_estoque.outbox_events (organization_id, event_type, aggregate_type, aggregate_id, payload, actor_user_id)
      VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
     [
       organizationId,
@@ -33,7 +33,7 @@ export async function emitEvent<T extends EventType>(
       event.actorUserId ?? null,
     ],
   );
-  await tx.query("SELECT pg_notify('erp_outbox', $1)", [rows[0]!.id]);
+  await tx.query("SELECT pg_notify('controle_vendas_estoque_outbox', $1)", [rows[0]!.id]);
   return rows[0]!.id;
 }
 
@@ -70,7 +70,7 @@ function backoffSeconds(attempts: number): number {
 // efeitos dos outros quando o evento volta para a fila.
 export async function processOutboxBatch(db: Db, bus: EventBus, opts: { limit?: number; lockSeconds?: number } = {}) {
   const claimed = await db.query<{ id: string; organization_id: string }>(
-    "SELECT id, organization_id FROM erp.claim_outbox_events($1, $2)",
+    "SELECT id, organization_id FROM controle_vendas_estoque.claim_outbox_events($1, $2)",
     [opts.limit ?? 50, opts.lockSeconds ?? 60],
   );
   let done = 0;
@@ -80,7 +80,7 @@ export async function processOutboxBatch(db: Db, bus: EventBus, opts: { limit?: 
     const event = await withTenant(db, ctx, async (tx) => {
       const r = await tx.query(
         `SELECT id, organization_id, event_type, aggregate_type, aggregate_id, payload, actor_user_id, attempts, created_at
-           FROM erp.outbox_events WHERE id = $1`,
+           FROM controle_vendas_estoque.outbox_events WHERE id = $1`,
         [row.id],
       );
       const e = r.rows[0];
@@ -103,7 +103,7 @@ export async function processOutboxBatch(db: Db, bus: EventBus, opts: { limit?: 
       for (const consumer of bus.consumersFor(event.eventType)) {
         await withTenant(db, ctx, async (tx) => {
           const mark = await tx.query(
-            `INSERT INTO erp.outbox_consumptions (event_id, consumer, organization_id)
+            `INSERT INTO controle_vendas_estoque.outbox_consumptions (event_id, consumer, organization_id)
              VALUES ($1, $2, $3) ON CONFLICT DO NOTHING RETURNING event_id`,
             [event.id, consumer.name, event.organizationId],
           );
@@ -113,7 +113,7 @@ export async function processOutboxBatch(db: Db, bus: EventBus, opts: { limit?: 
       }
       await withTenant(db, ctx, (tx) =>
         tx.query(
-          "UPDATE erp.outbox_events SET status = 'done', processed_at = now(), locked_until = NULL, last_error = NULL WHERE id = $1",
+          "UPDATE controle_vendas_estoque.outbox_events SET status = 'done', processed_at = now(), locked_until = NULL, last_error = NULL WHERE id = $1",
           [event.id],
         ),
       );
@@ -123,7 +123,7 @@ export async function processOutboxBatch(db: Db, bus: EventBus, opts: { limit?: 
       const message = err instanceof Error ? err.message : String(err);
       await withTenant(db, ctx, (tx) =>
         tx.query(
-          `UPDATE erp.outbox_events
+          `UPDATE controle_vendas_estoque.outbox_events
               SET status = CASE WHEN attempts >= $2 THEN 'dead' ELSE 'pending' END,
                   available_at = now() + make_interval(secs => $3),
                   locked_until = NULL,

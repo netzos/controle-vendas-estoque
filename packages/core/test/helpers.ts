@@ -12,9 +12,9 @@ import { runService } from "../src/service.ts";
 const MIGRATIONS = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../db/migrations");
 
 // TEST_OWNER_DATABASE_URL: papel dono (aplica migrations e limpa o banco).
-// TEST_DATABASE_URL: papel da aplicação (erp_app), sujeito ao RLS.
+// TEST_DATABASE_URL: papel da aplicação (controle_vendas_estoque_app), sujeito ao RLS.
 const OWNER_URL = process.env.TEST_OWNER_DATABASE_URL ?? "postgres://erp_owner:erp@localhost/erp_test";
-const APP_URL = process.env.TEST_DATABASE_URL ?? "postgres://erp_app_login:app@localhost/erp_test";
+const APP_URL = process.env.TEST_DATABASE_URL ?? "postgres://controle_vendas_estoque_app_login:app@localhost/erp_test";
 
 export interface TestDb {
   owner: Db;
@@ -24,7 +24,7 @@ export interface TestDb {
 
 export async function setupTestDb(): Promise<TestDb> {
   const owner = createPool(OWNER_URL, 4);
-  await owner.query("DROP SCHEMA IF EXISTS erp CASCADE; DROP TABLE IF EXISTS public.erp_schema_migrations;");
+  await owner.query("DROP SCHEMA IF EXISTS controle_vendas_estoque CASCADE; DROP TABLE IF EXISTS public.controle_vendas_estoque_migrations;");
   await migrate(owner, MIGRATIONS);
   await syncPermissionCatalog(owner);
   const app = createPool(APP_URL, 8);
@@ -42,13 +42,13 @@ export const PASSWORD = "senha-forte-123";
 
 export async function seedCompany(db: Db, name = "Empresa Teste", email = `dono-${Math.random().toString(36).slice(2)}@teste.com`) {
   // setupFirstAdmin só roda no banco vazio; nos demais casos criamos direto.
-  const { rows } = await db.query("SELECT 1 FROM erp.users LIMIT 1");
+  const { rows } = await db.query("SELECT 1 FROM controle_vendas_estoque.users LIMIT 1");
   if (rows.length === 0) {
     const r = await setupFirstAdmin(db, { name: "Dono", email, password: PASSWORD, organization: { name } });
     return { ...r, email };
   }
   const u = await db.query<{ id: string }>(
-    "INSERT INTO erp.users (email, name, password_hash) VALUES ($1, 'Dono', $2) RETURNING id",
+    "INSERT INTO controle_vendas_estoque.users (email, name, password_hash) VALUES ($1, 'Dono', $2) RETURNING id",
     [email, await hashPassword(PASSWORD)],
   );
   const org = await createOrganization(db, u.rows[0]!.id, { name });

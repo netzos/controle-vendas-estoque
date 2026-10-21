@@ -1,5 +1,5 @@
 {
-  "name": "netz-erp",
+  "name": "controle-vendas-estoque",
   "private": true,
   "packageManager": "pnpm@10.18.0",
   "engines": {

@@ -38,10 +38,10 @@ export async function resolveActor(
       user_name: string;
     }>(
       `SELECT m.id AS membership_id, m.is_owner, m.branch_ids, r.id AS role_id, r.key AS role_key, u.name AS user_name
-         FROM erp.memberships m
-         JOIN erp.users u ON u.id = m.user_id
-         JOIN erp.roles r ON r.id = m.role_id
-         JOIN erp.organizations o ON o.id = m.organization_id
+         FROM controle_vendas_estoque.memberships m
+         JOIN controle_vendas_estoque.users u ON u.id = m.user_id
+         JOIN controle_vendas_estoque.roles r ON r.id = m.role_id
+         JOIN controle_vendas_estoque.organizations o ON o.id = m.organization_id
         WHERE m.organization_id = $1 AND m.user_id = $2
           AND m.status = 'active' AND u.status = 'active' AND o.status = 'active'`,
       [params.organizationId, params.userId],
@@ -49,7 +49,7 @@ export async function resolveActor(
     const m = rows[0];
     if (!m) throw new AppError("forbidden", "Você não tem acesso a esta empresa.");
     const perms = await tx.query<{ permission_key: string }>(
-      "SELECT permission_key FROM erp.role_permissions WHERE role_id = $1",
+      "SELECT permission_key FROM controle_vendas_estoque.role_permissions WHERE role_id = $1",
       [m.role_id],
     );
     const permissions = m.is_owner

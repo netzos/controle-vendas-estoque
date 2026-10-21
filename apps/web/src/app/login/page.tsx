@@ -13,7 +13,7 @@ export default async function LoginPage() {
   return (
     <main className="auth-page">
       <div className="card auth-card">
-        <h1>Netz ERP</h1>
+        <h1>Controle de vendas e estoque</h1>
         <p className="muted">Entre com sua conta para continuar.</p>
         <LoginForm />
       </div>

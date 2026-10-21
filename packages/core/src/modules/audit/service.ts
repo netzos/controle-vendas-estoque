@@ -32,8 +32,8 @@ export const listAuditLogs = defineService({
       `SELECT a.id, a.created_at AS "createdAt", a.channel, a.action, a.entity_type AS "entityType",
               a.entity_id AS "entityId", a.summary, u.name AS "actorName",
               a.before_data AS "beforeData", a.after_data AS "afterData"
-         FROM erp.audit_logs a
-         LEFT JOIN erp.users u ON u.id = a.actor_user_id
+         FROM controle_vendas_estoque.audit_logs a
+         LEFT JOIN controle_vendas_estoque.users u ON u.id = a.actor_user_id
         WHERE ($1::text IS NULL OR a.action LIKE $1 || '%')
           AND ($2::text IS NULL OR a.entity_type = $2)
           AND ($3::text IS NULL OR a.entity_id = $3)

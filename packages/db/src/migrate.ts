@@ -29,7 +29,7 @@ async function readMigrations(dir: string): Promise<MigrationFile[]> {
 
 async function ensureTable(db: Db) {
   await db.query(`
-    CREATE TABLE IF NOT EXISTS public.erp_schema_migrations (
+    CREATE TABLE IF NOT EXISTS public.controle_vendas_estoque_migrations (
       name        text PRIMARY KEY,
       checksum    text NOT NULL,
       applied_at  timestamptz NOT NULL DEFAULT now()
@@ -45,7 +45,7 @@ export async function migrate(db: Db, dir: string): Promise<MigrationResult> {
   try {
     await lock.query("SELECT pg_advisory_lock($1)", [LOCK_KEY]);
     const { rows } = await db.query<{ name: string; checksum: string }>(
-      "SELECT name, checksum FROM public.erp_schema_migrations",
+      "SELECT name, checksum FROM public.controle_vendas_estoque_migrations",
     );
     const done = new Map(rows.map((r) => [r.name, r.checksum]));
     const result: MigrationResult = { applied: [], skipped: [] };
@@ -60,7 +60,7 @@ export async function migrate(db: Db, dir: string): Promise<MigrationResult> {
       }
       await withTransaction(db, async (tx) => {
         await tx.query(file.sql);
-        await tx.query("INSERT INTO public.erp_schema_migrations (name, checksum) VALUES ($1, $2)", [
+        await tx.query("INSERT INTO public.controle_vendas_estoque_migrations (name, checksum) VALUES ($1, $2)", [
           file.name,
           file.checksum,
         ]);
@@ -78,7 +78,7 @@ export async function migrationStatus(db: Db, dir: string) {
   await ensureTable(db);
   const files = await readMigrations(dir);
   const { rows } = await db.query<{ name: string; applied_at: Date }>(
-    "SELECT name, applied_at FROM public.erp_schema_migrations",
+    "SELECT name, applied_at FROM public.controle_vendas_estoque_migrations",
   );
   const applied = new Map(rows.map((r) => [r.name, r.applied_at]));
   return files.map((f) => ({ name: f.name, appliedAt: applied.get(f.name) ?? null }));

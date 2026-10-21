@@ -42,6 +42,6 @@ Até a Fase 8, o menu mostra o grupo Assistente IA (Integração Telegram, Opera
 - **Recuperação de senha por e-mail**: depende de um provedor de e-mail. Hoje o administrador redefine o acesso.
 - **Criação de empresas adicionais pelo painel**: a função existe (`createOrganization`) e é testada, mas ainda não há tela; definir quem pode criar.
 - **Autenticação adicional** para operações críticas (nível 4): entra junto com as confirmações da Fase 8.
-- **Hospedagem**: banco no schema `erp` do projeto Netzcode da Supabase (sem custo extra; pode ser migrado para um projeto próprio com `pg_dump --schema=erp`). Painel na Vercel. O worker exige processo permanente; definir o servidor antes da Fase 6.
+- **Hospedagem**: banco no schema `controle_vendas_estoque` do projeto Netzcode da Supabase (sem custo extra; pode ser migrado para um projeto próprio com `pg_dump --schema=controle_vendas_estoque`). Painel na Vercel. O worker exige processo permanente; definir o servidor antes da Fase 6.
 - **Conferência de hora em hora do Claude** no quadro Melhorias: depende do sistema publicado e de `CLAUDE_IMPROVEMENTS_TOKEN` configurado.
 - **Retenção da auditoria**: hoje é permanente; definir política quando houver volume.

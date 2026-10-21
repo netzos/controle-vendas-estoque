@@ -1,5 +1,5 @@
 // Catálogo de permissões. Fonte da verdade: este arquivo. O comando de
-// migração sincroniza a tabela erp.permissions a partir dele.
+// migração sincroniza a tabela controle_vendas_estoque.permissions a partir dele.
 //
 // risk segue a seção 13: 1 consulta, 2 operação simples, 3 operação
 // comercial, 4 operação crítica.

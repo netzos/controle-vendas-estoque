@@ -72,7 +72,7 @@ O painel chama o serviço por Server Action, o Telegram chama pela ferramenta da
 ## 5. Isolamento multiempresa
 
 - Toda tabela de negócio tem `organization_id NOT NULL` e chave estrangeira para `organizations`.
-- A aplicação conecta com um papel sem privilégio de dono (`erp_app`). As tabelas têm **Row Level Security** com a política `organization_id = current_setting('app.organization_id')::uuid`.
+- A aplicação conecta com um papel sem privilégio de dono (`controle_vendas_estoque_app`). As tabelas têm **Row Level Security** com a política `organization_id = current_setting('app.organization_id')::uuid`.
 - O contexto é fixado com `set_config(..., true)` dentro da transação, por isso não vaza entre conexões do pool.
 - Mesmo que um serviço esqueça um filtro, o banco recusa linhas de outra organização. O teste de isolamento (Teste I da seção 27) verifica isso diretamente no banco.
 - Tabelas globais (usuários, sessões) não têm `organization_id`; o vínculo é feito por `memberships`.

@@ -41,7 +41,7 @@ describe("outbox", () => {
       events: ["branch.created"],
       async handle(tx, event) {
         // O consumidor roda com o RLS da organização do evento.
-        const r = await tx.query("SELECT name FROM erp.branches WHERE id = $1", [event.payload.branchId]);
+        const r = await tx.query("SELECT name FROM controle_vendas_estoque.branches WHERE id = $1", [event.payload.branchId]);
         seen.push(r.rows[0].name);
       },
     });
@@ -70,12 +70,12 @@ describe("outbox", () => {
     const r1 = await processOutboxBatch(t.app, bus);
     assert.equal(r1.failed, 1);
     // Antecipa a nova tentativa (backoff).
-    await t.owner.query("UPDATE erp.outbox_events SET available_at = now() WHERE status = 'pending'");
+    await t.owner.query("UPDATE controle_vendas_estoque.outbox_events SET available_at = now() WHERE status = 'pending'");
     const r2 = await processOutboxBatch(t.app, bus);
     assert.equal(r2.done, 1);
     assert.equal(okCalls, 1);
     assert.equal(failCalls, 2);
-    const ev = await t.owner.query("SELECT status, attempts, last_error FROM erp.outbox_events WHERE event_type = 'branch.created' ORDER BY id DESC LIMIT 1");
+    const ev = await t.owner.query("SELECT status, attempts, last_error FROM controle_vendas_estoque.outbox_events WHERE event_type = 'branch.created' ORDER BY id DESC LIMIT 1");
     assert.equal(ev.rows[0].status, "done");
     assert.equal(ev.rows[0].attempts, 2);
   });
@@ -102,7 +102,7 @@ describe("jobs agendados", () => {
       async run({ tx, job }) {
         calls++;
         // Roda no contexto da organização do job.
-        const r = await tx.query("SELECT count(*)::int AS n FROM erp.branches");
+        const r = await tx.query("SELECT count(*)::int AS n FROM controle_vendas_estoque.branches");
         if (calls === 1) throw new Error("timeout");
         return { branches: r.rows[0].n, key: job.payload };
       },
@@ -114,10 +114,10 @@ describe("jobs agendados", () => {
     );
     const r1 = await processJobsBatch(t.app, jobs, { workerId: "w1" });
     assert.equal(r1.failed, 2);
-    await t.owner.query("UPDATE erp.scheduled_jobs SET scheduled_for = now() WHERE status = 'failed'");
+    await t.owner.query("UPDATE controle_vendas_estoque.scheduled_jobs SET scheduled_for = now() WHERE status = 'failed'");
     const r2 = await processJobsBatch(t.app, jobs, { workerId: "w1" });
     assert.equal(r2.succeeded, 1);
-    const rows = await t.owner.query("SELECT job_type, status, attempts, result FROM erp.scheduled_jobs WHERE job_type LIKE 'teste.%' ORDER BY job_type");
+    const rows = await t.owner.query("SELECT job_type, status, attempts, result FROM controle_vendas_estoque.scheduled_jobs WHERE job_type LIKE 'teste.%' ORDER BY job_type");
     assert.deepEqual(rows.rows.map((r) => [r.job_type, r.status, r.attempts]), [
       ["teste.invalido", "dead", 1],
       ["teste.lembrete", "succeeded", 2],
@@ -154,10 +154,10 @@ describe("jobs agendados", () => {
       enqueueJob(tx, { organizationId: owner.organizationId, jobType: "teste.orfao" }),
     );
     // Worker "morto": reivindica e nunca conclui.
-    await t.app.query("SELECT * FROM erp.claim_scheduled_jobs('morto', 10, 300)");
+    await t.app.query("SELECT * FROM controle_vendas_estoque.claim_scheduled_jobs('morto', 10, 300)");
     const stuck = await processJobsBatch(t.app, jobs, { workerId: "w3" });
     assert.equal(stuck.claimed, 0);
-    await t.owner.query("UPDATE erp.scheduled_jobs SET locked_until = now() - interval '1 second' WHERE locked_by = 'morto'");
+    await t.owner.query("UPDATE controle_vendas_estoque.scheduled_jobs SET locked_until = now() - interval '1 second' WHERE locked_by = 'morto'");
     const r = await processJobsBatch(t.app, jobs, { workerId: "w3" });
     assert.equal(r.succeeded, 1);
     assert.equal(calls, 1);
@@ -169,14 +169,14 @@ describe("jobs agendados", () => {
     const now = new Date("2026-10-21T10:15:00Z");
     await scheduleSystemJobs(t.app, now);
     await scheduleSystemJobs(t.app, now);
-    const sys = await t.owner.query("SELECT id FROM erp.scheduled_jobs WHERE job_type = 'system.purge_expired'");
+    const sys = await t.owner.query("SELECT id FROM controle_vendas_estoque.scheduled_jobs WHERE job_type = 'system.purge_expired'");
     assert.equal(sys.rowCount, 1);
-    await t.owner.query("UPDATE erp.scheduled_jobs SET scheduled_for = now() WHERE job_type = 'system.purge_expired'");
+    await t.owner.query("UPDATE controle_vendas_estoque.scheduled_jobs SET scheduled_for = now() WHERE job_type = 'system.purge_expired'");
     const r = await processJobsBatch(t.app, jobs, { workerId: "w4" });
     assert.equal(r.succeeded, 1);
     // Jobs de sistema não aparecem no contexto de uma organização.
     const visible = await withTenant(t.app, { organizationId: owner.organizationId, userId: null }, (tx) =>
-      tx.query("SELECT 1 FROM erp.scheduled_jobs WHERE job_type = 'system.purge_expired'"),
+      tx.query("SELECT 1 FROM controle_vendas_estoque.scheduled_jobs WHERE job_type = 'system.purge_expired'"),
     );
     assert.equal(visible.rowCount, 0);
   });

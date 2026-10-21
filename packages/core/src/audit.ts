@@ -17,7 +17,7 @@ export async function recordAudit(
   entry: AuditEntry,
 ): Promise<string> {
   const { rows } = await tx.query<{ id: string }>(
-    `INSERT INTO erp.audit_logs
+    `INSERT INTO controle_vendas_estoque.audit_logs
        (organization_id, actor_user_id, channel, action, entity_type, entity_id, summary,
         before_data, after_data, metadata, request_id)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)

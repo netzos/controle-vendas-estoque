@@ -22,18 +22,18 @@ export async function changePassword(
     throw new AppError("invalid_input", "A nova senha deve ser diferente da atual.");
   }
   const { rows } = await db.query<{ password_hash: string | null }>(
-    "SELECT password_hash FROM erp.users WHERE id = $1",
+    "SELECT password_hash FROM controle_vendas_estoque.users WHERE id = $1",
     [session.userId],
   );
   if (!(await verifyPassword(input.currentPassword, rows[0]?.password_hash ?? null))) {
     throw new AppError("invalid_input", "A senha atual está incorreta.");
   }
   const hash = await hashPassword(input.newPassword);
-  await db.query("UPDATE erp.users SET password_hash = $2, must_change_password = false WHERE id = $1", [
+  await db.query("UPDATE controle_vendas_estoque.users SET password_hash = $2, must_change_password = false WHERE id = $1", [
     session.userId,
     hash,
   ]);
-  await db.query("UPDATE erp.sessions SET revoked_at = now() WHERE user_id = $1 AND id <> $2 AND revoked_at IS NULL", [
+  await db.query("UPDATE controle_vendas_estoque.sessions SET revoked_at = now() WHERE user_id = $1 AND id <> $2 AND revoked_at IS NULL", [
     session.userId,
     session.sessionId,
   ]);

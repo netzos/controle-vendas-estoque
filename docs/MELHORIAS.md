@@ -27,7 +27,7 @@ A tela **Melhorias** (menu Colaboração) é o quadro onde quem usa o ERP pede m
 ## Quem vê o quê
 
 - Cada empresa vê só os próprios pedidos (garantido pelo RLS do banco).
-- O **desenvolvedor da plataforma** vê os pedidos de todas as empresas, com o nome da empresa, e é o único que aprova ou recusa. Esse papel não vem de perfil de acesso da empresa: fica na tabela `erp.platform_developers`, que a aplicação não consegue alterar. Para incluir ou remover, com a conexão de dono do banco:
+- O **desenvolvedor da plataforma** vê os pedidos de todas as empresas, com o nome da empresa, e é o único que aprova ou recusa. Esse papel não vem de perfil de acesso da empresa: fica na tabela `controle_vendas_estoque.platform_developers`, que a aplicação não consegue alterar. Para incluir ou remover, com a conexão de dono do banco:
 
   ```sh
   MIGRATION_DATABASE_URL=... pnpm platform:developer add acesso@netzcode.com.br

@@ -15,7 +15,7 @@ export interface EnqueueOptions {
 // originou, para que o job só exista se a operação for confirmada.
 export async function enqueueJob(tx: Tx, opts: EnqueueOptions): Promise<{ id: string; created: boolean }> {
   const { rows } = await tx.query<{ id: string }>(
-    `INSERT INTO erp.scheduled_jobs (organization_id, job_type, payload, scheduled_for, idempotency_key, max_attempts)
+    `INSERT INTO controle_vendas_estoque.scheduled_jobs (organization_id, job_type, payload, scheduled_for, idempotency_key, max_attempts)
      VALUES ($1, $2, $3, $4, $5, $6)
      ON CONFLICT (job_type, idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING
      RETURNING id`,
@@ -29,11 +29,11 @@ export async function enqueueJob(tx: Tx, opts: EnqueueOptions): Promise<{ id: st
     ],
   );
   if (rows[0]) {
-    await tx.query("SELECT pg_notify('erp_jobs', $1)", [rows[0].id]);
+    await tx.query("SELECT pg_notify('controle_vendas_estoque_jobs', $1)", [rows[0].id]);
     return { id: rows[0].id, created: true };
   }
   const existing = await tx.query<{ id: string }>(
-    "SELECT id FROM erp.scheduled_jobs WHERE job_type = $1 AND idempotency_key = $2",
+    "SELECT id FROM controle_vendas_estoque.scheduled_jobs WHERE job_type = $1 AND idempotency_key = $2",
     [opts.jobType, opts.idempotencyKey],
   );
   return { id: existing.rows[0]!.id, created: false };
@@ -93,7 +93,7 @@ export async function processJobsBatch(
   opts: { workerId: string; limit?: number; lockSeconds?: number },
 ) {
   const claimed = await db.query<{ id: string; organization_id: string | null }>(
-    "SELECT id, organization_id FROM erp.claim_scheduled_jobs($1, $2, $3)",
+    "SELECT id, organization_id FROM controle_vendas_estoque.claim_scheduled_jobs($1, $2, $3)",
     [opts.workerId, opts.limit ?? 20, opts.lockSeconds ?? 300],
   );
   let succeeded = 0;
@@ -105,7 +105,7 @@ export async function processJobsBatch(
       await withTenant(db, ctx, async (tx) => {
         const r = await tx.query(
           `SELECT id, organization_id, job_type, payload, scheduled_for, attempts, max_attempts
-             FROM erp.scheduled_jobs WHERE id = $1 AND status = 'running' AND locked_by = $2`,
+             FROM controle_vendas_estoque.scheduled_jobs WHERE id = $1 AND status = 'running' AND locked_by = $2`,
           [row.id, opts.workerId],
         );
         const j = r.rows[0];
@@ -123,7 +123,7 @@ export async function processJobsBatch(
         if (!handler) throw new PermanentJobError(`Nenhum handler registrado para ${job.jobType}`);
         const result = await handler.run({ tx, db, job });
         await tx.query(
-          `UPDATE erp.scheduled_jobs
+          `UPDATE controle_vendas_estoque.scheduled_jobs
               SET status = 'succeeded', finished_at = now(), locked_until = NULL, last_error = NULL, result = $2
             WHERE id = $1`,
           [job.id, result === undefined ? null : JSON.stringify(result)],
@@ -136,7 +136,7 @@ export async function processJobsBatch(
       const permanent = err instanceof PermanentJobError;
       await withTenant(db, ctx, (tx) =>
         tx.query(
-          `UPDATE erp.scheduled_jobs
+          `UPDATE controle_vendas_estoque.scheduled_jobs
               SET status = CASE WHEN $2 OR attempts >= max_attempts THEN 'dead' ELSE 'failed' END,
                   scheduled_for = now() + make_interval(secs => $3),
                   locked_until = NULL,

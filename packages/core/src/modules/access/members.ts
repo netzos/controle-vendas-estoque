@@ -24,9 +24,9 @@ const MEMBER_SELECT = `
          r.id AS "roleId", r.key AS "roleKey", r.name AS "roleName",
          m.is_owner AS "isOwner", m.branch_ids AS "branchIds", m.status,
          u.last_login_at AS "lastLoginAt", m.created_at AS "createdAt"
-    FROM erp.memberships m
-    JOIN erp.users u ON u.id = m.user_id
-    JOIN erp.roles r ON r.id = m.role_id`;
+    FROM controle_vendas_estoque.memberships m
+    JOIN controle_vendas_estoque.users u ON u.id = m.user_id
+    JOIN controle_vendas_estoque.roles r ON r.id = m.role_id`;
 
 export const listMembers = defineService({
   name: "members.list",
@@ -50,14 +50,14 @@ async function assertBranches(tx: import("@erp/db").Tx, ids: string[] | null) {
   if (!ids) return;
   if (ids.length === 0) throw new AppError("invalid_input", "Selecione ao menos uma filial ou todas.");
   const { rows } = await tx.query<{ n: number }>(
-    "SELECT count(*)::int AS n FROM erp.branches WHERE id = ANY($1::uuid[])",
+    "SELECT count(*)::int AS n FROM controle_vendas_estoque.branches WHERE id = ANY($1::uuid[])",
     [ids],
   );
   if (rows[0]!.n !== new Set(ids).size) throw new AppError("invalid_input", "Filial inválida.");
 }
 
 async function assertAssignableRole(tx: import("@erp/db").Tx, roleId: string, actorIsOwner: boolean) {
-  const { rows } = await tx.query<{ key: string }>("SELECT key FROM erp.roles WHERE id = $1", [roleId]);
+  const { rows } = await tx.query<{ key: string }>("SELECT key FROM controle_vendas_estoque.roles WHERE id = $1", [roleId]);
   const role = rows[0];
   if (!role) throw notFound("Perfil");
   // Apenas um proprietário pode criar outro proprietário.
@@ -88,7 +88,7 @@ export const addMember = defineService({
     await assertBranches(tx, input.branchIds);
     const email = normalizeEmail(input.email);
 
-    const existing = await tx.query<{ id: string }>("SELECT id FROM erp.users WHERE email = $1", [email]);
+    const existing = await tx.query<{ id: string }>("SELECT id FROM controle_vendas_estoque.users WHERE email = $1", [email]);
     let userId = existing.rows[0]?.id;
     let createdAccount = false;
     if (!userId) {
@@ -96,21 +96,21 @@ export const addMember = defineService({
         throw new AppError("invalid_input", "Defina uma senha provisória para o novo usuário.");
       }
       const u = await tx.query<{ id: string }>(
-        "INSERT INTO erp.users (email, name, password_hash, must_change_password) VALUES ($1, $2, $3, true) RETURNING id",
+        "INSERT INTO controle_vendas_estoque.users (email, name, password_hash, must_change_password) VALUES ($1, $2, $3, true) RETURNING id",
         [email, input.name, await hashPassword(input.temporaryPassword)],
       );
       userId = u.rows[0]!.id;
       createdAccount = true;
     }
 
-    const dup = await tx.query("SELECT 1 FROM erp.memberships WHERE organization_id = $1 AND user_id = $2", [
+    const dup = await tx.query("SELECT 1 FROM controle_vendas_estoque.memberships WHERE organization_id = $1 AND user_id = $2", [
       actor.organizationId,
       userId,
     ]);
     if (dup.rowCount) throw new AppError("conflict", "Este usuário já faz parte da empresa.");
 
     const m = await tx.query<{ id: string }>(
-      `INSERT INTO erp.memberships (organization_id, user_id, role_id, is_owner, branch_ids)
+      `INSERT INTO controle_vendas_estoque.memberships (organization_id, user_id, role_id, is_owner, branch_ids)
        VALUES ($1, $2, $3, $4, $5) RETURNING id`,
       [actor.organizationId, userId, input.roleId, role.key === "owner", input.branchIds],
     );
@@ -152,14 +152,14 @@ export const updateMember = defineService({
     const willBeOwner = role.key === "owner" && input.status === "active";
     if (before.isOwner && !willBeOwner) {
       const owners = await tx.query<{ n: number }>(
-        "SELECT count(*)::int AS n FROM erp.memberships WHERE is_owner AND status = 'active' AND id <> $1",
+        "SELECT count(*)::int AS n FROM controle_vendas_estoque.memberships WHERE is_owner AND status = 'active' AND id <> $1",
         [input.membershipId],
       );
       if (owners.rows[0]!.n === 0) throw new AppError("conflict", "A empresa precisa de ao menos um proprietário ativo.");
     }
 
     await tx.query(
-      `UPDATE erp.memberships SET role_id = $2, is_owner = $3, branch_ids = $4, status = $5 WHERE id = $1`,
+      `UPDATE controle_vendas_estoque.memberships SET role_id = $2, is_owner = $3, branch_ids = $4, status = $5 WHERE id = $1`,
       [input.membershipId, input.roleId, role.key === "owner", input.branchIds, input.status],
     );
     const fields: string[] = [];
@@ -180,7 +180,7 @@ export const updateMember = defineService({
     // Desativar o acesso encerra as sessões do usuário nesta empresa.
     if (input.status === "disabled" && before.status === "active") {
       await tx.query(
-        "UPDATE erp.sessions SET revoked_at = now() WHERE user_id = $1 AND active_organization_id = $2 AND revoked_at IS NULL",
+        "UPDATE controle_vendas_estoque.sessions SET revoked_at = now() WHERE user_id = $1 AND active_organization_id = $2 AND revoked_at IS NULL",
         [before.userId, actor.organizationId],
       );
     }

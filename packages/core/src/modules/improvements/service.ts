@@ -72,7 +72,7 @@ export interface ImprovementMessage {
 }
 
 // Quem está olhando o quadro. Desenvolvedor é um papel da plataforma, não da
-// empresa: vem de erp.platform_developers, nunca de perfil ou formulário.
+// empresa: vem de controle_vendas_estoque.platform_developers, nunca de perfil ou formulário.
 export interface ImprovementViewer {
   userId: string;
   userName: string;
@@ -91,14 +91,14 @@ const ITEM_SELECT = `
          i.created_by AS "createdBy", i.created_by_name AS "createdByName",
          i.decided_by AS "decidedBy", i.decided_by_name AS "decidedByName", i.decided_at AS "decidedAt", i.link, i.version,
          i.created_at AS "createdAt", i.updated_at AS "updatedAt",
-         (SELECT count(*)::int FROM erp.improvement_messages m WHERE m.improvement_id = i.id) AS messages,
+         (SELECT count(*)::int FROM controle_vendas_estoque.improvement_messages m WHERE m.improvement_id = i.id) AS messages,
          (SELECT json_build_object('kind', m.author_kind, 'name', m.author_name, 'at', m.created_at)
-            FROM erp.improvement_messages m WHERE m.improvement_id = i.id
+            FROM controle_vendas_estoque.improvement_messages m WHERE m.improvement_id = i.id
            ORDER BY m.created_at DESC LIMIT 1) AS last
-    FROM erp.improvements i`;
+    FROM controle_vendas_estoque.improvements i`;
 
 export async function improvementViewer(db: Db, actor: Actor): Promise<ImprovementViewer> {
-  const { rows } = await db.query<{ dev: boolean }>("SELECT erp.is_platform_developer($1) AS dev", [actor.userId]);
+  const { rows } = await db.query<{ dev: boolean }>("SELECT controle_vendas_estoque.is_platform_developer($1) AS dev", [actor.userId]);
   return { userId: actor.userId, userName: actor.userName, organizationId: actor.organizationId, isDeveloper: rows[0]!.dev };
 }
 
@@ -112,7 +112,7 @@ function asClaude<T>(db: Db, fn: (tx: Tx) => Promise<T>): Promise<T> {
 
 async function load(tx: Tx, id: string, lock = false): Promise<Improvement> {
   if (!z.string().uuid().safeParse(id).success) throw notFound("Pedido");
-  if (lock) await tx.query("SELECT 1 FROM erp.improvements WHERE id = $1 FOR UPDATE", [id]);
+  if (lock) await tx.query("SELECT 1 FROM controle_vendas_estoque.improvements WHERE id = $1 FOR UPDATE", [id]);
   const { rows } = await tx.query<Improvement>(`${ITEM_SELECT} WHERE i.id = $1`, [id]);
   if (!rows[0]) throw notFound("Pedido");
   return rows[0];
@@ -121,7 +121,7 @@ async function load(tx: Tx, id: string, lock = false): Promise<Improvement> {
 async function messages(tx: Tx, id: string): Promise<ImprovementMessage[]> {
   const { rows } = await tx.query<ImprovementMessage>(
     `SELECT id, author_kind AS kind, author_name AS name, body, created_at AS at
-       FROM erp.improvement_messages WHERE improvement_id = $1 ORDER BY created_at, id`,
+       FROM controle_vendas_estoque.improvement_messages WHERE improvement_id = $1 ORDER BY created_at, id`,
     [id],
   );
   return rows;
@@ -129,18 +129,18 @@ async function messages(tx: Tx, id: string): Promise<ImprovementMessage[]> {
 
 async function addMessage(tx: Tx, id: string, kind: AuthorKind, authorId: string | null, name: string, text: string) {
   await tx.query(
-    `INSERT INTO erp.improvement_messages (improvement_id, author_kind, author_id, author_name, body)
+    `INSERT INTO controle_vendas_estoque.improvement_messages (improvement_id, author_kind, author_id, author_name, body)
      VALUES ($1, $2, $3, $4, $5)`,
     [id, kind, authorId, clip(name, 120), clip(text, 5000)],
   );
-  await tx.query("UPDATE erp.improvements SET updated_at = now() WHERE id = $1", [id]);
+  await tx.query("UPDATE controle_vendas_estoque.improvements SET updated_at = now() WHERE id = $1", [id]);
 }
 
 // Atualização com controle de versão: se outra pessoa alterou o pedido nesse
 // meio-tempo, a alteração é recusada em vez de sobrescrever.
 async function save(tx: Tx, item: Improvement, expectedVersion: number) {
   const r = await tx.query(
-    `UPDATE erp.improvements
+    `UPDATE controle_vendas_estoque.improvements
         SET title = $3, body = $4, module = $5, status = $6, details = $7, link = $8,
             decided_by = $9, decided_by_name = $10, decided_at = $11,
             version = version + 1, updated_at = now()
@@ -197,8 +197,8 @@ export async function createImprovement(db: Db, viewer: ImprovementViewer, raw: 
   const input = parseInput(createInput, raw);
   return asViewer(db, viewer, async (tx) => {
     const { rows } = await tx.query<{ id: string }>(
-      `INSERT INTO erp.improvements (organization_id, organization_name, title, body, module, source, created_by, created_by_name)
-       VALUES ($1, (SELECT name FROM erp.organizations WHERE id = $1), $2, $3, $4, 'site', $5, $6) RETURNING id`,
+      `INSERT INTO controle_vendas_estoque.improvements (organization_id, organization_name, title, body, module, source, created_by, created_by_name)
+       VALUES ($1, (SELECT name FROM controle_vendas_estoque.organizations WHERE id = $1), $2, $3, $4, 'site', $5, $6) RETURNING id`,
       [viewer.organizationId, input.title, input.body, input.module, viewer.userId, clip(viewer.userName, 120)],
     );
     return load(tx, rows[0]!.id);
@@ -289,7 +289,7 @@ export async function agentCreateImprovement(db: Db, actor: Actor, raw: z.input<
   const text = composeBody(details);
   return withTenant(db, { organizationId: actor.organizationId, userId: actor.userId }, async (tx) => {
     const existing = await tx.query<{ id: string }>(
-      `SELECT id FROM erp.improvements WHERE lower(title) = lower($1) AND status = ANY($2) LIMIT 1`,
+      `SELECT id FROM controle_vendas_estoque.improvements WHERE lower(title) = lower($1) AND status = ANY($2) LIMIT 1`,
       [input.title, OPEN],
     );
     if (existing.rows[0]) {
@@ -297,7 +297,7 @@ export async function agentCreateImprovement(db: Db, actor: Actor, raw: z.input<
       return { item: await load(tx, existing.rows[0].id), existing: true };
     }
     const today = await tx.query<{ n: number }>(
-      `SELECT count(*)::int AS n FROM erp.improvements
+      `SELECT count(*)::int AS n FROM controle_vendas_estoque.improvements
         WHERE created_by = $1 AND source IN ('telegram', 'erp_ai') AND created_at > now() - interval '1 day'`,
       [actor.userId],
     );
@@ -306,8 +306,8 @@ export async function agentCreateImprovement(db: Db, actor: Actor, raw: z.input<
     }
     const suggestion = input.kind === "suggestion";
     const { rows } = await tx.query<{ id: string }>(
-      `INSERT INTO erp.improvements (organization_id, organization_name, title, body, module, source, details, created_by, created_by_name)
-       VALUES ($1, (SELECT name FROM erp.organizations WHERE id = $1), $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+      `INSERT INTO controle_vendas_estoque.improvements (organization_id, organization_name, title, body, module, source, details, created_by, created_by_name)
+       VALUES ($1, (SELECT name FROM controle_vendas_estoque.organizations WHERE id = $1), $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
       [
         actor.organizationId,
         input.title,
@@ -382,7 +382,7 @@ export async function claudeCreateImprovement(db: Db, raw: z.input<typeof create
   const input = parseInput(createInput, raw);
   return asClaude(db, async (tx) => {
     const { rows } = await tx.query<{ id: string }>(
-      `INSERT INTO erp.improvements (title, body, module, source, created_by_name)
+      `INSERT INTO controle_vendas_estoque.improvements (title, body, module, source, created_by_name)
        VALUES ($1, $2, $3, 'claude', $4) RETURNING id`,
       [input.title, input.body, input.module, CLAUDE_NAME],
     );

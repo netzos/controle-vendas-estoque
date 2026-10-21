@@ -118,18 +118,18 @@ describe("isolamento entre empresas (Teste I)", () => {
     assert.ok(branches.every((b) => b.name !== "Filial Secreta"));
 
     const raw = await withTenant(t.app, { organizationId: companyA.organizationId, userId: companyA.userId }, (tx) =>
-      tx.query("SELECT id FROM erp.branches WHERE organization_id = $1", [companyB.organizationId]),
+      tx.query("SELECT id FROM controle_vendas_estoque.branches WHERE organization_id = $1", [companyB.organizationId]),
     );
     assert.equal(raw.rowCount, 0);
 
     // Sem contexto, nenhuma linha de empresa é visível.
-    const none = await t.app.query("SELECT id FROM erp.branches");
+    const none = await t.app.query("SELECT id FROM controle_vendas_estoque.branches");
     assert.equal(none.rowCount, 0);
 
     // E não é possível gravar em outra empresa com o contexto da sua.
     await assert.rejects(
       withTenant(t.app, { organizationId: companyA.organizationId, userId: companyA.userId }, (tx) =>
-        tx.query("INSERT INTO erp.branches (organization_id, name, code) VALUES ($1, 'Invasão', 'INV')", [companyB.organizationId]),
+        tx.query("INSERT INTO controle_vendas_estoque.branches (organization_id, name, code) VALUES ($1, 'Invasão', 'INV')", [companyB.organizationId]),
       ),
       /row-level security/,
     );
@@ -231,7 +231,7 @@ describe("serviços: validação, auditoria, outbox e idempotência", () => {
     assert.equal(logs.items.length, 1);
     assert.equal(logs.items[0]!.actorName, "Dono");
     const events = await withTenant(t.app, { organizationId: ownerA.organizationId, userId: null }, (tx) =>
-      tx.query("SELECT event_type FROM erp.outbox_events WHERE aggregate_id = $1", [branch.id]),
+      tx.query("SELECT event_type FROM controle_vendas_estoque.outbox_events WHERE aggregate_id = $1", [branch.id]),
     );
     assert.deepEqual(events.rows.map((r) => r.event_type), ["branch.created"]);
   });

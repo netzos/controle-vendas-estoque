@@ -17,9 +17,9 @@ export interface Role {
 const ROLE_SELECT = `
   SELECT r.id, r.key, r.name, r.description, r.is_system AS "isSystem",
          coalesce(array_agg(rp.permission_key ORDER BY rp.permission_key) FILTER (WHERE rp.permission_key IS NOT NULL), '{}') AS permissions,
-         (SELECT count(*)::int FROM erp.memberships m WHERE m.role_id = r.id) AS "memberCount"
-    FROM erp.roles r
-    LEFT JOIN erp.role_permissions rp ON rp.role_id = r.id`;
+         (SELECT count(*)::int FROM controle_vendas_estoque.memberships m WHERE m.role_id = r.id) AS "memberCount"
+    FROM controle_vendas_estoque.roles r
+    LEFT JOIN controle_vendas_estoque.role_permissions rp ON rp.role_id = r.id`;
 
 async function loadRole(tx: Tx, id: string): Promise<Role> {
   const { rows } = await tx.query<Role>(`${ROLE_SELECT} WHERE r.id = $1 GROUP BY r.id`, [id]);
@@ -71,17 +71,17 @@ export const createRole = defineService({
       .replace(/^_|_$/g, "")
       .slice(0, 30) || "perfil";
     let key = `custom_${base}`.slice(0, 40);
-    for (let i = 2; (await tx.query("SELECT 1 FROM erp.roles WHERE key = $1", [key])).rowCount; i++) {
+    for (let i = 2; (await tx.query("SELECT 1 FROM controle_vendas_estoque.roles WHERE key = $1", [key])).rowCount; i++) {
       key = `custom_${base}_${i}`.slice(0, 40);
     }
     const { rows } = await tx.query<{ id: string }>(
-      `INSERT INTO erp.roles (organization_id, key, name, description) VALUES ($1, $2, $3, $4) RETURNING id`,
+      `INSERT INTO controle_vendas_estoque.roles (organization_id, key, name, description) VALUES ($1, $2, $3, $4) RETURNING id`,
       [actor.organizationId, key, input.name, input.description || null],
     );
     const roleId = rows[0]!.id;
     if (input.permissions.length) {
       await tx.query(
-        `INSERT INTO erp.role_permissions (organization_id, role_id, permission_key) SELECT $1, $2, unnest($3::text[])`,
+        `INSERT INTO controle_vendas_estoque.role_permissions (organization_id, role_id, permission_key) SELECT $1, $2, unnest($3::text[])`,
         [actor.organizationId, roleId, input.permissions],
       );
     }
@@ -104,7 +104,7 @@ export const updateRole = defineService({
     permissions: permissionList,
   }),
   async handler({ tx, actor, audit, emit }, input) {
-    await tx.query("SELECT 1 FROM erp.roles WHERE id = $1 FOR UPDATE", [input.id]);
+    await tx.query("SELECT 1 FROM controle_vendas_estoque.roles WHERE id = $1 FOR UPDATE", [input.id]);
     const before = await loadRole(tx, input.id);
     if (before.key === "owner") throw new AppError("conflict", "O perfil Proprietário sempre tem acesso total.");
     if (before.isSystem && input.name !== before.name) {
@@ -117,20 +117,20 @@ export const updateRole = defineService({
       throw new AppError("conflict", "Você não pode remover permissões do próprio perfil.");
     }
 
-    await tx.query("UPDATE erp.roles SET name = $2, description = $3 WHERE id = $1", [
+    await tx.query("UPDATE controle_vendas_estoque.roles SET name = $2, description = $3 WHERE id = $1", [
       input.id,
       input.name,
       input.description || null,
     ]);
     if (removed.length) {
-      await tx.query("DELETE FROM erp.role_permissions WHERE role_id = $1 AND permission_key = ANY($2::text[])", [
+      await tx.query("DELETE FROM controle_vendas_estoque.role_permissions WHERE role_id = $1 AND permission_key = ANY($2::text[])", [
         input.id,
         removed,
       ]);
     }
     if (added.length) {
       await tx.query(
-        `INSERT INTO erp.role_permissions (organization_id, role_id, permission_key) SELECT $1, $2, unnest($3::text[])`,
+        `INSERT INTO controle_vendas_estoque.role_permissions (organization_id, role_id, permission_key) SELECT $1, $2, unnest($3::text[])`,
         [actor.organizationId, input.id, added],
       );
     }
@@ -162,11 +162,11 @@ export const deleteRole = defineService({
   risk: 4,
   input: z.object({ id: z.string().uuid() }),
   async handler({ tx, audit, emit }, input) {
-    await tx.query("SELECT 1 FROM erp.roles WHERE id = $1 FOR UPDATE", [input.id]);
+    await tx.query("SELECT 1 FROM controle_vendas_estoque.roles WHERE id = $1 FOR UPDATE", [input.id]);
     const role = await loadRole(tx, input.id);
     if (role.isSystem) throw new AppError("conflict", "Perfis padrão não podem ser excluídos.");
     if (role.memberCount > 0) throw new AppError("conflict", "Há usuários com este perfil. Troque o perfil deles antes.");
-    await tx.query("DELETE FROM erp.roles WHERE id = $1", [input.id]);
+    await tx.query("DELETE FROM controle_vendas_estoque.roles WHERE id = $1", [input.id]);
     await audit({ action: "role.delete", entityType: "role", entityId: input.id, summary: `Perfil ${role.name} excluído`, before: role });
     await emit("role.deleted", { roleId: input.id, key: role.key }, { type: "role", id: input.id });
     return { id: input.id };

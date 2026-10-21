@@ -11,7 +11,7 @@ export function registerSystemHandlers(jobs: JobRegistry): void {
   jobs.register({
     type: "system.purge_expired",
     async run({ tx }) {
-      const { rows } = await tx.query<{ result: unknown }>("SELECT erp.purge_expired() AS result");
+      const { rows } = await tx.query<{ result: unknown }>("SELECT controle_vendas_estoque.purge_expired() AS result");
       return rows[0]!.result;
     },
   });
@@ -64,8 +64,8 @@ export function startWorker(opts: WorkerOptions) {
     try {
       listener = await opts.db.connect();
       listener.on("notification", () => wake?.());
-      await listener.query("LISTEN erp_outbox");
-      await listener.query("LISTEN erp_jobs");
+      await listener.query("LISTEN controle_vendas_estoque_outbox");
+      await listener.query("LISTEN controle_vendas_estoque_jobs");
     } catch (err) {
       log("listen_failed", { error: String(err) });
     }

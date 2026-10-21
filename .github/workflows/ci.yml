@@ -20,8 +20,8 @@ jobs:
           --health-cmd "pg_isready -U erp_owner" --health-interval 5s --health-timeout 5s --health-retries 10
     env:
       TEST_OWNER_DATABASE_URL: postgres://erp_owner:erp@localhost:5432/erp_test
-      TEST_DATABASE_URL: postgres://erp_app_login:app@localhost:5432/erp_test
-      DATABASE_URL: postgres://erp_app_login:app@localhost:5432/erp_test
+      TEST_DATABASE_URL: postgres://controle_vendas_estoque_app_login:app@localhost:5432/erp_test
+      DATABASE_URL: postgres://controle_vendas_estoque_app_login:app@localhost:5432/erp_test
       MIGRATION_DATABASE_URL: postgres://erp_owner:erp@localhost:5432/erp_test
     steps:
       - uses: actions/checkout@v4
@@ -33,7 +33,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Papéis do banco
         run: |
-          PGPASSWORD=erp psql -h localhost -U erp_owner -d erp_test -c "CREATE ROLE erp_app NOLOGIN; CREATE ROLE erp_app_login LOGIN PASSWORD 'app' IN ROLE erp_app;"
+          PGPASSWORD=erp psql -h localhost -U erp_owner -d erp_test -c "CREATE ROLE controle_vendas_estoque_app NOLOGIN; CREATE ROLE controle_vendas_estoque_app_login LOGIN PASSWORD 'app' IN ROLE controle_vendas_estoque_app;"
       - run: pnpm typecheck
       - run: pnpm test
       - name: Build do painel

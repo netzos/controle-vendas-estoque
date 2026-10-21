@@ -23,13 +23,13 @@ async function main() {
     } else if (command === "developer") {
       // Desenvolvedores da plataforma: os únicos que aprovam pedidos em Melhorias.
       const [action, email] = process.argv.slice(3);
-      const user = await db.query<{ id: string }>("SELECT id FROM erp.users WHERE email = lower($1)", [email ?? ""]);
+      const user = await db.query<{ id: string }>("SELECT id FROM controle_vendas_estoque.users WHERE email = lower($1)", [email ?? ""]);
       if (!user.rows[0]) throw new Error(`Usuário não encontrado: ${email}`);
       if (action === "add") {
-        await db.query("INSERT INTO erp.platform_developers (user_id) VALUES ($1) ON CONFLICT DO NOTHING", [user.rows[0].id]);
+        await db.query("INSERT INTO controle_vendas_estoque.platform_developers (user_id) VALUES ($1) ON CONFLICT DO NOTHING", [user.rows[0].id]);
         console.log(`${email} agora é desenvolvedor da plataforma`);
       } else if (action === "remove") {
-        await db.query("DELETE FROM erp.platform_developers WHERE user_id = $1", [user.rows[0].id]);
+        await db.query("DELETE FROM controle_vendas_estoque.platform_developers WHERE user_id = $1", [user.rows[0].id]);
         console.log(`${email} deixou de ser desenvolvedor da plataforma`);
       } else {
         throw new Error("Use: developer add|remove <email>");

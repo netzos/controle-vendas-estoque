@@ -37,7 +37,7 @@ before(async () => {
   t = await setupTestDb();
   const a = await seedCompany(t.app, "Empresa A", "dev@netzcode.com.br");
   devOwner = await actorFor(t.app, a.userId, a.organizationId);
-  await t.owner.query("INSERT INTO erp.platform_developers (user_id) VALUES ($1)", [a.userId]);
+  await t.owner.query("INSERT INTO controle_vendas_estoque.platform_developers (user_id) VALUES ($1)", [a.userId]);
   dev = await improvementViewer(t.app, devOwner);
   const s = await addUserWithRole(t.app, devOwner, "sales", "Vendedora");
   sellerActor = s.actor;

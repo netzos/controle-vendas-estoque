@@ -62,7 +62,7 @@ export async function runService<S extends z.ZodType, O>(
       if (opts.idempotencyKey) {
         const requestHash = hashInput(input);
         const inserted = await tx.query(
-          `INSERT INTO erp.idempotency_keys (organization_id, scope, key, request_hash)
+          `INSERT INTO controle_vendas_estoque.idempotency_keys (organization_id, scope, key, request_hash)
            VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING RETURNING key`,
           [actor.organizationId, service.name, opts.idempotencyKey, requestHash],
         );
@@ -70,7 +70,7 @@ export async function runService<S extends z.ZodType, O>(
           // Outra execução com a mesma chave já foi confirmada (a inserção
           // acima espera a transação concorrente terminar).
           const prev = await tx.query<{ request_hash: string; response: { value: O } | null }>(
-            "SELECT request_hash, response FROM erp.idempotency_keys WHERE organization_id = $1 AND scope = $2 AND key = $3",
+            "SELECT request_hash, response FROM controle_vendas_estoque.idempotency_keys WHERE organization_id = $1 AND scope = $2 AND key = $3",
             [actor.organizationId, service.name, opts.idempotencyKey],
           );
           const row = prev.rows[0]!;
@@ -99,7 +99,7 @@ export async function runService<S extends z.ZodType, O>(
 
       if (opts.idempotencyKey) {
         await tx.query(
-          "UPDATE erp.idempotency_keys SET response = $4 WHERE organization_id = $1 AND scope = $2 AND key = $3",
+          "UPDATE controle_vendas_estoque.idempotency_keys SET response = $4 WHERE organization_id = $1 AND scope = $2 AND key = $3",
           [actor.organizationId, service.name, opts.idempotencyKey, JSON.stringify({ value: result ?? null })],
         );
       }

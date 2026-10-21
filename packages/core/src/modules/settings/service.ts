@@ -38,7 +38,7 @@ export const getSettings = defineService({
   input: z.object({}),
   async handler({ tx }) {
     const { rows } = await tx.query<{ key: string; value: unknown }>(
-      "SELECT key, value FROM erp.organization_settings WHERE key = ANY($1::text[])",
+      "SELECT key, value FROM controle_vendas_estoque.organization_settings WHERE key = ANY($1::text[])",
       [keys],
     );
     const stored = new Map(rows.map((r) => [r.key, r.value]));
@@ -64,11 +64,11 @@ export const updateSettings = defineService({
       const def = SETTINGS[key as SettingKey];
       const parsed = def.schema.safeParse(raw);
       if (!parsed.success) throw new AppError("invalid_input", `Valor inválido para "${def.label}".`);
-      const prev = await tx.query<{ value: unknown }>("SELECT value FROM erp.organization_settings WHERE key = $1", [key]);
+      const prev = await tx.query<{ value: unknown }>("SELECT value FROM controle_vendas_estoque.organization_settings WHERE key = $1", [key]);
       const before = prev.rows[0]?.value ?? def.default;
       if (JSON.stringify(before) === JSON.stringify(parsed.data)) continue;
       await tx.query(
-        `INSERT INTO erp.organization_settings (organization_id, key, value, updated_by, updated_at)
+        `INSERT INTO controle_vendas_estoque.organization_settings (organization_id, key, value, updated_by, updated_at)
          VALUES ($1, $2, $3, $4, now())
          ON CONFLICT (organization_id, key) DO UPDATE SET value = EXCLUDED.value, updated_by = EXCLUDED.updated_by, updated_at = now()`,
         [actor.organizationId, key, JSON.stringify(parsed.data), actor.userId],
