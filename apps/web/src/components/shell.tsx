@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { NavGroup, NavItem } from "@/lib/navigation";
+import { BRAND_NAME } from "@/lib/brand";
 import { Icon } from "./icons";
+import { LogoMark } from "./logo";
 
 const matches = (item: NavItem, pathname: string) => (item.href === "/" ? pathname === "/" : pathname.startsWith(item.href));
 
@@ -27,8 +29,8 @@ export function Shell({
   return (
     <div className="shell">
       <aside className="rail" aria-label="Menu principal">
-        <Link href="/" className="rail-logo" aria-label="Início">
-          <Icon name="logo" size={26} />
+        <Link href="/" className="rail-logo" aria-label={`${BRAND_NAME} · Início`}>
+          <LogoMark size={52} />
         </Link>
         <nav className="rail-nav">
           {navigation.map((group) => (
@@ -53,9 +55,9 @@ export function Shell({
       </aside>
       <div className="main">
         <header className="topbar">
-          <div className="crumb">
-            {current && <Icon name={current.icon} size={20} />}
-            <span>{current ? `${current.short} · ${current.hint}` : "Controle de vendas e estoque"}</span>
+          <div className="brand-name">
+            <strong>{BRAND_NAME}</strong>
+            {current && <span>{current.hint}</span>}
           </div>
           {topbar}
         </header>

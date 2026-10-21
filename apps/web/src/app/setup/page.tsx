@@ -1,4 +1,5 @@
-import { Icon } from "@/components/icons";
+import { LogoMark } from "@/components/logo";
+import { BRAND_NAME } from "@/lib/brand";
 import { redirect } from "next/navigation";
 import { isSetupDone } from "@erp/core";
 import { db } from "@/lib/db";

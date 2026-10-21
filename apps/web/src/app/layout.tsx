@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { BRAND_NAME } from "@/lib/brand";
 
 export const metadata: Metadata = {
-  title: { default: "Controle de vendas e estoque", template: "%s · Controle de vendas e estoque" },
+  title: { default: BRAND_NAME, template: `%s · ${BRAND_NAME}` },
   description: "Gestão de vendas, estoque e financeiro com assistente de IA",
 };
 
