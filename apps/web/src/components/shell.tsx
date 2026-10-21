@@ -13,7 +13,7 @@ export function Shell({ navigation, topbar, children }: { navigation: NavGroup[]
   return (
     <div className={`shell${open ? " nav-open" : ""}`}>
       <aside className="sidebar" aria-label="Menu principal" onClick={(e) => e.target === e.currentTarget && setOpen(false)}>
-        <div className="brand">Netz ERP</div>
+        <div className="brand">Controle de vendas e estoque</div>
         {navigation.map((group) => (
           <nav className="nav-group" key={group.label} aria-label={group.label}>
             <div className="nav-group-label">{group.label}</div>

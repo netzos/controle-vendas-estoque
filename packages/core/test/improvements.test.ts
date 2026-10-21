@@ -137,7 +137,7 @@ describe("melhorias", () => {
     assert.equal(moved.module, "inteligencia");
   });
 
-  it("IA do ERP: pedido com partes, sem duplicar título aberto, com limite diário", async () => {
+  it("IA do sistema: pedido com partes, sem duplicar título aberto, com limite diário", async () => {
     const first = await agentCreateImprovement(t.app, sellerActor, {
       title: "Desconto por quantidade",
       kind: "suggestion",
@@ -164,7 +164,7 @@ describe("melhorias", () => {
       proposal: "Permitir busca por telefone.",
     });
     assert.equal(noticed.item.source, "erp_ai");
-    assert.equal(noticed.item.createdByName, "IA do ERP");
+    assert.equal(noticed.item.createdByName, "IA do sistema");
   });
 
   it("pedido criado pelo Claude é visível ao desenvolvedor e não às empresas", async () => {

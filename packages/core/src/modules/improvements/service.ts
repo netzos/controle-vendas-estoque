@@ -5,7 +5,7 @@ import type { Actor } from "../../context.ts";
 import { AppError, forbidden, notFound, parseInput } from "../../errors.ts";
 
 // Melhorias: pedidos de mudança no próprio ERP, cada um com uma conversa entre
-// quem usa o sistema, a IA do ERP e o Claude, que desenvolve. Mesmo fluxo do
+// quem usa o sistema, a IA do sistema e o Claude, que desenvolve. Mesmo fluxo do
 // NetzOS e do IONPA. Só desenvolvedores da plataforma aprovam ou recusam; o
 // Claude analisa e leva adiante o que foi aprovado, mas nunca decide.
 
@@ -27,7 +27,7 @@ export type ImprovementStatus = "new" | "analysis" | "approved" | "building" | "
 export type ImprovementSource = "site" | "telegram" | "erp_ai" | "claude";
 export type AuthorKind = "person" | "erp_ai" | "claude";
 
-export const AI_NAME = "IA do ERP";
+export const AI_NAME = "IA do sistema";
 export const CLAUDE_NAME = "Claude";
 export const AGENT_DAILY_LIMIT = 20;
 const OPEN: ImprovementStatus[] = ["new", "analysis", "approved", "building"];
@@ -268,7 +268,7 @@ export async function decideImprovement(
   });
 }
 
-// Pedido registrado pela IA do ERP (Fase do assistente) ----------------------
+// Pedido registrado pela IA do sistema (Fase do assistente) ----------------------
 
 const agentInput = z.object({
   title,

@@ -6,7 +6,7 @@ A tela **Melhorias** (menu Colaboração) é o quadro onde quem usa o ERP pede m
 
 1. **Pedido.** Pode ser registrado de três formas:
    - no painel, por qualquer pessoa da empresa;
-   - pela IA do ERP (a partir da Fase 8), ao ouvir uma sugestão ou perceber algo que o sistema ainda não faz. A função `agentCreateImprovement` guarda as partes do pedido: a fala original, o problema (o porquê), a proposta reescrita e como saber que ficou pronto. Um pedido aberto com o mesmo título recebe uma mensagem em vez de virar outro pedido, e há limite de 20 por pessoa por dia;
+   - pela IA do sistema (a partir da Fase 8), ao ouvir uma sugestão ou perceber algo que o sistema ainda não faz. A função `agentCreateImprovement` guarda as partes do pedido: a fala original, o problema (o porquê), a proposta reescrita e como saber que ficou pronto. Um pedido aberto com o mesmo título recebe uma mensagem em vez de virar outro pedido, e há limite de 20 por pessoa por dia;
    - pelo Claude.
 2. **Análise.** O Claude confere os pedidos novos. Em cada um, escreve na conversa o que mudaria, como faria, o risco, o esforço e as dúvidas, e move o pedido para **Em análise**.
 3. **Correção e decisão.** Antes da decisão, quem pediu ou o desenvolvedor corrige o pedido (botão **Corrigir pedido**). A correção fica registrada na conversa ("Pedido corrigido: título, proposta."), para o Claude rever a análise. **Só o desenvolvedor aprova ou recusa.**
@@ -20,7 +20,7 @@ A tela **Melhorias** (menu Colaboração) é o quadro onde quem usa o ERP pede m
 
 **Status:** novo, em análise, aprovado, em desenvolvimento, publicado, recusado.
 
-**Origem:** painel, Telegram, percebido pela IA do ERP, sugerido pelo Claude.
+**Origem:** painel, Telegram, percebido pela IA do sistema, sugerido pelo Claude.
 
 **Módulos:** geral, comercial, catálogo, estoque, compras, financeiro, inteligência, assistente IA, automações, administração.
 

@@ -34,7 +34,7 @@ const STATUS_TONE: Record<ImprovementStatus, string> = {
 const SOURCE_LABEL: Record<ImprovementSource, string> = {
   site: "Pelo painel",
   telegram: "Pelo Telegram",
-  erp_ai: "Percebido pela IA do ERP",
+  erp_ai: "Percebido pela IA do sistema",
   claude: "Sugerido pelo Claude",
 };
 const TABS = [
@@ -47,7 +47,7 @@ const moduleLabel = (key: string) => IMPROVEMENT_MODULES.find((m) => m.key === k
 const origin = (i: Improvement) =>
   i.source === "site" || i.source === "telegram" ? `${SOURCE_LABEL[i.source]} · ${i.createdByName}` : SOURCE_LABEL[i.source];
 const authorLabel = (kind: AuthorKind, name: string) =>
-  kind === "claude" ? "Claude · desenvolvimento" : kind === "erp_ai" ? "IA do ERP" : name;
+  kind === "claude" ? "Claude · desenvolvimento" : kind === "erp_ai" ? "IA do sistema" : name;
 
 type Search = { aba?: string; modulo?: string; id?: string; novo?: string; criado?: string };
 
@@ -84,7 +84,7 @@ export default async function ImprovementsPage({ searchParams }: { searchParams:
         <h1>Melhorias</h1>
         <p>
           Pedidos de mudança no sistema e a conversa sobre cada um. Qualquer pessoa da empresa pode pedir. O Claude, que
-          desenvolve o ERP, responde os pedidos novos com uma análise. Só o desenvolvedor aprova ou recusa, e o que for aprovado
+          desenvolve o sistema, responde os pedidos novos com uma análise. Só o desenvolvedor aprova ou recusa, e o que for aprovado
           o Claude desenvolve, publica e registra aqui.
         </p>
       </div>
