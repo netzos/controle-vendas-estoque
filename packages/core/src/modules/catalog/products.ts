@@ -2,6 +2,7 @@ import { z } from "zod";
 import { can } from "../../context.ts";
 import { AppError, forbidden, notFound } from "../../errors.ts";
 import { defineService } from "../../service.ts";
+import { applyMovement } from "../stock/movements.ts";
 import { decimalField, optionalText, statusField, uuidOrNull } from "./fields.ts";
 
 export interface Category {
@@ -35,6 +36,9 @@ export interface Product {
   salePrice: string;
   costPrice: string;
   minStock: string;
+  stockQty: string;
+  /** Falso para serviços e itens sem estoque. */
+  trackStock: boolean;
   status: "active" | "inactive";
   createdAt: Date;
 }
@@ -193,7 +197,7 @@ export const updateUnit = defineService({
 const PRODUCT_COLUMNS = `p.id, p.sku, p.barcode, p.name, p.description, p.category_id AS "categoryId", c.name AS "categoryName",
   p.unit_id AS "unitId", u.code AS "unitCode", p.supplier_id AS "supplierId", s.name AS "supplierName",
   p.sale_price::text AS "salePrice", p.cost_price::text AS "costPrice", p.min_stock::text AS "minStock",
-  p.status, p.created_at AS "createdAt"`;
+  p.stock_qty::text AS "stockQty", p.track_stock AS "trackStock", p.status, p.created_at AS "createdAt"`;
 const PRODUCT_FROM = `controle_vendas_estoque.products p
   JOIN controle_vendas_estoque.units u ON u.id = p.unit_id
   LEFT JOIN controle_vendas_estoque.categories c ON c.id = p.category_id
@@ -219,6 +223,7 @@ const productFields = z.object({
   salePrice: decimalField(2, "Preço de venda"),
   costPrice: decimalField(4, "Custo"),
   minStock: decimalField(3, "Estoque mínimo"),
+  trackStock: z.boolean().default(true),
 });
 
 async function assertProductRefs(tx: import("@erp/db").Tx, input: z.output<typeof productFields>, id?: string) {
@@ -282,7 +287,7 @@ export const createProduct = defineService({
   description: "Cadastra um produto com código, unidade, preço de venda, custo e estoque mínimo",
   permission: "products.manage",
   risk: 2,
-  input: productFields,
+  input: productFields.extend({ initialStock: decimalField(3, "Estoque inicial").default("0") }),
   async handler({ tx, actor, audit, emit }, input) {
     if ((Number(input.salePrice) !== 0 || Number(input.costPrice) !== 0) && !can(actor, "products.update_price")) {
       throw forbidden("Você não tem permissão para definir preço e custo. Cadastre sem preço e peça a quem tem.");
@@ -290,11 +295,15 @@ export const createProduct = defineService({
     await assertProductRefs(tx, input);
     const { rows } = await tx.query<{ id: string }>(
       `INSERT INTO controle_vendas_estoque.products
-         (organization_id, sku, barcode, name, description, category_id, unit_id, supplier_id, sale_price, cost_price, min_stock)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id`,
+         (organization_id, sku, barcode, name, description, category_id, unit_id, supplier_id, sale_price, cost_price, min_stock, track_stock)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id`,
       [actor.organizationId, input.sku, input.barcode ?? null, input.name, input.description ?? null, input.categoryId ?? null,
-        input.unitId, input.supplierId ?? null, input.salePrice, input.costPrice, input.minStock],
+        input.unitId, input.supplierId ?? null, input.salePrice, input.costPrice, input.minStock, input.trackStock],
     );
+    if (input.trackStock && Number(input.initialStock) > 0) {
+      if (!can(actor, "stock.manage")) throw forbidden("Você não tem permissão para lançar estoque. Cadastre sem estoque inicial.");
+      await applyMovement(tx, actor, { productId: rows[0]!.id, kind: "in", quantity: input.initialStock, unitCost: input.costPrice, notes: "Estoque inicial" });
+    }
     const product = (await getProduct(tx, rows[0]!.id))!;
     await audit({ action: "product.create", entityType: "product", entityId: product.id, summary: `Produto ${product.name} (${product.sku}) cadastrado`, after: product });
     await emit("product.created", { productId: product.id }, { type: "product", id: product.id });
@@ -318,13 +327,13 @@ export const updateProduct = defineService({
     await assertProductRefs(tx, input, input.id);
     await tx.query(
       `UPDATE controle_vendas_estoque.products SET sku = $2, barcode = $3, name = $4, description = $5, category_id = $6,
-              unit_id = $7, supplier_id = $8, sale_price = $9, cost_price = $10, min_stock = $11, status = $12
+              unit_id = $7, supplier_id = $8, sale_price = $9, cost_price = $10, min_stock = $11, status = $12, track_stock = $13
         WHERE id = $1`,
       [input.id, input.sku, input.barcode ?? null, input.name, input.description ?? null, input.categoryId ?? null, input.unitId,
-        input.supplierId ?? null, input.salePrice, input.costPrice, input.minStock, input.status],
+        input.supplierId ?? null, input.salePrice, input.costPrice, input.minStock, input.status, input.trackStock],
     );
     const after = (await getProduct(tx, input.id))!;
-    const fields = (["sku", "barcode", "name", "description", "categoryId", "unitId", "supplierId", "salePrice", "costPrice", "minStock", "status"] as const)
+    const fields = (["sku", "barcode", "name", "description", "categoryId", "unitId", "supplierId", "salePrice", "costPrice", "minStock", "trackStock", "status"] as const)
       .filter((f) => current[f] !== after[f]);
     if (fields.length > 0) {
       await audit({ action: "product.update", entityType: "product", entityId: after.id, summary: `Produto ${after.name} (${after.sku}) alterado`, before: current, after });

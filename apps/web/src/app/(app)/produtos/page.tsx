@@ -72,7 +72,7 @@ export default async function ProductsPage({
               <thead>
                 <tr>
                   <th>Produto</th><th>Código</th><th>Categoria</th><th>Unid.</th>
-                  <th className="num">Preço</th><th className="num">Custo</th><th className="num">Margem</th><th className="num">Est. mín.</th><th>Situação</th>
+                  <th className="num">Preço</th><th className="num">Custo</th><th className="num">Margem</th><th className="num">Estoque</th><th>Situação</th>
                 </tr>
               </thead>
               <tbody>
@@ -88,7 +88,13 @@ export default async function ProductsPage({
                       <td className="num">{money(p.salePrice)}</td>
                       <td className="num">{money(p.costPrice)}</td>
                       <td className="num">{margin === null ? "—" : `${quantity(margin.toFixed(1), 1)}%`}</td>
-                      <td className="num">{quantity(p.minStock)}</td>
+                      <td className="num">
+                        {p.trackStock ? (
+                          <span className={Number(p.stockQty) <= 0 ? "qty-out" : Number(p.stockQty) <= Number(p.minStock) ? "warn-text" : ""}>{quantity(p.stockQty)}</span>
+                        ) : (
+                          <span className="muted">—</span>
+                        )}
+                      </td>
                       <td><span className={`tag ${p.status === "active" ? "ok" : "off"}`}>{p.status === "active" ? "Ativo" : "Inativo"}</span></td>
                     </tr>
                   );

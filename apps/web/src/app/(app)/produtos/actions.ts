@@ -15,11 +15,12 @@ function fields(form: FormData) {
     salePrice: str(form, "salePrice"),
     costPrice: str(form, "costPrice"),
     minStock: str(form, "minStock"),
+    trackStock: form.get("trackStock") === "on",
   };
 }
 
 export async function createProductAction(_: FormState, form: FormData): Promise<FormState> {
-  return perform(createProduct, fields(form), { successMessage: "Produto cadastrado.", revalidate: "/produtos" });
+  return perform(createProduct, { ...fields(form), initialStock: str(form, "initialStock") }, { successMessage: "Produto cadastrado.", revalidate: "/produtos" });
 }
 
 export async function updateProductAction(_: FormState, form: FormData): Promise<FormState> {

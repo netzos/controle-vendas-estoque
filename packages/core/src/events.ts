@@ -22,6 +22,9 @@ export interface DomainEvents {
   "unit.updated": { unitId: string; fields: string[] };
   "product.created": { productId: string };
   "product.updated": { productId: string; fields: string[] };
+  "sale.created": { saleId: string; number: number; total: string };
+  "sale.cancelled": { saleId: string; number: number };
+  "stock.moved": { productId: string; kind: string; quantity: string; balance: string };
   "product.price_changed": { productId: string; salePrice: string; costPrice: string; previousSalePrice: string; previousCostPrice: string };
 }
 

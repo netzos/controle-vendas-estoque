@@ -30,6 +30,11 @@ export const PERMISSIONS = [
   { key: "products.view", module: "catalogo", description: "Ver produtos, categorias e unidades", risk: 1 },
   { key: "products.manage", module: "catalogo", description: "Cadastrar e alterar produtos, categorias e unidades", risk: 2 },
   { key: "products.update_price", module: "catalogo", description: "Alterar preço de venda e custo", risk: 3 },
+  { key: "sales.view", module: "comercial", description: "Ver vendas e o painel de vendas", risk: 1 },
+  { key: "sales.create", module: "comercial", description: "Registrar vendas", risk: 3 },
+  { key: "sales.cancel", module: "comercial", description: "Cancelar vendas", risk: 4 },
+  { key: "stock.view", module: "estoque", description: "Ver estoque, movimentações e o painel do estoque", risk: 1 },
+  { key: "stock.manage", module: "estoque", description: "Lançar entradas, saídas e ajustes de estoque", risk: 3 },
 ] as const satisfies readonly PermissionDef[];
 
 export type Permission = (typeof PERMISSIONS)[number]["key"];
@@ -43,6 +48,7 @@ export function isPermission(key: string): key is Permission {
 export const MODULE_LABELS: Record<string, string> = {
   comercial: "Comercial",
   catalogo: "Catálogo",
+  estoque: "Estoque",
   compras: "Compras",
   administracao: "Administração",
 };
@@ -61,8 +67,8 @@ const VIEW_ONLY = PERMISSIONS.filter((p) => p.risk === 1).map((p) => p.key);
 export const SYSTEM_ROLES: readonly SystemRole[] = [
   { key: "owner", name: "Proprietário", description: "Acesso total à empresa", permissions: "all" },
   { key: "admin", name: "Administrador", description: "Administra a empresa, usuários e configurações", permissions: "all" },
-  { key: "sales", name: "Vendedor", description: "Opera vendas e clientes", permissions: ["organization.view", "branches.view", "customers.view", "customers.manage", "products.view"] },
-  { key: "finance", name: "Financeiro", description: "Opera contas a pagar e a receber", permissions: ["organization.view", "branches.view", "customers.view", "suppliers.view", "products.view"] },
-  { key: "stock", name: "Estoquista", description: "Opera estoque e recebimentos", permissions: ["organization.view", "branches.view", "suppliers.view", "suppliers.manage", "products.view", "products.manage"] },
+  { key: "sales", name: "Vendedor", description: "Opera vendas e clientes", permissions: ["organization.view", "branches.view", "customers.view", "customers.manage", "products.view", "sales.view", "sales.create", "stock.view"] },
+  { key: "finance", name: "Financeiro", description: "Opera contas a pagar e a receber", permissions: ["organization.view", "branches.view", "customers.view", "suppliers.view", "products.view", "sales.view", "stock.view"] },
+  { key: "stock", name: "Estoquista", description: "Opera estoque e recebimentos", permissions: ["organization.view", "branches.view", "suppliers.view", "suppliers.manage", "products.view", "products.manage", "stock.view", "stock.manage"] },
   { key: "viewer", name: "Consulta", description: "Apenas consulta", permissions: VIEW_ONLY },
 ];

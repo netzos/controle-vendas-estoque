@@ -27,7 +27,7 @@ export const NAVIGATION: NavGroup[] = [
   {
     label: "Visão geral",
     short: "Início",
-    hint: "Resumo da empresa e atalhos",
+    hint: "Como estão as vendas",
     icon: "home",
     items: [
       { label: "Início", href: "/", phase: 1 },
@@ -40,7 +40,7 @@ export const NAVIGATION: NavGroup[] = [
     hint: "Clientes, vendas e orçamentos",
     icon: "cart",
     items: [
-      { label: "Vendas", href: "/vendas", phase: 3 },
+      { label: "Vendas", href: "/vendas", permission: "sales.view", phase: 2 },
       { label: "Orçamentos", href: "/orcamentos", phase: 3 },
       { label: "Clientes", href: "/clientes", permission: "customers.view", phase: 2 },
       { label: "Vendedores", href: "/vendedores", phase: 3 },
@@ -64,11 +64,11 @@ export const NAVIGATION: NavGroup[] = [
   {
     label: "Estoque",
     short: "Estoque",
-    hint: "Saldos e movimentações",
+    hint: "Saldo, giro e cobertura de cada produto",
     icon: "box",
     items: [
-      { label: "Saldos", href: "/estoque/saldos", phase: 4 },
-      { label: "Movimentações", href: "/estoque/movimentacoes", phase: 4 },
+      { label: "Painel do estoque", href: "/estoque", permission: "stock.view", phase: 2 },
+      { label: "Movimentações", href: "/estoque/movimentacoes", permission: "stock.view", phase: 2 },
       { label: "Depósitos", href: "/estoque/depositos", phase: 4 },
       { label: "Inventários", href: "/estoque/inventarios", phase: 4 },
       { label: "Transferências", href: "/estoque/transferencias", phase: 4 },

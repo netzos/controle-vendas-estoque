@@ -56,6 +56,11 @@ export function ProductForm({ product, options }: { product?: Product; options: 
         <Field label="Estoque mínimo" name="minStock" state={state} hint="Abaixo disso o sistema vai avisar">
           <input id="minStock" name="minStock" defaultValue={decimalInput(product?.minStock, 0)} inputMode="decimal" placeholder="0" />
         </Field>
+        {!product && (
+          <Field label="Estoque inicial" name="initialStock" state={state} hint="Quanto você tem hoje. Pode deixar vazio.">
+            <input id="initialStock" name="initialStock" inputMode="decimal" placeholder="0" />
+          </Field>
+        )}
         {product && (
           <Field label="Situação" name="status" state={state}>
             <select id="status" name="status" defaultValue={product.status}>
@@ -65,6 +70,10 @@ export function ProductForm({ product, options }: { product?: Product; options: 
           </Field>
         )}
       </div>
+      <label className="check">
+        <input type="checkbox" name="trackStock" defaultChecked={product?.trackStock ?? true} />
+        Controlar estoque deste item (desmarque para serviços, taxas e itens feitos na hora)
+      </label>
       <Field label="Descrição" name="description" state={state}>
         <textarea id="description" name="description" defaultValue={product?.description ?? ""} maxLength={2000} rows={2} />
       </Field>
