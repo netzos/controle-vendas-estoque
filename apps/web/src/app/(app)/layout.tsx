@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { can, listUserOrganizations } from "@erp/core";
 import { db } from "@/lib/db";
 import { currentActor } from "@/lib/auth";
@@ -21,17 +20,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   return (
     <Shell
       navigation={navigation}
-      topbar={
-        <>
-          <OrganizationSwitcher organizations={organizations} activeId={actor.organizationId} action={switchOrganizationAction} />
-          <div className="topbar-right">
-            <Link href="/conta/senha" className="muted">{actor.userName}</Link>
-            <form action={logoutAction}>
-              <button type="submit" className="secondary">Sair</button>
-            </form>
-          </div>
-        </>
-      }
+      user={{ name: actor.userName }}
+      logout={logoutAction}
+      topbar={<OrganizationSwitcher organizations={organizations} activeId={actor.organizationId} action={switchOrganizationAction} />}
     >
       {children}
     </Shell>

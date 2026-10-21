@@ -1,3 +1,4 @@
+import { Icon } from "@/components/icons";
 import { redirect } from "next/navigation";
 import { isSetupDone } from "@erp/core";
 import { db } from "@/lib/db";

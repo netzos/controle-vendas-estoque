@@ -9,8 +9,15 @@ export interface NavItem {
   phase: number;
 }
 
+export type NavIcon = "home" | "cart" | "tag" | "box" | "truck" | "wallet" | "chart" | "bot" | "zap" | "bulb" | "sliders";
+
 export interface NavGroup {
   label: string;
+  /** Nome curto no menu lateral. */
+  short: string;
+  /** Frase do topo da página, como no layout de referência. */
+  hint: string;
+  icon: NavIcon;
   items: NavItem[];
 }
 
@@ -19,6 +26,9 @@ export const CURRENT_PHASE = 2;
 export const NAVIGATION: NavGroup[] = [
   {
     label: "Visão geral",
+    short: "Início",
+    hint: "Resumo da empresa e atalhos",
+    icon: "home",
     items: [
       { label: "Início", href: "/", phase: 1 },
       { label: "Central de alertas", href: "/alertas", phase: 6 },
@@ -26,6 +36,9 @@ export const NAVIGATION: NavGroup[] = [
   },
   {
     label: "Comercial",
+    short: "Vendas",
+    hint: "Clientes, vendas e orçamentos",
+    icon: "cart",
     items: [
       { label: "Vendas", href: "/vendas", phase: 3 },
       { label: "Orçamentos", href: "/orcamentos", phase: 3 },
@@ -36,6 +49,9 @@ export const NAVIGATION: NavGroup[] = [
   },
   {
     label: "Catálogo",
+    short: "Catálogo",
+    hint: "Produtos, categorias e unidades que você vende",
+    icon: "tag",
     items: [
       { label: "Produtos", href: "/produtos", permission: "products.view", phase: 2 },
       { label: "Categorias", href: "/categorias", permission: "products.view", phase: 2 },
@@ -47,6 +63,9 @@ export const NAVIGATION: NavGroup[] = [
   },
   {
     label: "Estoque",
+    short: "Estoque",
+    hint: "Saldos e movimentações",
+    icon: "box",
     items: [
       { label: "Saldos", href: "/estoque/saldos", phase: 4 },
       { label: "Movimentações", href: "/estoque/movimentacoes", phase: 4 },
@@ -59,6 +78,9 @@ export const NAVIGATION: NavGroup[] = [
   },
   {
     label: "Compras",
+    short: "Compras",
+    hint: "Fornecedores e pedidos de compra",
+    icon: "truck",
     items: [
       { label: "Fornecedores", href: "/fornecedores", permission: "suppliers.view", phase: 2 },
       { label: "Pedidos de compra", href: "/compras/pedidos", phase: 4 },
@@ -68,6 +90,9 @@ export const NAVIGATION: NavGroup[] = [
   },
   {
     label: "Financeiro",
+    short: "Financeiro",
+    hint: "Contas a pagar e a receber",
+    icon: "wallet",
     items: [
       { label: "Contas a receber", href: "/financeiro/receber", phase: 5 },
       { label: "Contas a pagar", href: "/financeiro/pagar", phase: 5 },
@@ -77,6 +102,9 @@ export const NAVIGATION: NavGroup[] = [
   },
   {
     label: "Inteligência",
+    short: "Relatórios",
+    hint: "Números do negócio",
+    icon: "chart",
     items: [
       { label: "Dashboard comercial", href: "/inteligencia", phase: 7 },
       { label: "Relatórios", href: "/relatorios", phase: 7 },
@@ -84,6 +112,9 @@ export const NAVIGATION: NavGroup[] = [
   },
   {
     label: "Assistente IA",
+    short: "Assistente",
+    hint: "Assistente de IA no Telegram",
+    icon: "bot",
     items: [
       { label: "Integração Telegram", href: "/assistente/telegram", phase: 8 },
       { label: "Operações", href: "/assistente/operacoes", phase: 8 },
@@ -92,6 +123,9 @@ export const NAVIGATION: NavGroup[] = [
   },
   {
     label: "Automações",
+    short: "Automações",
+    hint: "Regras automáticas",
+    icon: "zap",
     items: [
       { label: "Regras", href: "/automacoes", phase: 6 },
       { label: "Relatórios programados", href: "/automacoes/relatorios", phase: 6 },
@@ -100,10 +134,16 @@ export const NAVIGATION: NavGroup[] = [
   },
   {
     label: "Colaboração",
+    short: "Melhorias",
+    hint: "Peça mudanças no sistema; o desenvolvedor aprova",
+    icon: "bulb",
     items: [{ label: "Melhorias", href: "/melhorias", phase: 1 }],
   },
   {
     label: "Administração",
+    short: "Ajustes",
+    hint: "Empresa, usuários e permissões",
+    icon: "sliders",
     items: [
       { label: "Empresa", href: "/administracao/empresa", permission: "organization.view", phase: 1 },
       { label: "Filiais", href: "/administracao/filiais", permission: "branches.view", phase: 1 },
