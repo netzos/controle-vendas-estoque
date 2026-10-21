@@ -19,25 +19,6 @@
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0f1115;
-    --surface: #171a20;
-    --surface-2: #1e222a;
-    --border: #2a2f39;
-    --text: #e7e9ee;
-    --muted: #a3aab6;
-    --faint: #6b7280;
-    --accent: #4c8dff;
-    --accent-soft: #1a2740;
-    --danger: #ff6b63;
-    --danger-soft: #3a1c1b;
-    --success: #4ccb7f;
-    --success-soft: #16301f;
-    color-scheme: dark;
-  }
-}
-
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
 body { background: var(--bg); color: var(--text); font-size: 14px; line-height: 1.5; }
