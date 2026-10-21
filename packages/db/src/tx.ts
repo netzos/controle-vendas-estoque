@@ -6,6 +6,8 @@ export type Tx = pg.PoolClient;
 export interface TenantContext {
   organizationId: string | null;
   userId: string | null;
+  // Ator de plataforma (ex.: "claude"), para operações fora de uma empresa.
+  platformActor?: string | null;
 }
 
 const RETRYABLE = new Set(["40001", "40P01"]); // serialização e deadlock
@@ -40,7 +42,8 @@ export async function withTenant<T>(db: Db, ctx: TenantContext, fn: (tx: Tx) => 
 
 export async function setTenant(tx: Tx, ctx: TenantContext): Promise<void> {
   await tx.query(
-    "SELECT set_config('app.organization_id', $1, true), set_config('app.user_id', $2, true)",
-    [ctx.organizationId ?? "", ctx.userId ?? ""],
+    `SELECT set_config('app.organization_id', $1, true), set_config('app.user_id', $2, true),
+            set_config('app.platform_actor', $3, true)`,
+    [ctx.organizationId ?? "", ctx.userId ?? "", ctx.platformActor ?? ""],
   );
 }

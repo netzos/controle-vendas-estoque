@@ -23,7 +23,7 @@ export default async function UsersPage() {
     <>
       <div className="page-header">
         <h1>Usuários</h1>
-        <p>Quem acessa esta empresa pelo painel e, a partir da Fase 4, pelo Telegram.</p>
+        <p>Quem acessa esta empresa pelo painel e, a partir da Fase 8, pelo Telegram.</p>
       </div>
       {members.map((m) => {
         const summary = (

@@ -15,3 +15,4 @@ export * from "./modules/access/members.ts";
 export * from "./modules/access/roles.ts";
 export * from "./modules/settings/service.ts";
 export * from "./modules/audit/service.ts";
+export * from "./modules/improvements/service.ts";

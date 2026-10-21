@@ -39,7 +39,7 @@ netz-erp/
   docs/                   arquitetura, fases, pendências
 ```
 
-Os módulos de negócio vivem em `packages/core/src/modules/<módulo>`. A partir da Fase 4 entram `packages/channels` (adaptadores Telegram/WhatsApp) e `packages/ai` (orquestrador e registro de ferramentas).
+Os módulos de negócio vivem em `packages/core/src/modules/<módulo>`. A partir da Fase 8 entram `packages/channels` (adaptadores Telegram/WhatsApp) e `packages/ai` (orquestrador e registro de ferramentas).
 
 ## 4. Princípio central: um serviço, vários canais
 
@@ -103,7 +103,7 @@ O painel chama o serviço por Server Action, o Telegram chama pela ferramenta da
 
 **Entrega.** `notifications` (o que deve ser comunicado) e `notification_deliveries` (cada tentativa por canal). O envio ao Telegram é um job com chave de idempotência; respeita limite de taxa por chat, faz retentativas em erros temporários (429, 5xx, rede) e só marca `delivered` com a resposta de sucesso da API. Nada é declarado enviado sem confirmação (seção 28).
 
-## 9. Telegram e IA (Fases 4 e 9)
+## 9. Telegram e IA (Fases 8 e 9)
 
 Fluxo: Telegram → webhook (valida `X-Telegram-Bot-Api-Secret-Token`) → grava `telegram_updates` com `update_id` único → responde 200 imediatamente → job `telegram.process_update` → adaptador converte em `IncomingMessage` → orquestrador → ferramentas → serviços → resposta enviada pelo serviço de entrega.
 
@@ -140,16 +140,19 @@ type ToolResult<O> =
 | 1 | `0001_foundation` | papéis do banco, organizações, filiais, usuários, sessões, papéis, permissões, vínculos, configurações, auditoria, idempotência, outbox, jobs agendados, RLS |
 | 2 | `0002_catalog` | clientes, fornecedores, categorias, marcas, unidades, produtos, variações, serviços, tabelas de preço, definições e valores de campos personalizados |
 | 3 | `0003_sales` | orçamentos, vendas, itens com custo histórico, descontos, cancelamentos, devoluções, numeração por organização |
-| 4 | `0004_telegram_ai` | conexões e updates do Telegram, conversas, mensagens, estados, pedidos de operação, execuções de ferramentas, preferências |
-| 5 | `0005_inventory_purchasing` | depósitos, saldos, movimentações, lotes e validades, inventários, transferências, pedidos de compra, recebimentos |
-| 6 | `0006_finance` | contas a receber e a pagar, baixas parciais, despesas, formas de pagamento, fluxo de caixa |
-| 7 | `0007_automation` | regras, execuções, estados de alerta, notificações, entregas, preferências, relatórios programados |
-| 8 | `0008_analytics` | views e índices para dashboards, curva ABC, RFM |
+| 1 | `0002_improvements` | quadro Melhorias: pedidos, conversa, desenvolvedores da plataforma |
+| 4 | `00xx_inventory_purchasing` | depósitos, saldos, movimentações, lotes e validades, inventários, transferências, pedidos de compra, recebimentos |
+| 5 | `00xx_finance` | contas a receber e a pagar, baixas parciais, despesas, formas de pagamento, fluxo de caixa |
+| 6 | `00xx_automation` | regras, execuções, estados de alerta, notificações, entregas, preferências, relatórios programados |
+| 7 | `00xx_analytics` | views e índices para dashboards, curva ABC, RFM |
+| 8 | `00xx_telegram_ai` | conexões e updates do Telegram, conversas, mensagens, estados, pedidos de operação, execuções de ferramentas, preferências |
+
+Os números das migrations seguem a ordem em que forem criadas; a tabela acima mostra a fase de cada uma.
 
 A seção 22 foi refinada assim: `scheduled_jobs` é a fila genérica de todo o sistema (não só de automações), e `outbox_events` foi acrescentada para eventos transacionais.
 
 ## 11. Decisões em aberto
 
 - Parte 1 da especificação (seções 1 a 8) ainda não foi recebida. Regras de cadastro, vendas e estoque dela podem ajustar as migrations das Fases 2 a 6.
-- Hospedagem: o worker precisa de processo permanente (servidor com Docker Compose, Railway, Fly etc.). O painel pode ficar na Vercel ou no mesmo servidor.
-- Provedor do modelo de IA na Fase 4.
+- O worker precisa de processo permanente (servidor com Docker Compose, Railway, Fly etc.) a partir da Fase 6.
+- Provedor do modelo de IA na Fase 8.

@@ -20,8 +20,22 @@ async function main() {
       for (const m of await migrationStatus(db, MIGRATIONS_DIR)) {
         console.log(`${m.appliedAt ? "aplicada " : "pendente "} ${m.name}${m.appliedAt ? `  ${m.appliedAt.toISOString()}` : ""}`);
       }
+    } else if (command === "developer") {
+      // Desenvolvedores da plataforma: os únicos que aprovam pedidos em Melhorias.
+      const [action, email] = process.argv.slice(3);
+      const user = await db.query<{ id: string }>("SELECT id FROM erp.users WHERE email = lower($1)", [email ?? ""]);
+      if (!user.rows[0]) throw new Error(`Usuário não encontrado: ${email}`);
+      if (action === "add") {
+        await db.query("INSERT INTO erp.platform_developers (user_id) VALUES ($1) ON CONFLICT DO NOTHING", [user.rows[0].id]);
+        console.log(`${email} agora é desenvolvedor da plataforma`);
+      } else if (action === "remove") {
+        await db.query("DELETE FROM erp.platform_developers WHERE user_id = $1", [user.rows[0].id]);
+        console.log(`${email} deixou de ser desenvolvedor da plataforma`);
+      } else {
+        throw new Error("Use: developer add|remove <email>");
+      }
     } else {
-      console.error(`Comando desconhecido: ${command}. Use migrate ou status.`);
+      console.error(`Comando desconhecido: ${command}. Use migrate, status ou developer.`);
       process.exitCode = 1;
     }
   } finally {

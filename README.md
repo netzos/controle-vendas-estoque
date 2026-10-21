@@ -4,6 +4,7 @@ ERP multiempresa de vendas, estoque e financeiro, operado pelo painel web e por 
 
 - Arquitetura e decisões: [docs/ARQUITETURA.md](docs/ARQUITETURA.md)
 - Fases, estado atual e pendências: [docs/FASES.md](docs/FASES.md)
+- Quadro de Melhorias (pedidos, análise do Claude, aprovação do desenvolvedor): [docs/MELHORIAS.md](docs/MELHORIAS.md)
 
 ## Estrutura
 
