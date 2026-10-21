@@ -1,0 +1,20 @@
+{
+  "name": "netz-erp",
+  "private": true,
+  "packageManager": "pnpm@10.18.0",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "db:migrate": "tsx packages/core/src/cli.ts migrate",
+    "db:status": "tsx packages/core/src/cli.ts status",
+    "dev:web": "pnpm --filter @erp/web dev",
+    "dev:worker": "pnpm --filter @erp/worker dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r --workspace-concurrency=1 test"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0"
+  }
+}
