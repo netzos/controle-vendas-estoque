@@ -24,7 +24,7 @@ export interface TestDb {
 
 export async function setupTestDb(): Promise<TestDb> {
   const owner = createPool(OWNER_URL, 4);
-  await owner.query("DROP SCHEMA IF EXISTS erp CASCADE; DROP TABLE IF EXISTS public.schema_migrations;");
+  await owner.query("DROP SCHEMA IF EXISTS erp CASCADE; DROP TABLE IF EXISTS public.erp_schema_migrations;");
   await migrate(owner, MIGRATIONS);
   await syncPermissionCatalog(owner);
   const app = createPool(APP_URL, 8);
