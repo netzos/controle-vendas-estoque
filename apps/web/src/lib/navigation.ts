@@ -1,8 +1,7 @@
 import type { Permission } from "@erp/core";
 
-// Estrutura de telas da seção 25. Itens de fases futuras aparecem
-// desabilitados, com a fase em que serão entregues; não há tela vazia
-// fingindo funcionalidade.
+// Estrutura de telas da seção 25. Itens de fases futuras ficam fora do menu
+// até serem entregues; não há tela vazia fingindo funcionalidade.
 export interface NavItem {
   label: string;
   href: string;
@@ -15,7 +14,7 @@ export interface NavGroup {
   items: NavItem[];
 }
 
-export const CURRENT_PHASE = 1;
+export const CURRENT_PHASE = 2;
 
 export const NAVIGATION: NavGroup[] = [
   {
@@ -30,20 +29,20 @@ export const NAVIGATION: NavGroup[] = [
     items: [
       { label: "Vendas", href: "/vendas", phase: 3 },
       { label: "Orçamentos", href: "/orcamentos", phase: 3 },
-      { label: "Clientes", href: "/clientes", phase: 2 },
+      { label: "Clientes", href: "/clientes", permission: "customers.view", phase: 2 },
       { label: "Vendedores", href: "/vendedores", phase: 3 },
-      { label: "Serviços", href: "/servicos", phase: 2 },
+      { label: "Serviços", href: "/servicos", phase: 3 },
     ],
   },
   {
     label: "Catálogo",
     items: [
-      { label: "Produtos", href: "/produtos", phase: 2 },
-      { label: "Categorias", href: "/categorias", phase: 2 },
-      { label: "Marcas", href: "/marcas", phase: 2 },
-      { label: "Unidades de medida", href: "/unidades", phase: 2 },
-      { label: "Tabelas de preços", href: "/tabelas-de-precos", phase: 2 },
-      { label: "Campos personalizados", href: "/campos-personalizados", phase: 2 },
+      { label: "Produtos", href: "/produtos", permission: "products.view", phase: 2 },
+      { label: "Categorias", href: "/categorias", permission: "products.view", phase: 2 },
+      { label: "Marcas", href: "/marcas", phase: 3 },
+      { label: "Unidades de medida", href: "/unidades", permission: "products.view", phase: 2 },
+      { label: "Tabelas de preços", href: "/tabelas-de-precos", phase: 3 },
+      { label: "Campos personalizados", href: "/campos-personalizados", phase: 3 },
     ],
   },
   {
@@ -61,7 +60,7 @@ export const NAVIGATION: NavGroup[] = [
   {
     label: "Compras",
     items: [
-      { label: "Fornecedores", href: "/fornecedores", phase: 2 },
+      { label: "Fornecedores", href: "/fornecedores", permission: "suppliers.view", phase: 2 },
       { label: "Pedidos de compra", href: "/compras/pedidos", phase: 4 },
       { label: "Recebimentos", href: "/compras/recebimentos", phase: 4 },
       { label: "Sugestões de compra", href: "/compras/sugestoes", phase: 4 },

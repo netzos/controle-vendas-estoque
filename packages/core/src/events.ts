@@ -12,6 +12,17 @@ export interface DomainEvents {
   "role.updated": { roleId: string; fields: string[] };
   "role.deleted": { roleId: string; key: string };
   "settings.updated": { key: string };
+  "customer.created": { customerId: string };
+  "customer.updated": { customerId: string; fields: string[] };
+  "supplier.created": { supplierId: string };
+  "supplier.updated": { supplierId: string; fields: string[] };
+  "category.created": { categoryId: string };
+  "category.updated": { categoryId: string; fields: string[] };
+  "unit.created": { unitId: string };
+  "unit.updated": { unitId: string; fields: string[] };
+  "product.created": { productId: string };
+  "product.updated": { productId: string; fields: string[] };
+  "product.price_changed": { productId: string; salePrice: string; costPrice: string; previousSalePrice: string; previousCostPrice: string };
 }
 
 export type EventType = keyof DomainEvents;

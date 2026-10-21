@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { CURRENT_PHASE, type NavGroup } from "@/lib/navigation";
+import type { NavGroup } from "@/lib/navigation";
 
 export function Shell({ navigation, topbar, children }: { navigation: NavGroup[]; topbar: React.ReactNode; children: React.ReactNode }) {
   const pathname = usePathname();
@@ -17,22 +17,15 @@ export function Shell({ navigation, topbar, children }: { navigation: NavGroup[]
         {navigation.map((group) => (
           <nav className="nav-group" key={group.label} aria-label={group.label}>
             <div className="nav-group-label">{group.label}</div>
-            {group.items.map((item) =>
-              item.phase > CURRENT_PHASE ? (
-                <span key={item.href} className="nav-item disabled" title={`Disponível na fase ${item.phase}`}>
-                  {item.label}
-                  <span className="phase-badge">Fase {item.phase}</span>
-                </span>
-              ) : (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={`nav-item${(item.href === "/" ? pathname === "/" : pathname.startsWith(item.href)) ? " active" : ""}`}
-                >
-                  {item.label}
-                </Link>
-              ),
-            )}
+            {group.items.map((item) => (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={`nav-item${(item.href === "/" ? pathname === "/" : pathname.startsWith(item.href)) ? " active" : ""}`}
+              >
+                {item.label}
+              </Link>
+            ))}
           </nav>
         ))}
       </aside>

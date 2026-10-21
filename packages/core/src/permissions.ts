@@ -23,6 +23,13 @@ export const PERMISSIONS = [
   { key: "settings.view", module: "administracao", description: "Ver configurações gerais", risk: 1 },
   { key: "settings.update", module: "administracao", description: "Alterar configurações gerais", risk: 3 },
   { key: "audit.view", module: "administracao", description: "Consultar a auditoria", risk: 1 },
+  { key: "customers.view", module: "comercial", description: "Ver clientes", risk: 1 },
+  { key: "customers.manage", module: "comercial", description: "Cadastrar e alterar clientes", risk: 2 },
+  { key: "suppliers.view", module: "compras", description: "Ver fornecedores", risk: 1 },
+  { key: "suppliers.manage", module: "compras", description: "Cadastrar e alterar fornecedores", risk: 2 },
+  { key: "products.view", module: "catalogo", description: "Ver produtos, categorias e unidades", risk: 1 },
+  { key: "products.manage", module: "catalogo", description: "Cadastrar e alterar produtos, categorias e unidades", risk: 2 },
+  { key: "products.update_price", module: "catalogo", description: "Alterar preço de venda e custo", risk: 3 },
 ] as const satisfies readonly PermissionDef[];
 
 export type Permission = (typeof PERMISSIONS)[number]["key"];
@@ -34,6 +41,9 @@ export function isPermission(key: string): key is Permission {
 }
 
 export const MODULE_LABELS: Record<string, string> = {
+  comercial: "Comercial",
+  catalogo: "Catálogo",
+  compras: "Compras",
   administracao: "Administração",
 };
 
@@ -51,8 +61,8 @@ const VIEW_ONLY = PERMISSIONS.filter((p) => p.risk === 1).map((p) => p.key);
 export const SYSTEM_ROLES: readonly SystemRole[] = [
   { key: "owner", name: "Proprietário", description: "Acesso total à empresa", permissions: "all" },
   { key: "admin", name: "Administrador", description: "Administra a empresa, usuários e configurações", permissions: "all" },
-  { key: "sales", name: "Vendedor", description: "Opera vendas e clientes", permissions: ["organization.view", "branches.view"] },
-  { key: "finance", name: "Financeiro", description: "Opera contas a pagar e a receber", permissions: ["organization.view", "branches.view"] },
-  { key: "stock", name: "Estoquista", description: "Opera estoque e recebimentos", permissions: ["organization.view", "branches.view"] },
+  { key: "sales", name: "Vendedor", description: "Opera vendas e clientes", permissions: ["organization.view", "branches.view", "customers.view", "customers.manage", "products.view"] },
+  { key: "finance", name: "Financeiro", description: "Opera contas a pagar e a receber", permissions: ["organization.view", "branches.view", "customers.view", "suppliers.view", "products.view"] },
+  { key: "stock", name: "Estoquista", description: "Opera estoque e recebimentos", permissions: ["organization.view", "branches.view", "suppliers.view", "suppliers.manage", "products.view", "products.manage"] },
   { key: "viewer", name: "Consulta", description: "Apenas consulta", permissions: VIEW_ONLY },
 ];
