@@ -79,3 +79,33 @@ export const decimalField = (scale: number, label: string) =>
 export const statusField = z.enum(["active", "inactive"]).default("active");
 
 export const uuidOrNull = z.preprocess(emptyToNull, z.string().uuid().nullable().optional());
+
+// WhatsApp guardado só com dígitos e com o código do país, pronto para wa.me.
+// "(91) 98888-7777" vira "5591988887777".
+export const whatsappField = z.preprocess(
+  emptyToNull,
+  z
+    .string()
+    .transform((v) => {
+      const d = v.replace(/\D/g, "");
+      return d.length === 10 || d.length === 11 ? `55${d}` : d;
+    })
+    .refine((d) => /^[0-9]{12,13}$/.test(d), "WhatsApp inválido. Use DDD e número, por exemplo (91) 98888-7777.")
+    .nullable()
+    .optional(),
+);
+
+export const zipField = z.preprocess(
+  emptyToNull,
+  z
+    .string()
+    .transform((v) => v.replace(/\D/g, ""))
+    .refine((d) => d.length === 8, "CEP deve ter 8 números.")
+    .nullable()
+    .optional(),
+);
+
+export const daysField = z.preprocess(
+  (v) => (typeof v === "string" ? (v.trim() === "" ? null : Number(v.trim())) : v),
+  z.number({ error: "Informe o prazo em dias." }).int("Use dias inteiros.").min(0).max(365, "Prazo máximo de 365 dias.").nullable().optional(),
+);

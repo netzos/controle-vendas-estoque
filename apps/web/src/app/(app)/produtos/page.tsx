@@ -1,9 +1,10 @@
 import Link from "next/link";
-import { can, listCategories, listProducts, listSuppliers, listUnits } from "@erp/core";
+import { can, listCategories, listProducts, listSupplierProducts, listSuppliers, listUnits } from "@erp/core";
 import { requirePermission } from "@/lib/auth";
 import { query } from "@/lib/actions";
 import { money, quantity } from "@/lib/format";
 import { ProductForm, type ProductFormOptions } from "./product-form";
+import { SupplierPrices } from "../fornecedores/supplier-prices";
 
 export const metadata = { title: "Produtos" };
 
@@ -23,12 +24,14 @@ export default async function ProductsPage({
   const shown = includeInactive ? products : products.filter((p) => p.status === "active");
   const selected = params.id ? products.find((p) => p.id === params.id) : undefined;
 
+  const seesSuppliers = can(actor, "suppliers.view");
+  const [suppliers, supplierPrices] = await Promise.all([
+    seesSuppliers && (params.novo === "1" || selected) ? query(listSuppliers, { limit: 500 }) : Promise.resolve([]),
+    seesSuppliers && selected ? query(listSupplierProducts, { productId: selected.id }) : Promise.resolve([]),
+  ]);
   let options: ProductFormOptions | null = null;
   if (canManage && (params.novo === "1" || selected)) {
-    const [units, suppliers] = await Promise.all([
-      query(listUnits, {}),
-      can(actor, "suppliers.view") ? query(listSuppliers, { limit: 500 }) : Promise.resolve([]),
-    ]);
+    const units = await query(listUnits, {});
     options = { categories, units, suppliers, canEditPrice: can(actor, "products.update_price") };
   }
 
@@ -49,6 +52,18 @@ export default async function ProductsPage({
         <section className="card">
           <h2>{selected.name}</h2>
           <ProductForm key={selected.id} product={selected} options={options} />
+        </section>
+      )}
+      {selected && seesSuppliers && (
+        <section className="card">
+          <SupplierPrices
+            key={selected.id}
+            side="product"
+            ownerId={selected.id}
+            rows={supplierPrices}
+            options={suppliers.filter((s) => s.status === "active").map((s) => ({ id: s.id, name: s.name }))}
+            canManage={can(actor, "suppliers.manage")}
+          />
         </section>
       )}
 

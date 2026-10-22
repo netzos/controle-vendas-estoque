@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { can } from "../../context.ts";
 import { AppError, notFound } from "../../errors.ts";
 import { defineService } from "../../service.ts";
 import { decimalField, optionalText, uuidOrNull } from "../catalog/fields.ts";
@@ -92,6 +93,10 @@ export const createSale = defineService({
       if (!p) throw new AppError("invalid_input", "Produto não encontrado.");
       if (p.status !== "active") throw new AppError("invalid_input", `${p.name} está inativo.`);
       if (Number(item.quantity) <= 0) throw new AppError("invalid_input", `Quantidade de ${p.name} deve ser maior que zero.`);
+      // Preço diferente do cadastro só com a permissão que o dono concede.
+      if (item.unitPrice !== undefined && Number(item.unitPrice) !== Number(p.price) && !can(actor, "sales.change_price")) {
+        throw new AppError("forbidden", `Você não tem permissão para mudar o preço de ${p.name}.`);
+      }
       return { ...item, product: p, unitPrice: item.unitPrice ?? p.price };
     });
 

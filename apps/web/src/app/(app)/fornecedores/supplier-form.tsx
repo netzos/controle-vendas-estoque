@@ -3,7 +3,7 @@
 import { useActionState } from "react";
 import type { Supplier } from "@erp/core";
 import { Field, FormMessage, SubmitButton } from "@/components/form";
-import { documentLabel } from "@/lib/format";
+import { documentLabel, whatsappLabel, zipLabel } from "@/lib/format";
 import { createSupplierAction, updateSupplierAction } from "./actions";
 
 export function SupplierForm({ supplier }: { supplier?: Supplier }) {
@@ -25,11 +25,35 @@ export function SupplierForm({ supplier }: { supplier?: Supplier }) {
         <Field label="Contato" name="contactName" state={state}>
           <input id="contactName" name="contactName" defaultValue={supplier?.contactName ?? ""} maxLength={120} />
         </Field>
-        <Field label="Telefone / WhatsApp" name="phone" state={state}>
+        <Field label="WhatsApp" name="whatsapp" state={state} hint="Para pedir mercadoria direto pela conversa.">
+          <input id="whatsapp" name="whatsapp" defaultValue={whatsappLabel(supplier?.whatsapp ?? null)} inputMode="tel" maxLength={20} placeholder="(91) 98888-7777" />
+        </Field>
+        <Field label="Telefone" name="phone" state={state}>
           <input id="phone" name="phone" defaultValue={supplier?.phone ?? ""} inputMode="tel" maxLength={30} />
         </Field>
         <Field label="E-mail" name="email" state={state}>
           <input id="email" name="email" type="email" defaultValue={supplier?.email ?? ""} maxLength={160} />
+        </Field>
+        <Field label="Prazo de entrega (dias)" name="leadTimeDays" state={state} hint="Prazo padrão. Cada produto pode ter o seu.">
+          <input id="leadTimeDays" name="leadTimeDays" defaultValue={supplier?.leadTimeDays ?? ""} inputMode="numeric" maxLength={3} />
+        </Field>
+      </div>
+      <h3 className="form-section">Endereço</h3>
+      <div className="grid-3">
+        <Field label="CEP" name="zipCode" state={state}>
+          <input id="zipCode" name="zipCode" defaultValue={zipLabel(supplier?.zipCode ?? null)} inputMode="numeric" maxLength={9} />
+        </Field>
+        <Field label="Rua" name="street" state={state}>
+          <input id="street" name="street" defaultValue={supplier?.street ?? ""} maxLength={160} />
+        </Field>
+        <Field label="Número" name="streetNumber" state={state}>
+          <input id="streetNumber" name="streetNumber" defaultValue={supplier?.streetNumber ?? ""} maxLength={20} />
+        </Field>
+        <Field label="Complemento" name="complement" state={state}>
+          <input id="complement" name="complement" defaultValue={supplier?.complement ?? ""} maxLength={80} />
+        </Field>
+        <Field label="Bairro" name="district" state={state}>
+          <input id="district" name="district" defaultValue={supplier?.district ?? ""} maxLength={80} />
         </Field>
         <Field label="Cidade" name="city" state={state}>
           <input id="city" name="city" defaultValue={supplier?.city ?? ""} maxLength={80} />

@@ -326,3 +326,15 @@ button.block { width: 100%; justify-content: center; padding: 15px; font-size: 1
   .span-2 { grid-column: auto; }
   .kpi.hero .kpi-value { font-size: 32px; }
 }
+
+/* Preço negociado no caixa */
+.line-price { display: flex; align-items: center; gap: 4px; font-size: 12.5px; color: var(--faint); margin-top: 2px; }
+.line-price input { width: 82px; padding: 3px 8px; font-size: 13px; border-radius: 8px; }
+
+/* Fornecedor: seções do formulário e preços combinados */
+.form-section { font-size: 14px; font-weight: 600; margin: 18px 0 8px; color: var(--muted); }
+.subform { border: 1px solid var(--border); border-radius: var(--radius-sm, 12px); padding: 16px; margin-bottom: 16px; }
+.row-actions { display: flex; gap: 6px; justify-content: flex-end; align-items: center; white-space: nowrap; }
+.row-actions form { margin: 0; }
+button.small, .button.small { padding: 5px 12px; font-size: 13px; }
+td .tag { margin-left: 8px; font-size: 12px; padding: 1px 8px; }

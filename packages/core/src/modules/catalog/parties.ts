@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { Tx } from "@erp/db";
 import { AppError, notFound } from "../../errors.ts";
 import { defineService } from "../../service.ts";
-import { documentField, emailField, optionalText, stateField, statusField } from "./fields.ts";
+import { daysField, documentField, emailField, optionalText, stateField, statusField, whatsappField, zipField } from "./fields.ts";
 
 // Clientes e fornecedores. Não são apagados: são desativados, para que vendas
 // e compras antigas continuem apontando para eles.
@@ -29,8 +29,15 @@ export interface Supplier {
   email: string | null;
   phone: string | null;
   contactName: string | null;
+  whatsapp: string | null;
+  zipCode: string | null;
+  street: string | null;
+  streetNumber: string | null;
+  complement: string | null;
+  district: string | null;
   city: string | null;
   state: string | null;
+  leadTimeDays: number | null;
   notes: string | null;
   status: "active" | "inactive";
   createdAt: Date;
@@ -38,7 +45,8 @@ export interface Supplier {
 
 const CUSTOMER_COLUMNS = `id, kind, name, document, email, phone, city, state, notes, status, created_at AS "createdAt"`;
 const SUPPLIER_COLUMNS = `id, name, trade_name AS "tradeName", document, email, phone, contact_name AS "contactName",
-  city, state, notes, status, created_at AS "createdAt"`;
+  whatsapp, zip_code AS "zipCode", street, street_number AS "streetNumber", complement, district,
+  city, state, lead_time_days AS "leadTimeDays", notes, status, created_at AS "createdAt"`;
 
 const listInput = z.object({
   search: z.string().trim().max(100).optional(),
@@ -161,10 +169,24 @@ const supplierFields = z.object({
   email: emailField,
   phone: optionalText(30),
   contactName: optionalText(120),
+  whatsapp: whatsappField,
+  zipCode: zipField,
+  street: optionalText(160),
+  streetNumber: optionalText(20),
+  complement: optionalText(80),
+  district: optionalText(80),
   city: optionalText(80),
   state: stateField,
+  leadTimeDays: daysField,
   notes: optionalText(2000),
 });
+
+// Mesma ordem das colunas em INSERT e UPDATE, a partir do 2º parâmetro.
+const supplierValues = (i: z.output<typeof supplierFields>) => [
+  i.name, i.tradeName ?? null, i.document ?? null, i.email ?? null, i.phone ?? null, i.contactName ?? null,
+  i.whatsapp ?? null, i.zipCode ?? null, i.street ?? null, i.streetNumber ?? null, i.complement ?? null, i.district ?? null,
+  i.city ?? null, i.state ?? null, i.leadTimeDays ?? null, i.notes ?? null,
+];
 
 export const listSuppliers = defineService({
   name: "suppliers.list",
@@ -195,10 +217,10 @@ export const createSupplier = defineService({
     await assertDocumentFree(tx, "suppliers", input.document);
     const { rows } = await tx.query<Supplier>(
       `INSERT INTO controle_vendas_estoque.suppliers
-         (organization_id, name, trade_name, document, email, phone, contact_name, city, state, notes)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING ${SUPPLIER_COLUMNS}`,
-      [actor.organizationId, input.name, input.tradeName ?? null, input.document ?? null, input.email ?? null,
-        input.phone ?? null, input.contactName ?? null, input.city ?? null, input.state ?? null, input.notes ?? null],
+         (organization_id, name, trade_name, document, email, phone, contact_name, whatsapp, zip_code, street,
+          street_number, complement, district, city, state, lead_time_days, notes)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) RETURNING ${SUPPLIER_COLUMNS}`,
+      [actor.organizationId, ...supplierValues(input)],
     );
     const supplier = rows[0]!;
     await audit({ action: "supplier.create", entityType: "supplier", entityId: supplier.id, summary: `Fornecedor ${supplier.name} cadastrado`, after: supplier });
@@ -220,13 +242,14 @@ export const updateSupplier = defineService({
     await assertDocumentFree(tx, "suppliers", input.document, input.id);
     const { rows } = await tx.query<Supplier>(
       `UPDATE controle_vendas_estoque.suppliers SET name = $2, trade_name = $3, document = $4, email = $5, phone = $6,
-              contact_name = $7, city = $8, state = $9, notes = $10, status = $11
+              contact_name = $7, whatsapp = $8, zip_code = $9, street = $10, street_number = $11, complement = $12,
+              district = $13, city = $14, state = $15, lead_time_days = $16, notes = $17, status = $18
         WHERE id = $1 RETURNING ${SUPPLIER_COLUMNS}`,
-      [input.id, input.name, input.tradeName ?? null, input.document ?? null, input.email ?? null, input.phone ?? null,
-        input.contactName ?? null, input.city ?? null, input.state ?? null, input.notes ?? null, input.status],
+      [input.id, ...supplierValues(input), input.status],
     );
     const after = rows[0]!;
-    const fields = changed(current, after, ["name", "tradeName", "document", "email", "phone", "contactName", "city", "state", "notes", "status"]);
+    const fields = changed(current, after, ["name", "tradeName", "document", "email", "phone", "contactName", "whatsapp",
+      "zipCode", "street", "streetNumber", "complement", "district", "city", "state", "leadTimeDays", "notes", "status"]);
     if (fields.length > 0) {
       await audit({ action: "supplier.update", entityType: "supplier", entityId: after.id, summary: `Fornecedor ${after.name} alterado`, before: current, after });
       await emit("supplier.updated", { supplierId: after.id, fields }, { type: "supplier", id: after.id });

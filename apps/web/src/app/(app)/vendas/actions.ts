@@ -7,7 +7,7 @@ import { db } from "@/lib/db";
 import { optional, perform, str, toFormState, type FormState } from "@/lib/actions";
 
 export async function createSaleAction(_: FormState, form: FormData): Promise<FormState> {
-  let items: { productId: string; quantity: string }[] = [];
+  let items: { productId: string; quantity: string; unitPrice?: string }[] = [];
   try {
     items = JSON.parse(str(form, "items") || "[]");
   } catch {

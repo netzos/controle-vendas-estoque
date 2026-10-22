@@ -1,8 +1,9 @@
 import Link from "next/link";
-import { can, listSuppliers } from "@erp/core";
+import { can, listProducts, listSupplierProducts, listSuppliers } from "@erp/core";
 import { requirePermission } from "@/lib/auth";
 import { query } from "@/lib/actions";
-import { documentLabel } from "@/lib/format";
+import { documentLabel, whatsappLabel, whatsappLink } from "@/lib/format";
+import { SupplierPrices } from "./supplier-prices";
 import { SupplierForm } from "./supplier-form";
 
 export const metadata = { title: "Fornecedores" };
@@ -15,6 +16,12 @@ export default async function SuppliersPage({ searchParams }: { searchParams: Pr
   const shown = includeInactive ? suppliers : suppliers.filter((c) => c.status === "active");
   const selected = params.id ? suppliers.find((c) => c.id === params.id) : undefined;
   const canManage = can(actor, "suppliers.manage");
+  const [prices, products] = selected
+    ? await Promise.all([
+        query(listSupplierProducts, { supplierId: selected.id }),
+        canManage && can(actor, "products.view") ? query(listProducts, { limit: 500 }) : Promise.resolve([]),
+      ])
+    : [[], []];
 
   return (
     <>
@@ -35,6 +42,18 @@ export default async function SuppliersPage({ searchParams }: { searchParams: Pr
           <SupplierForm key={selected.id} supplier={selected} />
         </section>
       )}
+      {selected && (
+        <section className="card">
+          <SupplierPrices
+            key={selected.id}
+            side="supplier"
+            ownerId={selected.id}
+            rows={prices}
+            options={products.filter((p) => p.status === "active").map((p) => ({ id: p.id, name: p.name }))}
+            canManage={canManage}
+          />
+        </section>
+      )}
 
       <section className="card">
         <div className="list-toolbar">
@@ -51,14 +70,16 @@ export default async function SuppliersPage({ searchParams }: { searchParams: Pr
           <div className="table-wrap">
             <table>
               <thead>
-                <tr><th>Nome</th><th>CPF/CNPJ</th><th>Contato</th><th>Telefone</th><th>Cidade</th><th>Situação</th></tr>
+                <tr><th>Nome</th><th>CPF/CNPJ</th><th>Contato</th><th>WhatsApp</th><th className="num">Prazo</th><th>Cidade</th><th>Situação</th></tr>
               </thead>
               <tbody>
                 {shown.map((c) => (
                   <tr key={c.id} className="clickable">
                     <td><Link href={`/fornecedores?id=${c.id}`}>{c.name}</Link></td>
                     <td>{documentLabel(c.document)}</td>
-                    <td>{c.contactName}</td><td>{c.phone}</td>
+                    <td>{c.contactName}{c.contactName && c.email ? <small className="muted">{c.email}</small> : !c.contactName ? c.email : null}</td>
+                    <td>{c.whatsapp ? <a href={whatsappLink(c.whatsapp)} target="_blank" rel="noreferrer">{whatsappLabel(c.whatsapp)}</a> : c.phone}</td>
+                    <td className="num">{c.leadTimeDays == null ? "—" : `${c.leadTimeDays}d`}</td>
                     <td>{[c.city, c.state].filter(Boolean).join(" / ")}</td>
                     <td><span className={`tag ${c.status === "active" ? "ok" : "off"}`}>{c.status === "active" ? "Ativo" : "Inativo"}</span></td>
                   </tr>

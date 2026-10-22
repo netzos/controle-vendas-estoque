@@ -16,6 +16,8 @@ export interface DomainEvents {
   "customer.updated": { customerId: string; fields: string[] };
   "supplier.created": { supplierId: string };
   "supplier.updated": { supplierId: string; fields: string[] };
+  "supplier.price_set": { supplierId: string; productId: string; agreedPrice: string; previousPrice: string | null };
+  "supplier.price_removed": { supplierId: string; productId: string };
   "category.created": { categoryId: string };
   "category.updated": { categoryId: string; fields: string[] };
   "unit.created": { unitId: string };

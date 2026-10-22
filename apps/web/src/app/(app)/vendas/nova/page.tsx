@@ -18,6 +18,7 @@ export default async function NewSalePage() {
         <p>Toque nos produtos, escolha a forma de pagamento e finalize. O estoque baixa sozinho.</p>
       </div>
       <SaleForm
+        canChangePrice={can(actor, "sales.change_price")}
         customers={customers.map((c) => ({ id: c.id, name: c.name }))}
         products={products.map((p) => ({
           id: p.id,

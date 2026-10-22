@@ -23,3 +23,18 @@ export function documentLabel(doc: string | null): string {
   if (doc.length === 14) return doc.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, "$1.$2.$3/$4-$5");
   return doc;
 }
+
+// "5591988887777" → "(91) 98888-7777".
+export function whatsappLabel(value: string | null): string {
+  if (!value) return "";
+  const local = value.startsWith("55") ? value.slice(2) : value;
+  return local.replace(/^(\d{2})(\d{4,5})(\d{4})$/, "($1) $2-$3");
+}
+
+export function zipLabel(value: string | null): string {
+  return value ? value.replace(/^(\d{5})(\d{3})$/, "$1-$2") : "";
+}
+
+export function whatsappLink(value: string, text?: string): string {
+  return `https://wa.me/${value}${text ? `?text=${encodeURIComponent(text)}` : ""}`;
+}
