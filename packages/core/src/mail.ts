@@ -22,9 +22,11 @@ export function mailConfigured(): boolean {
   return override !== null || Boolean(process.env.RESEND_API_KEY && process.env.MAIL_FROM);
 }
 
-// Endereço público do painel, para montar links nos e-mails.
+// Endereço público do painel, para montar links nos e-mails e o webhook do Telegram.
+// Sem APP_URL, usa o endereço de produção que a Vercel informa (o domínio mais curto do projeto).
 export function appUrl(): string {
-  return (process.env.APP_URL ?? "https://controle-vendas-estoque.vercel.app").replace(/\/+$/, "");
+  const vercel = process.env.VERCEL_PROJECT_PRODUCTION_URL;
+  return (process.env.APP_URL ?? (vercel ? `https://${vercel}` : "https://netzsales.vercel.app")).replace(/\/+$/, "");
 }
 
 export async function sendMail(message: MailMessage): Promise<void> {
