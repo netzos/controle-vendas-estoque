@@ -18,7 +18,7 @@ import { currentActor } from "@/lib/auth";
 import { query } from "@/lib/actions";
 import { db } from "@/lib/db";
 import { moveImprovementAction } from "./actions";
-import { AnalyzeButton, CorrectForm, DecideForm, MergeForm, MergeGroupButton, NewImprovementForm, ReplyForm } from "./forms";
+import { AnalyzeButton, CorrectForm, ExecuteAnalysisButton, DecideForm, MergeForm, MergeGroupButton, NewImprovementForm, ReplyForm } from "./forms";
 
 const STATUS_LABEL: Record<ImprovementStatus, string> = {
   new: "Novo",
@@ -143,6 +143,14 @@ export async function ImprovementsBoard({ mode, searchParams }: { mode: "company
                       </li>
                     ))}
                   </ol>
+                  {analysis.executedAt ? (
+                    <p className="imp-execute ok">Mandado executar em {fmt.format(new Date(analysis.executedAt))}. Acompanhe cada pedido abaixo.</p>
+                  ) : (
+                    (() => {
+                      const open = analysis.result.prioridades.map((p) => p.numero).filter((n) => { const i = byNumber.get(n); return !!i && !i.mergedInto && ["new", "analysis", "approved", "building"].includes(i.status); });
+                      return open.length > 0 ? <ExecuteAnalysisButton analysisId={analysis.id} numbers={open} /> : null;
+                    })()
+                  )}
                 </>
               )}
               {analysis.result.grupos.length > 0 && (

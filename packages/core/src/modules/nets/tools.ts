@@ -39,6 +39,7 @@ const READ = /\.(list|get|overview|dashboard|counts|movements)$/;
 export const IMPROVEMENT_TOOL = "registrar_melhoria";
 export const IMPROVEMENT_LIST_TOOL = "listar_melhorias";
 export const IMPROVEMENT_COMPLEMENT_TOOL = "complementar_melhoria";
+export const DELIVERIES_TOOL = "ver_mensagens_entregues";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyService = ServiceDefinition<z.ZodType, any>;
@@ -153,8 +154,19 @@ const improvementComplementTool: Anthropic.Beta.BetaTool = {
   },
 };
 
+const deliveriesTool: Anthropic.Beta.BetaTool = {
+  name: DELIVERIES_TOOL,
+  description:
+    "Mostra as suas últimas respostas a esta pessoa como elas chegaram: o texto do painel e o texto exato enviado em cada canal (Telegram), se foi entregue ou falhou, e as marcações internas que o sistema tirou antes de enviar. " +
+    "Use quando a pessoa reclamar de algo numa mensagem (código estranho, texto cortado, não chegou), em vez de pedir print. Consulta: roda na hora.",
+  input_schema: {
+    type: "object",
+    properties: { limit: { type: "integer", minimum: 1, maximum: 30, description: "Quantas respostas, da mais nova para a mais antiga (padrão 10)." } },
+  },
+};
+
 /** Ferramentas que esta pessoa pode usar, sempre na mesma ordem (cache). */
 export function netsTools(actor: Actor): { tools: NetsTool[]; definitions: Anthropic.Beta.BetaTool[] } {
   const tools = TOOLS.filter((t) => !t.service.permission || can(actor, t.service.permission));
-  return { tools, definitions: [...tools.map((t) => t.definition), improvementTool, improvementListTool, improvementComplementTool] };
+  return { tools, definitions: [...tools.map((t) => t.definition), improvementTool, improvementListTool, improvementComplementTool, deliveriesTool] };
 }

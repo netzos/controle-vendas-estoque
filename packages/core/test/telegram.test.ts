@@ -5,7 +5,9 @@ import type Anthropic from "@anthropic-ai/sdk";
 import {
   createTelegramLink,
   getTelegramStatus,
+  cleanReply,
   handleTelegramUpdate,
+  listNetsDeliveries,
   listNetsMessages,
   listProducts,
   listUnits,
@@ -192,6 +194,35 @@ describe("Netz no Telegram", () => {
     // Sem chave de transcrição: pede texto.
     await handleTelegramUpdate(t.app, voice(), { api: f.api });
     assert.match(f.sent().at(-1)!, /não consigo ouvir/);
+  });
+
+  it("tira marcação interna da resposta e guarda o texto exato entregue (pedidos 7 e 8)", async () => {
+    const f = fakeApi();
+    const { url } = await createTelegramLink(t.app, owner, { api: f.api });
+    await handleTelegramUpdate(t.app, text(`/start ${url.split("start=")[1]}`), { api: f.api });
+    const model = script([{ type: "text", text: "antml:reasoning_effort>\nOi, Pepe! Estou funcionando por aqui." }]);
+    await handleTelegramUpdate(t.app, text("Teste"), { api: f.api, model });
+    assert.equal(f.sent().at(-1), "Oi, Pepe! Estou funcionando por aqui.");
+
+    const [last] = await listNetsDeliveries(t.app, owner, 1);
+    assert.equal(last!.painel, "Oi, Pepe! Estou funcionando por aqui.");
+    assert.equal(last!.canais[0]!.canal, "Telegram");
+    assert.equal(last!.canais[0]!.texto, "Oi, Pepe! Estou funcionando por aqui.");
+    assert.equal(last!.canais[0]!.situacao, "entregue");
+    assert.deepEqual(last!.removido, ["antml:reasoning_effort>"]);
+
+    // A Netz confere sozinha o que chegou, sem pedir print.
+    const check = script(
+      [{ type: "tool_use", name: "ver_mensagens_entregues", input: { limit: 2 } }],
+      [{ type: "text", text: "Conferi: chegou limpo." }],
+    );
+    await handleTelegramUpdate(t.app, text("veio um código estranho?"), { api: f.api, model: check });
+    assert.equal(f.sent().at(-1), "Conferi: chegou limpo.");
+  });
+
+  it("limpeza não mexe em texto normal", () => {
+    assert.deepEqual(cleanReply("> citação\nTexto <b>normal</b> com 3 > 2."), { text: "> citação\nTexto <b>normal</b> com 3 > 2.", removed: [] });
+    assert.equal(cleanReply("<thinking>pensando</thinking>Resposta").text, "Resposta");
   });
 });
 

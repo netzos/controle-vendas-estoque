@@ -3,7 +3,7 @@ import { recordAiUsage } from "../../usage.ts";
 import { withTenant } from "@erp/db";
 import { AppError, forbidden } from "../../errors.ts";
 import { defaultNetsModel, NETS_MODEL, netsConfigured, type NetsModel } from "../nets/service.ts";
-import { IMPROVEMENT_MODULES, type ImprovementViewer } from "./service.ts";
+import { commentImprovement, decideImprovement, getImprovement, IMPROVEMENT_MODULES, type ImprovementViewer } from "./service.ts";
 
 // Análise da IA sobre todos os pedidos abertos da plataforma: sugere quais
 // juntar, resume o que cada empresa precisa e aponta prioridades. Só sugere;
@@ -13,6 +13,8 @@ export interface ImprovementAnalysis {
   id: string;
   createdAt: Date;
   items: number;
+  /** Quando o administrador mandou executar as prioridades desta análise. */
+  executedAt: Date | null;
   result: {
     resumo: string;
     grupos: Array<{ titulo: string; numeros: number[]; motivo: string }>;
@@ -34,7 +36,8 @@ export async function latestImprovementAnalysis(db: Db, viewer: ImprovementViewe
   assertDeveloper(viewer);
   return withTenant(db, { organizationId: viewer.organizationId, userId: viewer.userId }, async (tx) => {
     const { rows } = await tx.query<ImprovementAnalysis>(
-      `SELECT id, created_at AS "createdAt", items, result FROM controle_vendas_estoque.improvement_analyses ORDER BY created_at DESC LIMIT 1`,
+      `SELECT id, created_at AS "createdAt", items, executed_at AS "executedAt", result
+         FROM controle_vendas_estoque.improvement_analyses ORDER BY created_at DESC LIMIT 1`,
     );
     return rows[0] ?? null;
   });
@@ -104,7 +107,7 @@ export async function analyzeImprovementsWithAI(db: Db, viewer: ImprovementViewe
     result.prioridades = result.prioridades.filter((p) => valid.has(p.numero));
     const saved = await tx.query<ImprovementAnalysis>(
       `INSERT INTO controle_vendas_estoque.improvement_analyses (created_by, result, items) VALUES ($1, $2, $3)
-       RETURNING id, created_at AS "createdAt", items, result`,
+       RETURNING id, created_at AS "createdAt", items, executed_at AS "executedAt", result`,
       [viewer.userId, JSON.stringify(result), rows.length],
     );
     return saved.rows[0]!;
@@ -117,4 +120,51 @@ export async function improvementIdByNumber(db: Db, viewer: ImprovementViewer, n
     const { rows } = await tx.query<{ id: string }>("SELECT id FROM controle_vendas_estoque.improvements WHERE number = $1", [number]);
     return rows[0]?.id ?? null;
   });
+}
+
+export interface AnalysisExecution {
+  /** Pedidos que entraram na fila, na ordem das prioridades. */
+  queued: number[];
+  /** Pedidos da análise que já não estão em aberto (publicados, recusados, juntados). */
+  skipped: number[];
+}
+
+/**
+ * Executa a partir da análise: aprova os pedidos das prioridades, na ordem, e
+ * registra em cada um que entrou na fila. O Claude desenvolve os aprovados
+ * nessa ordem na conferência de hora em hora e avisa na conversa de cada um.
+ * As orientações do administrador entram na conversa de cada pedido.
+ */
+export async function executeImprovementAnalysis(db: Db, viewer: ImprovementViewer, analysisId: string, guidance = ""): Promise<AnalysisExecution> {
+  assertDeveloper(viewer);
+  const analysis = await withTenant(db, { organizationId: viewer.organizationId, userId: viewer.userId }, async (tx) => {
+    const { rows } = await tx.query<ImprovementAnalysis>(
+      `SELECT id, created_at AS "createdAt", items, executed_at AS "executedAt", result
+         FROM controle_vendas_estoque.improvement_analyses WHERE id = $1`,
+      [analysisId],
+    );
+    return rows[0] ?? null;
+  });
+  if (!analysis) throw new AppError("not_found", "Análise não encontrada.");
+  const date = new Date(analysis.createdAt).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "short", timeStyle: "short" });
+  const out: AnalysisExecution = { queued: [], skipped: [] };
+  for (const [i, p] of analysis.result.prioridades.entries()) {
+    const id = await improvementIdByNumber(db, viewer, p.numero);
+    const item = id ? (await getImprovement(db, viewer, id).catch(() => null))?.item : null;
+    if (!id || !item || item.mergedInto || !["new", "analysis", "approved", "building"].includes(item.status)) {
+      out.skipped.push(p.numero);
+      continue;
+    }
+    const note = `Mandado executar pela análise da IA de ${date} (prioridade ${i + 1}).`;
+    if (item.status === "new" || item.status === "analysis") await decideImprovement(db, viewer, id, "approve", note);
+    else await commentImprovement(db, viewer, id, note);
+    const extra = guidance.trim().slice(0, 3000);
+    if (extra) await commentImprovement(db, viewer, id, `Orientações do administrador para a execução:\n${extra}`);
+    out.queued.push(p.numero);
+  }
+  if (out.queued.length === 0) throw new AppError("conflict", "Nenhum pedido desta análise está mais em aberto. Rode uma análise nova.");
+  await withTenant(db, { organizationId: viewer.organizationId, userId: viewer.userId }, (tx) =>
+    tx.query("UPDATE controle_vendas_estoque.improvement_analyses SET executed_at = now(), executed_by = $2 WHERE id = $1", [analysisId, viewer.userId]),
+  );
+  return out;
 }

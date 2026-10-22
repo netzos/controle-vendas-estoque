@@ -176,9 +176,10 @@ async function linkActor(db: Db, link: LinkRow): Promise<Actor | null> {
 
 /** Manda para o Telegram as respostas da Netz que ainda não foram entregues, a partir da mensagem dada. */
 async function deliver(db: Db, api: TelegramApi, actor: Actor, chatId: string, fromId: string) {
-  const replies = await withTenant(db, { organizationId: actor.organizationId, userId: actor.userId }, async (tx) => {
-    const { rows } = await tx.query<{ id: string; body: string; title: string | null; pending: boolean }>(
-      `SELECT id, body, action->>'title' AS title, action_status = 'pending' AS pending
+  const owner = { organizationId: actor.organizationId, userId: actor.userId };
+  const replies = await withTenant(db, owner, async (tx) => {
+    const { rows } = await tx.query<{ id: string; body: string; title: string | null; pending: boolean; cleaned: string[] | null }>(
+      `SELECT id, body, action->>'title' AS title, action_status = 'pending' AS pending, cleaned
          FROM controle_vendas_estoque.nets_messages
         WHERE organization_id = $1 AND user_id = $2 AND role = 'assistant' AND telegram_message_id IS NULL AND id <> $3
           AND created_at >= (SELECT created_at FROM controle_vendas_estoque.nets_messages WHERE id = $3)
@@ -192,8 +193,24 @@ async function deliver(db: Db, api: TelegramApi, actor: Actor, chatId: string, f
     const markup = r.pending
       ? { inline_keyboard: [[{ text: "✅ Confirmar", callback_data: `nets:c:${r.id}` }, { text: "✖️ Cancelar", callback_data: `nets:x:${r.id}` }]] }
       : undefined;
-    const sent = await send(api, chatId, text, markup);
-    await withTenant(db, { organizationId: actor.organizationId, userId: actor.userId }, (tx) =>
+    // Guarda o texto exato que foi para o Telegram, para a Netz conferir depois (pedido nº 8).
+    const record = (status: "sent" | "failed", error: string | null) =>
+      withTenant(db, owner, (tx) =>
+        tx.query(
+          `INSERT INTO controle_vendas_estoque.nets_deliveries (organization_id, user_id, nets_message_id, channel, text, status, error, removed)
+           VALUES ($1, $2, $3, 'telegram', $4, $5, $6, $7)`,
+          [actor.organizationId, actor.userId, r.id, text, status, error, r.cleaned],
+        ),
+      ).catch((err) => console.error("nets delivery log failed", err instanceof Error ? err.message : err));
+    let sent: number | null;
+    try {
+      sent = await send(api, chatId, text, markup);
+    } catch (err) {
+      await record("failed", (err instanceof Error ? err.message : String(err)).slice(0, 500));
+      throw err;
+    }
+    await record("sent", null);
+    await withTenant(db, owner, (tx) =>
       tx.query("UPDATE controle_vendas_estoque.nets_messages SET telegram_message_id = $2 WHERE id = $1", [r.id, sent ?? 0]),
     );
   }

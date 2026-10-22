@@ -3,6 +3,8 @@ import { after, before, describe, it } from "node:test";
 import {
   AppError,
   aiCostUsd,
+  can,
+  resolveActor,
   deletePlatformOrganization,
   enabledFeatures,
   featureRollouts,
@@ -114,6 +116,16 @@ describe("dashboard da plataforma", () => {
     assert.equal(r.exceptions.length, 0);
     assert.equal(r.enabledCount, 2);
     await assert.rejects(setFeatureDefault(t.app, client, "telegram", false), rejectsWith("forbidden"));
+  });
+
+  it("o administrador olha qualquer empresa só para consulta; cliente não", async () => {
+    const view = await resolveActor(t.app, { userId: dev.userId, organizationId: client.organizationId, channel: "web" });
+    assert.equal(view.platformView, true);
+    assert.ok(can(view, "sales.view"));
+    assert.ok(!can(view, "sales.create"));
+    assert.ok(!can(view, "nets.use"));
+    await assert.rejects(resolveActor(t.app, { userId: dev.userId, organizationId: client.organizationId, channel: "telegram" }), rejectsWith("forbidden"));
+    await assert.rejects(resolveActor(t.app, { userId: client.userId, organizationId: other.organizationId, channel: "web" }), rejectsWith("forbidden"));
   });
 
   it("exclui de vez só empresa interna ou suspensa, com o nome digitado", async () => {

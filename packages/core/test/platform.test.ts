@@ -81,12 +81,14 @@ describe("empresas da plataforma", () => {
     assert.equal(again.name, "Anne");
   });
 
-  it("sem entrar junto, o desenvolvedor não vê os dados da empresa", async () => {
+  it("sem entrar junto, o desenvolvedor só consulta os dados da empresa", async () => {
     const r = await createPlatformOrganization(t.app, dev, { organizationName: "Loja do Pepe", ownerName: "Pepe", ownerEmail: "pepe@teste.com" });
     const org = (await listPlatformOrganizations(t.app, dev.userId)).find((o) => o.id === r.organizationId)!;
     assert.equal(org.developerIsMember, false);
     assert.equal(org.members, 1);
-    await assert.rejects(actorFor(t.app, dev.userId, r.organizationId));
+    const view = await actorFor(t.app, dev.userId, r.organizationId);
+    assert.equal(view.platformView, true);
+    assert.ok([...view.permissions].every((p) => p.endsWith(".view")));
   });
 
   it("dono que já tem conta não recebe link; nome repetido é recusado", async () => {
