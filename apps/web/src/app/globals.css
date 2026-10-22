@@ -471,3 +471,37 @@ summary .edit-hint { float: right; font-size: 13px; color: var(--muted); font-we
 .imp-groups li { margin-bottom: 8px; }
 .imp-groups .imp-inline { display: inline-flex; margin-left: 8px; }
 .topbar-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+
+/* Plataforma › Empresas: lista e ficha */
+.kpi-grid.compact.four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.org-search input { width: 260px; padding: 8px 14px; }
+.org-table .org-link { font-weight: 600; color: var(--text); }
+.org-table td { vertical-align: top; }
+.back-link { margin: 0 0 6px; font-size: 14px; }
+.back-link a { color: var(--muted); }
+.org-header { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
+.org-header p .tag { margin-right: 6px; }
+.org-open { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; max-width: 320px; text-align: right; font-size: 13px; }
+.org-facts { display: grid; grid-template-columns: auto 1fr; gap: 8px 16px; margin: 0; }
+.org-facts dt { color: var(--muted); font-size: 14px; }
+.org-facts dd { margin: 0; overflow-wrap: anywhere; }
+.dash-grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-bottom: 18px; }
+.dash-grid.spaced { margin-bottom: 18px; }
+.feature-list, .org-improvements { list-style: none; margin: 0; padding: 0; }
+.feature-list li { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px solid var(--border); }
+.feature-list li:first-child { border-top: 0; }
+.org-improvements li { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; padding: 10px 0; border-top: 1px solid var(--border); }
+.org-improvements li:first-child { border-top: 0; }
+.org-improvements li a { color: var(--text); font-weight: 500; }
+.org-improvements li .muted { grid-column: 1; font-size: 13px; }
+.org-improvements li .tag { grid-column: 2; grid-row: 1 / span 2; align-self: center; }
+.admin-block { padding: 14px 0; border-top: 1px solid var(--border); }
+.admin-block:first-of-type { border-top: 0; padding-top: 0; }
+.admin-block h3 { margin: 0 0 6px; font-size: 15px; }
+.member-link .link-box { margin-top: 8px; min-width: 260px; }
+@media (max-width: 860px) {
+  .kpi-grid.compact.four { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .dash-grid.two { grid-template-columns: 1fr; }
+  .org-open { align-items: flex-start; text-align: left; }
+  .org-search, .org-search input { width: 100%; }
+}
