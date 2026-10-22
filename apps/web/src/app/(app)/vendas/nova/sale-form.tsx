@@ -3,6 +3,7 @@
 import { useActionState, useEffect, useMemo, useState } from "react";
 import { FormMessage, SubmitButton } from "@/components/form";
 import { money, quantity } from "@/lib/format";
+import { ITEM_TYPES, type ItemType } from "@erp/core/labels";
 import { createSaleAction } from "../actions";
 
 export interface PosProduct {
@@ -13,6 +14,7 @@ export interface PosProduct {
   stock: string;
   unitCode: string;
   trackStock: boolean;
+  itemType: ItemType;
 }
 
 const PAYMENTS = [
@@ -94,7 +96,7 @@ export function SaleForm({
                   <span className="pos-name">{p.name}</span>
                   <span className="pos-price">{money(p.price)}</span>
                   <span className={`pos-stock${p.trackStock && stock <= 0 ? " out" : ""}`}>
-                    {p.trackStock ? `${quantity(p.stock)} ${p.unitCode} em estoque` : "Sem controle de estoque"}
+                    {p.trackStock ? `${quantity(p.stock)} ${p.unitCode} em estoque` : ITEM_TYPES[p.itemType].label}
                   </span>
                   {inCart && <span className="pos-badge">{inCart}</span>}
                 </button>

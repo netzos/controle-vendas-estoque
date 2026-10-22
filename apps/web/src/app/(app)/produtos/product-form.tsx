@@ -1,7 +1,8 @@
 "use client";
 
-import { useActionState } from "react";
-import type { Category, Product, Supplier, Unit } from "@erp/core";
+import { useActionState, useState } from "react";
+import type { Category, CustomField, Product, Supplier, Unit } from "@erp/core";
+import { ITEM_TYPES, type ItemType } from "@erp/core/labels";
 import { Field, FormMessage, SubmitButton } from "@/components/form";
 import { decimalInput } from "@/lib/format";
 import { createProductAction, updateProductAction } from "./actions";
@@ -10,16 +11,64 @@ export interface ProductFormOptions {
   categories: Pick<Category, "id" | "name">[];
   units: Pick<Unit, "id" | "code" | "name">[];
   suppliers: Pick<Supplier, "id" | "name">[];
+  customFields: CustomField[];
   canEditPrice: boolean;
+}
+
+// Campo personalizado no formulário; o nome "cf_<chave>" volta para a action.
+function CustomInput({ field, value, state }: { field: CustomField; value: unknown; state: Parameters<typeof Field>[0]["state"] }) {
+  const name = `cf_${field.key}`;
+  const label = field.required ? `${field.label} *` : field.label;
+  if (field.fieldType === "boolean") {
+    return (
+      <label className="check">
+        <input type="checkbox" name={name} defaultChecked={value === true} />
+        {field.label}
+      </label>
+    );
+  }
+  return (
+    <Field label={label} name={name} state={state}>
+      {field.fieldType === "select" ? (
+        <select id={name} name={name} defaultValue={typeof value === "string" ? value : ""} required={field.required}>
+          <option value="">—</option>
+          {field.options.map((o) => <option key={o} value={o}>{o}</option>)}
+        </select>
+      ) : (
+        <input
+          id={name}
+          name={name}
+          type={field.fieldType === "date" ? "date" : "text"}
+          inputMode={field.fieldType === "number" ? "decimal" : undefined}
+          defaultValue={value == null ? "" : field.fieldType === "number" ? String(value).replace(".", ",") : String(value)}
+          required={field.required}
+          maxLength={500}
+        />
+      )}
+    </Field>
+  );
 }
 
 export function ProductForm({ product, options }: { product?: Product; options: ProductFormOptions }) {
   const [state, action] = useActionState(product ? updateProductAction : createProductAction, null);
   const priceLocked = !options.canEditPrice;
+  const [itemType, setItemType] = useState<ItemType>(product?.itemType ?? "stock");
+  const [categoryId, setCategoryId] = useState(product?.categoryId ?? "");
+  const tracks = ITEM_TYPES[itemType].tracksStock;
+  const custom = options.customFields.filter((f) => !f.categoryId || f.categoryId === categoryId);
   return (
     <form action={action}>
       <FormMessage state={state} />
       {product && <input type="hidden" name="id" value={product.id} />}
+      <input type="hidden" name="itemType" value={itemType} />
+      <div className="type-picker" role="radiogroup" aria-label="Tipo do item">
+        {(Object.keys(ITEM_TYPES) as ItemType[]).map((k) => (
+          <button type="button" key={k} role="radio" aria-checked={itemType === k} className={itemType === k ? "active" : ""} onClick={() => setItemType(k)}>
+            <strong>{ITEM_TYPES[k].label}</strong>
+            <small>{ITEM_TYPES[k].hint}</small>
+          </button>
+        ))}
+      </div>
       <div className="grid-3">
         <Field label="Nome" name="name" state={state}>
           <input id="name" name="name" defaultValue={product?.name} required maxLength={160} placeholder="Ex.: Açaí 500 ml" />
@@ -31,7 +80,7 @@ export function ProductForm({ product, options }: { product?: Product; options: 
           <input id="barcode" name="barcode" defaultValue={product?.barcode ?? ""} inputMode="numeric" maxLength={14} />
         </Field>
         <Field label="Categoria" name="categoryId" state={state}>
-          <select id="categoryId" name="categoryId" defaultValue={product?.categoryId ?? ""}>
+          <select id="categoryId" name="categoryId" value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
             <option value="">Sem categoria</option>
             {options.categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
@@ -53,10 +102,12 @@ export function ProductForm({ product, options }: { product?: Product; options: 
         <Field label="Custo (R$)" name="costPrice" state={state}>
           <input id="costPrice" name="costPrice" defaultValue={decimalInput(product?.costPrice, 2)} inputMode="decimal" placeholder="0,00" readOnly={priceLocked} />
         </Field>
-        <Field label="Estoque mínimo" name="minStock" state={state} hint="Abaixo disso o sistema vai avisar">
-          <input id="minStock" name="minStock" defaultValue={decimalInput(product?.minStock, 0)} inputMode="decimal" placeholder="0" />
-        </Field>
-        {!product && (
+        {tracks && (
+          <Field label="Estoque mínimo" name="minStock" state={state} hint="Abaixo disso o sistema vai avisar">
+            <input id="minStock" name="minStock" defaultValue={decimalInput(product?.minStock, 0)} inputMode="decimal" placeholder="0" />
+          </Field>
+        )}
+        {!product && tracks && (
           <Field label="Estoque inicial" name="initialStock" state={state} hint="Quanto você tem hoje. Pode deixar vazio.">
             <input id="initialStock" name="initialStock" inputMode="decimal" placeholder="0" />
           </Field>
@@ -70,10 +121,15 @@ export function ProductForm({ product, options }: { product?: Product; options: 
           </Field>
         )}
       </div>
-      <label className="check">
-        <input type="checkbox" name="trackStock" defaultChecked={product?.trackStock ?? true} />
-        Controlar estoque deste item (desmarque para serviços, taxas e itens feitos na hora)
-      </label>
+      {custom.length > 0 && (
+        <>
+          <h3 className="form-section">Informações do item</h3>
+          <div className="grid-3">
+            {custom.filter((f) => f.fieldType !== "boolean").map((f) => <CustomInput key={f.id} field={f} value={product?.customValues[f.key]} state={state} />)}
+          </div>
+          {custom.filter((f) => f.fieldType === "boolean").map((f) => <CustomInput key={f.id} field={f} value={product?.customValues[f.key]} state={state} />)}
+        </>
+      )}
       <Field label="Descrição" name="description" state={state}>
         <textarea id="description" name="description" defaultValue={product?.description ?? ""} maxLength={2000} rows={2} />
       </Field>

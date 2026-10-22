@@ -1,4 +1,5 @@
 export * from "./errors.ts";
+export * from "./labels.ts";
 export * from "./permissions.ts";
 export * from "./context.ts";
 export * from "./audit.ts";
@@ -18,6 +19,7 @@ export * from "./modules/audit/service.ts";
 export * from "./modules/improvements/service.ts";
 export * from "./modules/catalog/parties.ts";
 export * from "./modules/catalog/products.ts";
+export * from "./modules/catalog/custom-fields.ts";
 export * from "./modules/catalog/supplier-products.ts";
 export * from "./modules/stock/movements.ts";
 export * from "./modules/sales/sales.ts";

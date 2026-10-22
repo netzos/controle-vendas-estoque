@@ -58,7 +58,7 @@ export const NAVIGATION: NavGroup[] = [
       { label: "Marcas", href: "/marcas", phase: 3 },
       { label: "Unidades de medida", href: "/unidades", permission: "products.view", phase: 2 },
       { label: "Tabelas de preços", href: "/tabelas-de-precos", phase: 3 },
-      { label: "Campos personalizados", href: "/campos-personalizados", phase: 3 },
+      { label: "Campos personalizados", href: "/campos-personalizados", permission: "products.view", phase: 2 },
     ],
   },
   {

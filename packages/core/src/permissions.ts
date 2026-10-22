@@ -30,6 +30,7 @@ export const PERMISSIONS = [
   { key: "products.view", module: "catalogo", description: "Ver produtos, categorias e unidades", risk: 1 },
   { key: "products.manage", module: "catalogo", description: "Cadastrar e alterar produtos, categorias e unidades", risk: 2 },
   { key: "products.update_price", module: "catalogo", description: "Alterar preço de venda e custo", risk: 3 },
+  { key: "custom_fields.manage", module: "catalogo", description: "Criar e alterar campos personalizados dos itens", risk: 3 },
   { key: "sales.view", module: "comercial", description: "Ver vendas e o painel de vendas", risk: 1 },
   { key: "sales.create", module: "comercial", description: "Registrar vendas", risk: 3 },
   { key: "sales.cancel", module: "comercial", description: "Cancelar vendas", risk: 4 },

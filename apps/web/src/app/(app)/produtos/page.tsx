@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { can, listCategories, listProducts, listSupplierProducts, listSuppliers, listUnits } from "@erp/core";
+import { can, ITEM_TYPES, listCategories, listCustomFields, listProducts, listSupplierProducts, listSuppliers, listUnits } from "@erp/core";
 import { requirePermission } from "@/lib/auth";
 import { query } from "@/lib/actions";
 import { money, quantity } from "@/lib/format";
@@ -31,15 +31,15 @@ export default async function ProductsPage({
   ]);
   let options: ProductFormOptions | null = null;
   if (canManage && (params.novo === "1" || selected)) {
-    const units = await query(listUnits, {});
-    options = { categories, units, suppliers, canEditPrice: can(actor, "products.update_price") };
+    const [units, customFields] = await Promise.all([query(listUnits, {}), query(listCustomFields, {})]);
+    options = { categories, units, suppliers, customFields, canEditPrice: can(actor, "products.update_price") };
   }
 
   return (
     <>
       <div className="page-header">
         <h1>Produtos</h1>
-        <p>O que você vende: preço, custo, unidade e estoque mínimo.</p>
+        <p>Tudo o que você vende: produtos em estoque, sob encomenda, serviços e produção própria.</p>
       </div>
 
       {options && params.novo === "1" && (
@@ -96,7 +96,10 @@ export default async function ProductsPage({
                   const margin = sale > 0 ? ((sale - Number(p.costPrice)) / sale) * 100 : null;
                   return (
                     <tr key={p.id} className="clickable">
-                      <td><Link href={`/produtos?id=${p.id}`}>{p.name}</Link></td>
+                      <td>
+                        <Link href={`/produtos?id=${p.id}`}>{p.name}</Link>
+                        {p.itemType !== "stock" && <small className="muted">{ITEM_TYPES[p.itemType].label}</small>}
+                      </td>
                       <td>{p.sku}</td>
                       <td>{p.categoryName}</td>
                       <td>{p.unitCode}</td>

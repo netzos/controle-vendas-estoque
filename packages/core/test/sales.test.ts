@@ -37,10 +37,10 @@ before(async () => {
   other = await actorFor(t.app, b.userId, b.organizationId);
   const units = await runService(t.app, listUnits, owner, {});
   const un = units.find((u) => u.code === "UN")!.id;
-  const base = { unitId: un, minStock: "0", trackStock: true };
+  const base = { unitId: un, minStock: "0" };
   acai = (await runService(t.app, createProduct, owner, { ...base, sku: "ACAI", name: "Açaí 500 ml", salePrice: "18", costPrice: "7,5", minStock: "5", initialStock: "20" })).id;
   copo = (await runService(t.app, createProduct, owner, { ...base, sku: "COPO", name: "Copo", salePrice: "1", costPrice: "0,2", initialStock: "3" })).id;
-  entrega = (await runService(t.app, createProduct, owner, { ...base, sku: "ENTREGA", name: "Taxa de entrega", salePrice: "5", costPrice: "0", trackStock: false })).id;
+  entrega = (await runService(t.app, createProduct, owner, { ...base, sku: "ENTREGA", name: "Taxa de entrega", salePrice: "5", costPrice: "0", itemType: "service" })).id;
 });
 after(() => t.close());
 
@@ -72,7 +72,7 @@ describe("vendas e estoque", () => {
     assert.ok(!ov.rows.some((r) => r.id === entrega), "serviço fica fora do estoque");
     // Outra empresa não numera junto.
     const units = await runService(t.app, listUnits, other, {});
-    const p = await runService(t.app, createProduct, other, { sku: "X", name: "Xis", unitId: units[0]!.id, salePrice: "1", costPrice: "0", minStock: "0", trackStock: true });
+    const p = await runService(t.app, createProduct, other, { sku: "X", name: "Xis", unitId: units[0]!.id, salePrice: "1", costPrice: "0", minStock: "0" });
     assert.equal((await runService(t.app, createSale, other, { paymentMethod: "pix", items: [{ productId: p.id, quantity: "1" }] })).number, 1);
   });
 

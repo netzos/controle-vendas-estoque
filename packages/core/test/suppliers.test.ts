@@ -33,7 +33,7 @@ before(async () => {
   const b = await seedCompany(t.app, "Outra Loja");
   other = await actorFor(t.app, b.userId, b.organizationId);
   const un = (await runService(t.app, listUnits, owner, {})).find((u) => u.code === "UN")!.id;
-  iphone = (await runService(t.app, createProduct, owner, { sku: "IP15", name: "iPhone 15", unitId: un, salePrice: "5000", costPrice: "4200", minStock: "0", trackStock: true })).id;
+  iphone = (await runService(t.app, createProduct, owner, { sku: "IP15", name: "iPhone 15", unitId: un, salePrice: "5000", costPrice: "4200", minStock: "0", itemType: "stock" })).id;
 });
 after(() => t.close());
 

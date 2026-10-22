@@ -28,6 +28,7 @@ export default async function NewSalePage() {
           stock: p.stockQty,
           unitCode: p.unitCode,
           trackStock: p.trackStock,
+          itemType: p.itemType,
         }))}
       />
     </>

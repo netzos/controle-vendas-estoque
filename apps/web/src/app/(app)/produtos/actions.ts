@@ -15,7 +15,11 @@ function fields(form: FormData) {
     salePrice: str(form, "salePrice"),
     costPrice: str(form, "costPrice"),
     minStock: str(form, "minStock"),
-    trackStock: form.get("trackStock") === "on",
+    itemType: (["stock", "made_to_order", "service", "production"].find((t) => t === str(form, "itemType")) ?? "stock") as
+      "stock" | "made_to_order" | "service" | "production",
+    customValues: Object.fromEntries(
+      [...form.keys()].filter((k) => k.startsWith("cf_")).map((k) => [k.slice(3), str(form, k)]),
+    ),
   };
 }
 

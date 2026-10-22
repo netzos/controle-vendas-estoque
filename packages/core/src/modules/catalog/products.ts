@@ -3,6 +3,8 @@ import { can } from "../../context.ts";
 import { AppError, forbidden, notFound } from "../../errors.ts";
 import { defineService } from "../../service.ts";
 import { applyMovement } from "../stock/movements.ts";
+import { ITEM_TYPES, type ItemType } from "../../labels.ts";
+import { cleanCustomValues, type CustomValues } from "./custom-fields.ts";
 import { decimalField, optionalText, statusField, uuidOrNull } from "./fields.ts";
 
 export interface Category {
@@ -39,6 +41,8 @@ export interface Product {
   stockQty: string;
   /** Falso para serviços e itens sem estoque. */
   trackStock: boolean;
+  itemType: ItemType;
+  customValues: CustomValues;
   status: "active" | "inactive";
   createdAt: Date;
 }
@@ -197,7 +201,8 @@ export const updateUnit = defineService({
 const PRODUCT_COLUMNS = `p.id, p.sku, p.barcode, p.name, p.description, p.category_id AS "categoryId", c.name AS "categoryName",
   p.unit_id AS "unitId", u.code AS "unitCode", p.supplier_id AS "supplierId", s.name AS "supplierName",
   p.sale_price::text AS "salePrice", p.cost_price::text AS "costPrice", p.min_stock::text AS "minStock",
-  p.stock_qty::text AS "stockQty", p.track_stock AS "trackStock", p.status, p.created_at AS "createdAt"`;
+  p.stock_qty::text AS "stockQty", p.track_stock AS "trackStock", p.item_type AS "itemType",
+  p.custom_values AS "customValues", p.status, p.created_at AS "createdAt"`;
 const PRODUCT_FROM = `controle_vendas_estoque.products p
   JOIN controle_vendas_estoque.units u ON u.id = p.unit_id
   LEFT JOIN controle_vendas_estoque.categories c ON c.id = p.category_id
@@ -223,7 +228,8 @@ const productFields = z.object({
   salePrice: decimalField(2, "Preço de venda"),
   costPrice: decimalField(4, "Custo"),
   minStock: decimalField(3, "Estoque mínimo"),
-  trackStock: z.boolean().default(true),
+  itemType: z.enum(["stock", "made_to_order", "service", "production"]).default("stock"),
+  customValues: z.record(z.string(), z.unknown()).default({}),
 });
 
 async function assertProductRefs(tx: import("@erp/db").Tx, input: z.output<typeof productFields>, id?: string) {
@@ -293,14 +299,17 @@ export const createProduct = defineService({
       throw forbidden("Você não tem permissão para definir preço e custo. Cadastre sem preço e peça a quem tem.");
     }
     await assertProductRefs(tx, input);
+    const custom = await cleanCustomValues(tx, input.categoryId, input.customValues);
+    const trackStock = ITEM_TYPES[input.itemType].tracksStock;
     const { rows } = await tx.query<{ id: string }>(
       `INSERT INTO controle_vendas_estoque.products
-         (organization_id, sku, barcode, name, description, category_id, unit_id, supplier_id, sale_price, cost_price, min_stock, track_stock)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id`,
+         (organization_id, sku, barcode, name, description, category_id, unit_id, supplier_id, sale_price, cost_price, min_stock,
+          track_stock, item_type, custom_values)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING id`,
       [actor.organizationId, input.sku, input.barcode ?? null, input.name, input.description ?? null, input.categoryId ?? null,
-        input.unitId, input.supplierId ?? null, input.salePrice, input.costPrice, input.minStock, input.trackStock],
+        input.unitId, input.supplierId ?? null, input.salePrice, input.costPrice, input.minStock, trackStock, input.itemType, JSON.stringify(custom)],
     );
-    if (input.trackStock && Number(input.initialStock) > 0) {
+    if (trackStock && Number(input.initialStock) > 0) {
       if (!can(actor, "stock.manage")) throw forbidden("Você não tem permissão para lançar estoque. Cadastre sem estoque inicial.");
       await applyMovement(tx, actor, { productId: rows[0]!.id, kind: "in", quantity: input.initialStock, unitCost: input.costPrice, notes: "Estoque inicial" });
     }
@@ -325,16 +334,20 @@ export const updateProduct = defineService({
       throw forbidden("Você não tem permissão para alterar preço ou custo.");
     }
     await assertProductRefs(tx, input, input.id);
+    const custom = await cleanCustomValues(tx, input.categoryId, input.customValues, current.customValues);
     await tx.query(
       `UPDATE controle_vendas_estoque.products SET sku = $2, barcode = $3, name = $4, description = $5, category_id = $6,
-              unit_id = $7, supplier_id = $8, sale_price = $9, cost_price = $10, min_stock = $11, status = $12, track_stock = $13
+              unit_id = $7, supplier_id = $8, sale_price = $9, cost_price = $10, min_stock = $11, status = $12, track_stock = $13,
+              item_type = $14, custom_values = $15
         WHERE id = $1`,
       [input.id, input.sku, input.barcode ?? null, input.name, input.description ?? null, input.categoryId ?? null, input.unitId,
-        input.supplierId ?? null, input.salePrice, input.costPrice, input.minStock, input.status, input.trackStock],
+        input.supplierId ?? null, input.salePrice, input.costPrice, input.minStock, input.status, ITEM_TYPES[input.itemType].tracksStock,
+        input.itemType, JSON.stringify(custom)],
     );
     const after = (await getProduct(tx, input.id))!;
-    const fields = (["sku", "barcode", "name", "description", "categoryId", "unitId", "supplierId", "salePrice", "costPrice", "minStock", "trackStock", "status"] as const)
+    const fields: string[] = (["sku", "barcode", "name", "description", "categoryId", "unitId", "supplierId", "salePrice", "costPrice", "minStock", "trackStock", "itemType", "status"] as const)
       .filter((f) => current[f] !== after[f]);
+    if (JSON.stringify(current.customValues) !== JSON.stringify(after.customValues)) fields.push("customValues");
     if (fields.length > 0) {
       await audit({ action: "product.update", entityType: "product", entityId: after.id, summary: `Produto ${after.name} (${after.sku}) alterado`, before: current, after });
       await emit("product.updated", { productId: after.id, fields: [...fields] }, { type: "product", id: after.id });
