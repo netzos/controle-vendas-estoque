@@ -1,7 +1,16 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createPlatformOrganization, joinOrganizationForSupport, platformOwnerPasswordLink, setOrganizationStatus, switchOrganization } from "@erp/core";
+import {
+  createPlatformOrganization,
+  joinOrganizationForSupport,
+  leaveOrganizationSupport,
+  platformMemberPasswordLink,
+  platformOwnerPasswordLink,
+  savePlatformOrganizationNotes,
+  setOrganizationStatus,
+  switchOrganization,
+} from "@erp/core";
 import { redirect } from "next/navigation";
 import { currentActor, requireSession } from "@/lib/auth";
 import { db } from "@/lib/db";
@@ -47,7 +56,10 @@ export type LinkState = { ok: boolean; message?: string; url?: string; name?: st
 export async function ownerLinkAction(_: LinkState, form: FormData): Promise<LinkState> {
   try {
     const actor = await currentActor();
-    const r = await platformOwnerPasswordLink(db(), actor.userId, str(form, "organizationId"));
+    const membershipId = str(form, "membershipId");
+    const r = membershipId
+      ? await platformMemberPasswordLink(db(), actor.userId, str(form, "organizationId"), membershipId)
+      : await platformOwnerPasswordLink(db(), actor.userId, str(form, "organizationId"));
     return {
       ok: true,
       url: r.url,
@@ -80,4 +92,26 @@ export async function openOrganizationAction(form: FormData): Promise<void> {
   await switchOrganization(db(), await requireSession(), id);
   revalidatePath("/", "layout");
   redirect("/");
+}
+
+export async function organizationNotesAction(_: FormState, form: FormData): Promise<FormState> {
+  try {
+    const id = str(form, "organizationId");
+    await savePlatformOrganizationNotes(db(), await currentActor(), id, { notes: str(form, "notes"), contact: str(form, "contact") });
+    revalidatePath(`/plataforma/empresas/${id}`);
+    return { ok: true, message: "Anotações salvas." };
+  } catch (err) {
+    return toFormState(err);
+  }
+}
+
+export async function leaveSupportAction(_: FormState, form: FormData): Promise<FormState> {
+  try {
+    const id = str(form, "organizationId");
+    await leaveOrganizationSupport(db(), await currentActor(), id);
+    revalidatePath("/", "layout");
+    return { ok: true, message: "Você saiu da empresa. Para voltar, use Entrar para dar suporte." };
+  } catch (err) {
+    return toFormState(err);
+  }
 }

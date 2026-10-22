@@ -2,7 +2,7 @@
 
 import { useActionState, useState } from "react";
 import { Field, FormMessage, SubmitButton } from "@/components/form";
-import { createOrganizationAction, organizationStatusAction, ownerLinkAction } from "./actions";
+import { createOrganizationAction, leaveSupportAction, organizationNotesAction, organizationStatusAction, ownerLinkAction } from "./actions";
 
 /** Link pronto para copiar ou mandar no WhatsApp. */
 function LinkBox({ url, text }: { url: string; text: string }) {
@@ -91,6 +91,58 @@ export function OrganizationStatus({ organizationId, name, status }: { organizat
       <input type="hidden" name="organizationId" value={organizationId} />
       <input type="hidden" name="status" value={suspend ? "suspended" : "active"} />
       <SubmitButton className="secondary" pendingText="Salvando...">{suspend ? "Suspender empresa" : "Reativar empresa"}</SubmitButton>
+    </form>
+  );
+}
+
+/** Link de senha para uma pessoa da empresa (suporte). Mostra o link logo abaixo do botão. */
+export function MemberLink({ organizationId, membershipId, name, firstAccess }: { organizationId: string; membershipId: string; name: string; firstAccess: boolean }) {
+  const [state, action] = useActionState(ownerLinkAction, null);
+  return (
+    <div className="member-link">
+      <form action={action}>
+        <input type="hidden" name="organizationId" value={organizationId} />
+        <input type="hidden" name="membershipId" value={membershipId} />
+        <SubmitButton className="secondary small" pendingText="Gerando...">{firstAccess ? "Link de primeiro acesso" : "Link de nova senha"}</SubmitButton>
+      </form>
+      {state && !state.ok && <span className="error">{state.message}</span>}
+      {state?.url && (
+        <LinkBox url={state.url} text={`Olá, ${name}! Use este link para ${state.firstAccess ? "criar" : "trocar"} sua senha do netzsales:`} />
+      )}
+    </div>
+  );
+}
+
+/** Anotações internas da equipe sobre a empresa. */
+export function NotesForm({ organizationId, notes, contact }: { organizationId: string; notes: string; contact: string | null }) {
+  const [state, action] = useActionState(organizationNotesAction, null);
+  return (
+    <form action={action}>
+      <FormMessage state={state} />
+      <Field label="Contato principal" name="contact" state={state} hint="Ex.: Anne · (11) 99999-9999">
+        <input id="contact" name="contact" maxLength={200} defaultValue={contact ?? ""} />
+      </Field>
+      <Field label="Anotações" name="notes" state={state} hint="Combinados, pendências, como a empresa usa o sistema. Só a equipe netzsales vê.">
+        <textarea id="notes" name="notes" rows={6} maxLength={5000} defaultValue={notes} />
+      </Field>
+      <div className="actions"><SubmitButton>Salvar anotações</SubmitButton></div>
+    </form>
+  );
+}
+
+/** Sair de uma empresa em que entrou para dar suporte. */
+export function LeaveSupport({ organizationId, name }: { organizationId: string; name: string }) {
+  const [state, action] = useActionState(leaveSupportAction, null);
+  return (
+    <form
+      action={action}
+      onSubmit={(e) => {
+        if (!window.confirm(`Sair de ${name}? Você deixa de aparecer como usuário da empresa.`)) e.preventDefault();
+      }}
+    >
+      <FormMessage state={state} />
+      <input type="hidden" name="organizationId" value={organizationId} />
+      <SubmitButton className="secondary" pendingText="Saindo...">Encerrar suporte e sair da empresa</SubmitButton>
     </form>
   );
 }
