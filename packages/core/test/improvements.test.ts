@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { after, before, describe, it } from "node:test";
 import {
+  agentComplementImprovement,
   agentCreateImprovement,
+  agentListImprovements,
   AppError,
   claudeCommentImprovement,
   claudeCreateImprovement,
@@ -165,6 +167,30 @@ describe("melhorias", () => {
     });
     assert.equal(noticed.item.source, "erp_ai");
     assert.equal(noticed.item.createdByName, "IA do sistema");
+  });
+
+  it("aprovado ainda pode ser corrigido e complementado; em desenvolvimento, só a conversa", async () => {
+    const item = await createImprovement(t.app, seller, { title: "Responder áudio sem repetir", body: "Texto" });
+    await decideImprovement(t.app, dev, item.id, "approve");
+    const edited = await editImprovement(t.app, seller, item.id, { title: "Responder áudio de forma natural" });
+    assert.equal(edited.title, "Responder áudio de forma natural");
+
+    // Pela Netz, pelo número: só complemento, ou complemento + texto novo.
+    const listed = await agentListImprovements(t.app, sellerActor);
+    assert.ok(listed.some((i) => i.number === item.number && i.status === "approved"));
+    await agentComplementImprovement(t.app, sellerActor, { number: Number(item.number), complement: "Tem que ser uma conversa natural." });
+    const after1 = await getImprovement(t.app, seller, item.id);
+    assert.equal(after1.messages.at(-1)!.body, "Complemento: Tem que ser uma conversa natural.");
+    assert.equal(after1.messages.at(-1)!.name, sellerActor.userName);
+    const changed = await agentComplementImprovement(t.app, sellerActor, { number: Number(item.number), complement: "Mudei a proposta.", proposal: "Responder como conversa.", problem: "Repete a fala." });
+    assert.equal(changed.details?.proposta, "Responder como conversa.");
+    // Outra empresa não acha o pedido pelo número.
+    const other = await actorFor(t.app, otherOrg.userId, otherOrg.organizationId);
+    await assert.rejects(agentComplementImprovement(t.app, other, { number: Number(item.number), complement: "x" }), rejectsWith("not_found"));
+
+    await claudeMoveImprovement(t.app, item.id, "building", { body: "Começando." });
+    await assert.rejects(editImprovement(t.app, seller, item.id, { title: "Tarde demais" }), rejectsWith("conflict"));
+    await agentComplementImprovement(t.app, sellerActor, { number: Number(item.number), complement: "Ainda dá para comentar." });
   });
 
   it("pedido criado pelo Claude é visível ao desenvolvedor e não às empresas", async () => {

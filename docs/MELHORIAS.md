@@ -9,7 +9,7 @@ A tela **Melhorias** (menu Colaboração) é o quadro onde quem usa o ERP pede m
    - pela IA do sistema (a partir da Fase 8), ao ouvir uma sugestão ou perceber algo que o sistema ainda não faz. A função `agentCreateImprovement` guarda as partes do pedido: a fala original, o problema (o porquê), a proposta reescrita e como saber que ficou pronto. Um pedido aberto com o mesmo título recebe uma mensagem em vez de virar outro pedido, e há limite de 20 por pessoa por dia;
    - pelo Claude.
 2. **Análise.** O Claude confere os pedidos novos. Em cada um, escreve na conversa o que mudaria, como faria, o risco, o esforço e as dúvidas, e move o pedido para **Em análise**.
-3. **Correção e decisão.** Antes da decisão, quem pediu ou o desenvolvedor corrige o pedido (botão **Corrigir pedido**). A correção fica registrada na conversa ("Pedido corrigido: título, proposta."), para o Claude rever a análise. **Só o desenvolvedor aprova ou recusa.**
+3. **Correção e decisão.** Enquanto o pedido não entrou em desenvolvimento (novo, em análise ou aprovado), quem pediu ou o desenvolvedor corrige o pedido (botão **Corrigir pedido**). Pela Netz, a pessoa complementa um pedido pelo número (`complementar_melhoria`); o complemento entra na conversa com data e autor. A correção fica registrada na conversa ("Pedido corrigido: título, proposta."), para o Claude rever a análise. **Só o desenvolvedor aprova ou recusa.**
 4. **Publicação.** Com o pedido aprovado, o Claude:
    - marca **Em desenvolvimento**;
    - implementa numa branch, abre o PR e publica;

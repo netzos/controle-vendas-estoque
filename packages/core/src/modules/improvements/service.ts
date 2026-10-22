@@ -31,6 +31,8 @@ export const AI_NAME = "IA do sistema";
 export const CLAUDE_NAME = "Claude";
 export const AGENT_DAILY_LIMIT = 20;
 const OPEN: ImprovementStatus[] = ["new", "analysis", "approved", "building"];
+// O texto pode ser corrigido enquanto o pedido não começou a ser feito.
+const EDITABLE: ImprovementStatus[] = ["new", "analysis", "approved"];
 
 export interface ImprovementDetails {
   fala_original?: string;
@@ -326,6 +328,51 @@ export async function agentCreateImprovement(db: Db, actor: Actor, raw: z.input<
   });
 }
 
+/** Pedidos abertos da empresa, para a Netz achar o número de um pedido. */
+export async function agentListImprovements(db: Db, actor: Actor) {
+  return withTenant(db, { organizationId: actor.organizationId, userId: actor.userId }, async (tx) => {
+    const { rows } = await tx.query<{ number: string; title: string; status: ImprovementStatus; createdByName: string }>(
+      `SELECT number::text AS number, title, status, created_by_name AS "createdByName" FROM controle_vendas_estoque.improvements
+        WHERE organization_id = $1 AND status = ANY($2) ORDER BY number DESC LIMIT 50`,
+      [actor.organizationId, OPEN],
+    );
+    return rows;
+  });
+}
+
+const complementInput = z.object({
+  number: z.coerce.number().int().positive(),
+  complement: z.string().trim().min(1, "Escreva o complemento.").max(2000),
+  title: title.optional(),
+  problem: z.string().trim().min(1).max(1500).optional(),
+  proposal: z.string().trim().min(1).max(2000).optional(),
+  criteria: z.array(z.string().trim().max(300)).max(6).optional(),
+});
+
+/**
+ * Complemento pela Netz: entra na conversa do pedido com data e autor. Se vier
+ * texto novo (título, problema, proposta, critérios), corrige o pedido também,
+ * com as mesmas regras da tela (quem pediu ou o desenvolvedor, antes de começar).
+ */
+export async function agentComplementImprovement(db: Db, actor: Actor, raw: z.input<typeof complementInput>) {
+  const input = parseInput(complementInput, raw);
+  const viewer = await improvementViewer(db, actor);
+  const id = await asViewer(db, viewer, async (tx) => {
+    const { rows } = await tx.query<{ id: string }>(
+      "SELECT id FROM controle_vendas_estoque.improvements WHERE number = $1 AND organization_id = $2",
+      [input.number, actor.organizationId],
+    );
+    return rows[0]?.id;
+  });
+  if (!id) throw notFound("Pedido");
+  const fields = { title: input.title, problem: input.problem, proposal: input.proposal, criteria: input.criteria };
+  if (Object.values(fields).some((v) => v !== undefined)) {
+    return editImprovement(db, viewer, id, { ...fields, comment: `Complemento: ${input.complement}` });
+  }
+  await commentImprovement(db, viewer, id, `Complemento: ${input.complement}`);
+  return (await getImprovement(db, viewer, id)).item;
+}
+
 // Lado do Claude ---------------------------------------------------------------
 // Usado pela rota /api/claude/improvements e pelo comando pnpm improvements.
 
@@ -420,8 +467,8 @@ function applyEdit(item: Improvement, input: z.output<typeof editInput>): string
     input.title !== undefined || input.body !== undefined || input.problem !== undefined ||
     input.proposal !== undefined || input.criteria !== undefined;
   if (!content) return changed;
-  if (item.status !== "new" && item.status !== "analysis") {
-    throw new AppError("conflict", "O pedido já foi decidido; o texto não pode mais ser corrigido. Escreva na conversa.");
+  if (!EDITABLE.includes(item.status)) {
+    throw new AppError("conflict", "O pedido já entrou em desenvolvimento ou foi encerrado; o texto não pode mais ser corrigido. Escreva na conversa.");
   }
   if (input.title !== undefined && input.title !== item.title) {
     item.title = input.title;

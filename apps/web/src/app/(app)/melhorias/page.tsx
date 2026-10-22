@@ -76,7 +76,7 @@ export default async function ImprovementsPage({ searchParams }: { searchParams:
     return `/melhorias?${q}`;
   };
   const d = detail?.item;
-  const canCorrect = d && (viewer.isDeveloper || d.createdBy === viewer.userId) && (d.status === "new" || d.status === "analysis");
+  const canCorrect = d && (viewer.isDeveloper || d.createdBy === viewer.userId) && (d.status === "new" || d.status === "analysis" || d.status === "approved");
 
   return (
     <>

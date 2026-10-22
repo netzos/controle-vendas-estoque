@@ -178,12 +178,13 @@ describe("Netz no Telegram", () => {
     await handleTelegramUpdate(t.app, voice(), { api: f.api, model, transcribe });
     assert.deepEqual(heard, ["voz.ogg"]);
     assert.ok(f.calls.some((c) => c.method === "download" && c.params.filePath === "voice/abc.oga"));
-    assert.equal(f.sent().at(-2), '🎤 Entendi: "quanto tenho de estoque do orient"');
+    // Sem eco da transcrição: só a resposta.
+    assert.ok(!f.sent().some((m) => m.includes("Entendi")));
     assert.equal(f.sent().at(-1), "Você tem 0 unidades.");
     const { messages } = await listNetsMessages(t.app, owner);
     const asked = messages.filter((m) => m.role === "user").at(-1)!;
     assert.equal(asked.body, "quanto tenho de estoque do orient");
-    assert.match(asked.context ?? "", /voz transcrita/);
+    assert.match(asked.context ?? "", /voz/);
 
     // Longo demais: avisa sem baixar.
     await handleTelegramUpdate(t.app, voice({ voice: { file_id: "longo", duration: 3600 } }), { api: f.api, transcribe });

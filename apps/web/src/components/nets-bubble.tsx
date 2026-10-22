@@ -184,7 +184,7 @@ export function NetsBubble() {
       const res = await fetch("/api/nets", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ requestId: request.current.id, text, context: where() }),
+        body: JSON.stringify({ requestId: request.current.id, text, context: heard ? `voz transcrita · ${where()}`.slice(0, 200) : where() }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Falha ao enviar.");

@@ -5,9 +5,9 @@ import { z } from "zod";
 import { can, resolveActor, type Actor, type Channel } from "../../context.ts";
 import { AppError, forbidden, parseInput } from "../../errors.ts";
 import { runService } from "../../service.ts";
-import { agentCreateImprovement } from "../improvements/service.ts";
+import { agentComplementImprovement, agentCreateImprovement, agentListImprovements } from "../improvements/service.ts";
 import { NETS_INSTRUCTIONS } from "./instructions.ts";
-import { IMPROVEMENT_TOOL, netsTools, type NetsTool } from "./tools.ts";
+import { IMPROVEMENT_COMPLEMENT_TOOL, IMPROVEMENT_LIST_TOOL, IMPROVEMENT_TOOL, netsTools, type NetsTool } from "./tools.ts";
 
 // Netz: o agente global. A conversa fica no banco; cada mensagem da pessoa é
 // respondida fora da requisição (processNetsTurn). Consultas rodam na hora;
@@ -242,6 +242,15 @@ async function runTool(db: Db, actor: Actor, tools: NetsTool[], block: Anthropic
       return { content: r.existing ? `Já existia um pedido parecido (nº ${r.item.number}); a fala foi juntada a ele.` : `Melhoria registrada: pedido nº ${r.item.number}.` };
     } catch (err) {
       return { content: err instanceof AppError ? err.message : "Não foi possível registrar a melhoria.", isError: true };
+    }
+  }
+  if (block.name === IMPROVEMENT_LIST_TOOL) return { content: serialize(await agentListImprovements(db, actor)) };
+  if (block.name === IMPROVEMENT_COMPLEMENT_TOOL) {
+    try {
+      const item = await agentComplementImprovement(db, actor, input as Parameters<typeof agentComplementImprovement>[2]);
+      return { content: `Complemento registrado no pedido nº ${item.number}.` };
+    } catch (err) {
+      return { content: err instanceof AppError ? err.message : "Não foi possível complementar a melhoria.", isError: true };
     }
   }
   const tool = tools.find((t) => t.name === block.name);

@@ -37,6 +37,8 @@ const EXCLUDED = new Set([
 const READ = /\.(list|get|overview|dashboard|counts|movements)$/;
 
 export const IMPROVEMENT_TOOL = "registrar_melhoria";
+export const IMPROVEMENT_LIST_TOOL = "listar_melhorias";
+export const IMPROVEMENT_COMPLEMENT_TOOL = "complementar_melhoria";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyService = ServiceDefinition<z.ZodType, any>;
@@ -126,8 +128,33 @@ const improvementTool: Anthropic.Beta.BetaTool = {
   },
 };
 
+const improvementListTool: Anthropic.Beta.BetaTool = {
+  name: IMPROVEMENT_LIST_TOOL,
+  description: "Lista os pedidos de melhoria abertos da empresa (número, título, situação). Consulta: roda na hora.",
+  input_schema: { type: "object", properties: {} },
+};
+
+const improvementComplementTool: Anthropic.Beta.BetaTool = {
+  name: IMPROVEMENT_COMPLEMENT_TOOL,
+  description:
+    "Complementa um pedido de melhoria já registrado, pelo número, em vez de abrir outro. O complemento fica na conversa do pedido com data e autor. " +
+    "Se a pessoa quiser mudar o título, o problema, a proposta ou os critérios, mande o texto novo completo desses campos (só vale enquanto o pedido não entrou em desenvolvimento). Roda na hora, sem confirmação.",
+  input_schema: {
+    type: "object",
+    properties: {
+      number: { type: "integer", description: "Número do pedido (nº)." },
+      complement: { type: "string", maxLength: 2000, description: "O que acrescentar, nas palavras da pessoa." },
+      title: { type: "string", minLength: 3, maxLength: 200 },
+      problem: { type: "string", maxLength: 1500 },
+      proposal: { type: "string", maxLength: 2000 },
+      criteria: { type: "array", items: { type: "string", maxLength: 300 }, maxItems: 6 },
+    },
+    required: ["number", "complement"],
+  },
+};
+
 /** Ferramentas que esta pessoa pode usar, sempre na mesma ordem (cache). */
 export function netsTools(actor: Actor): { tools: NetsTool[]; definitions: Anthropic.Beta.BetaTool[] } {
   const tools = TOOLS.filter((t) => !t.service.permission || can(actor, t.service.permission));
-  return { tools, definitions: [...tools.map((t) => t.definition), improvementTool] };
+  return { tools, definitions: [...tools.map((t) => t.definition), improvementTool, improvementListTool, improvementComplementTool] };
 }

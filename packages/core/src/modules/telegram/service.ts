@@ -236,7 +236,7 @@ async function connect(db: Db, api: TelegramApi, msg: TgMessage, code: string) {
   );
 }
 
-/** Baixa o áudio, transcreve e mostra o que entendeu. Devolve null quando já avisou a pessoa. */
+/** Baixa o áudio e transcreve. Devolve null quando já avisou a pessoa. */
 async function hear(api: TelegramApi, msg: TgMessage, transcribe?: Transcriber): Promise<string | null> {
   const voice = msg.voice ?? msg.video_note;
   const media = (voice ?? msg.audio)!;
@@ -259,7 +259,6 @@ async function hear(api: TelegramApi, msg: TgMessage, transcribe?: Transcriber):
     await send(api, msg.chat.id, "Não consegui entender o áudio. Pode repetir ou mandar em texto?");
     return null;
   }
-  await send(api, msg.chat.id, `🎤 Entendi: "${heard}"`);
   return heard;
 }
 
@@ -311,7 +310,7 @@ async function onMessage(db: Db, api: TelegramApi, update: TelegramUpdate, deps:
     posted = await postNetsMessage(db, actor, {
       requestId: stableUuid(`tg:${update.update_id}`),
       text: said.slice(0, 12000),
-      context: spoken ? "Telegram (mensagem de voz transcrita automaticamente; pode ter erros de transcrição)" : "Telegram",
+      context: spoken ? "Telegram, voz transcrita" : "Telegram",
     });
   } catch (err) {
     await send(api, msg.chat.id, err instanceof AppError ? err.message : "Não consegui receber a mensagem. Tente de novo.");
