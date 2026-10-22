@@ -10,6 +10,8 @@ import {
   listProducts,
   listUnits,
   runService,
+  setTranscriber,
+  transcribeForNets,
   type Actor,
   type NetsModel,
   type TelegramApi,
@@ -189,5 +191,27 @@ describe("Netz no Telegram", () => {
     // Sem chave de transcrição: pede texto.
     await handleTelegramUpdate(t.app, voice(), { api: f.api });
     assert.match(f.sent().at(-1)!, /não consigo ouvir/);
+  });
+});
+
+describe("Microfone do balão da Netz", () => {
+  it("transcreve com a mesma API do Telegram e respeita a permissão", async () => {
+    const data = new TextEncoder().encode("audio");
+    await assert.rejects(transcribeForNets(owner, { data, mimeType: "audio/webm" }), /OPENAI_API_KEY/);
+    const names: string[] = [];
+    setTranscriber(async (a) => {
+      names.push(a.fileName);
+      return "  vendi 3 latas pro João  ";
+    });
+    try {
+      assert.deepEqual(await transcribeForNets(owner, { data, mimeType: "audio/mp4" }), { text: "vendi 3 latas pro João" });
+      await transcribeForNets(owner, { data, mimeType: "audio/webm;codecs=opus" });
+      assert.deepEqual(names, ["fala.m4a", "fala.webm"]);
+      await assert.rejects(transcribeForNets(owner, { data: new Uint8Array(0), mimeType: "audio/webm" }), /Não chegou/);
+      const noNets: Actor = { ...owner, isOwner: false, permissions: new Set<string>() };
+      await assert.rejects(transcribeForNets(noNets, { data, mimeType: "audio/webm" }), /permissão/);
+    } finally {
+      setTranscriber(null);
+    }
   });
 });

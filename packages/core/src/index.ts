@@ -33,5 +33,6 @@ export * from "./modules/costs/costs.ts";
 export * from "./modules/nets/instructions.ts";
 export * from "./modules/nets/tools.ts";
 export * from "./modules/nets/service.ts";
+export * from "./modules/nets/voice.ts";
 export * from "./modules/telegram/api.ts";
 export * from "./modules/telegram/service.ts";

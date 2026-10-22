@@ -47,40 +47,70 @@ function Rich({ text }: { text: string }) {
   );
 }
 
-type Recognition = { lang: string; interimResults: boolean; continuous: boolean; start(): void; stop(): void; onresult: ((e: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null; onend: (() => void) | null; onerror: (() => void) | null };
+type VoiceState = "idle" | "recording" | "sending";
+const VOICE_MAX_MS = 4 * 60 * 1000;
 
-// Microfone do navegador (Chrome, Edge, Safari): fala vira texto na caixa para revisar e enviar.
-function useDictation(onText: (text: string) => void) {
+// Microfone: toca para gravar, toca de novo para parar. O áudio vai para o
+// servidor, que transcreve com a mesma API do Telegram e devolve o texto.
+function useVoice(onText: (text: string) => void, onError: (message: string) => void) {
   const [supported, setSupported] = useState(false);
-  const [listening, setListening] = useState(false);
-  const rec = useRef<Recognition | null>(null);
+  const [state, setState] = useState<VoiceState>("idle");
+  const recorder = useRef<MediaRecorder | null>(null);
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  // A gravação termina depois de outros renders: usa sempre os callbacks mais novos.
+  const handlers = useRef({ onText, onError });
+  handlers.current = { onText, onError };
   useEffect(() => {
-    const w = window as unknown as { SpeechRecognition?: new () => Recognition; webkitSpeechRecognition?: new () => Recognition };
-    setSupported(!!(w.SpeechRecognition ?? w.webkitSpeechRecognition));
+    setSupported(typeof window.MediaRecorder !== "undefined" && !!navigator.mediaDevices?.getUserMedia);
   }, []);
-  const toggle = () => {
-    if (listening) {
-      rec.current?.stop();
+  useEffect(() => () => recorder.current?.stream.getTracks().forEach((t) => t.stop()), []);
+
+  const upload = async (blob: Blob) => {
+    setState("sending");
+    try {
+      const res = await fetch("/api/nets/transcrever", { method: "POST", headers: { "content-type": blob.type || "audio/webm" }, body: blob });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? "Não consegui transcrever o áudio.");
+      handlers.current.onText(data.text);
+    } catch (err) {
+      handlers.current.onError(err instanceof Error ? err.message : "Não consegui transcrever o áudio.");
+    } finally {
+      setState("idle");
+    }
+  };
+
+  const toggle = async () => {
+    if (state === "recording") {
+      clearTimeout(timer.current);
+      recorder.current?.stop();
       return;
     }
-    const w = window as unknown as { SpeechRecognition?: new () => Recognition; webkitSpeechRecognition?: new () => Recognition };
-    const Ctor = w.SpeechRecognition ?? w.webkitSpeechRecognition;
-    if (!Ctor) return;
-    const r = new Ctor();
-    r.lang = "pt-BR";
-    r.interimResults = false;
-    r.continuous = true;
-    r.onresult = (e) => {
-      const last = e.results[e.results.length - 1];
-      if (last?.[0]?.transcript) onText(last[0].transcript.trim());
+    if (state !== "idle") return;
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch {
+      onError("O navegador não liberou o microfone. Permita o acesso ao microfone e tente de novo.");
+      return;
+    }
+    const r = new MediaRecorder(stream);
+    const chunks: Blob[] = [];
+    r.ondataavailable = (e) => {
+      if (e.data.size) chunks.push(e.data);
     };
-    r.onend = () => setListening(false);
-    r.onerror = () => setListening(false);
-    rec.current = r;
+    r.onstop = () => {
+      stream.getTracks().forEach((t) => t.stop());
+      recorder.current = null;
+      const blob = new Blob(chunks, { type: r.mimeType || "audio/webm" });
+      if (blob.size) void upload(blob);
+      else setState("idle");
+    };
+    recorder.current = r;
     r.start();
-    setListening(true);
+    setState("recording");
+    timer.current = setTimeout(() => r.state === "recording" && r.stop(), VOICE_MAX_MS);
   };
-  return { supported, listening, toggle };
+  return { supported, state, toggle };
 }
 
 // A Netz em todas as telas: arrastável, minimiza sem perder o rascunho e sabe
@@ -101,7 +131,10 @@ export function NetsBubble() {
   const pathname = usePathname();
   const search = useSearchParams();
   const router = useRouter();
-  const dictation = useDictation((text) => setDraft((d) => (d.trim() ? `${d.trimEnd()} ` : "") + text));
+  const voice = useVoice(
+    (heard) => void send(heard),
+    (message) => setError(message),
+  );
 
   useEffect(() => setPosition(readPosition()), []);
 
@@ -140,8 +173,9 @@ export function NetsBubble() {
     return [title, `${pathname}${q ? `?${q}` : ""}`].filter(Boolean).join(" · ").slice(0, 200);
   }, [pathname, search]);
 
-  const send = async () => {
-    const text = draft.trim();
+  // heard = fala transcrita: vai direto, junto com o que já estiver escrito.
+  const send = async (heard?: string) => {
+    const text = (heard ? `${draft.trim()} ${heard}` : draft).trim();
     if (busy || pending || !text) return;
     setBusy(true);
     setError("");
@@ -258,8 +292,8 @@ export function NetsBubble() {
               value={draft}
               rows={2}
               maxLength={12000}
-              placeholder={dictation.listening ? "Pode falar..." : "O que você precisa?"}
-              disabled={busy}
+              placeholder={voice.state === "recording" ? "Gravando... toque no quadrado para enviar" : voice.state === "sending" ? "Transcrevendo..." : "O que você precisa?"}
+              disabled={busy || voice.state !== "idle"}
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
@@ -268,9 +302,18 @@ export function NetsBubble() {
                 }
               }}
             />
-            {dictation.supported && (
-              <button type="button" className={`nets-icon-btn${dictation.listening ? " live" : ""}`} aria-label={dictation.listening ? "Parar de ouvir" : "Falar"} onClick={dictation.toggle}>
-                <Icon name={dictation.listening ? "stop" : "mic"} size={18} />
+            {voice.supported && (
+              <button
+                type="button"
+                className={`nets-icon-btn${voice.state === "recording" ? " live" : ""}`}
+                aria-label={voice.state === "recording" ? "Parar e enviar" : "Falar"}
+                disabled={voice.state === "sending" || busy || pending}
+                onClick={() => {
+                  setError("");
+                  void voice.toggle();
+                }}
+              >
+                <Icon name={voice.state === "recording" ? "stop" : "mic"} size={18} />
               </button>
             )}
             <button type="submit" className="nets-send" aria-label="Enviar para a Netz" disabled={busy || pending || !draft.trim()}>
