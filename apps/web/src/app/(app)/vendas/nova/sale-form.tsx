@@ -15,6 +15,7 @@ export interface PosProduct {
   unitCode: string;
   trackStock: boolean;
   itemType: ItemType;
+  imageId: string | null;
 }
 
 const PAYMENTS = [
@@ -93,6 +94,8 @@ export function SaleForm({
               const stock = Number(p.stock);
               return (
                 <button type="button" key={p.id} className={`pos-item${inCart ? " selected" : ""}`} onClick={() => add(p.id)}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  {p.imageId && <img className="pos-thumb" src={`/imagens/${p.imageId}`} alt="" loading="lazy" />}
                   <span className="pos-name">{p.name}</span>
                   <span className="pos-price">{money(p.price)}</span>
                   <span className={`pos-stock${p.trackStock && stock <= 0 ? " out" : ""}`}>

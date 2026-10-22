@@ -29,6 +29,7 @@ export default async function NewSalePage() {
           unitCode: p.unitCode,
           trackStock: p.trackStock,
           itemType: p.itemType,
+          imageId: p.coverImageId,
         }))}
       />
     </>

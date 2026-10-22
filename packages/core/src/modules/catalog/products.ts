@@ -43,6 +43,7 @@ export interface Product {
   trackStock: boolean;
   itemType: ItemType;
   customValues: CustomValues;
+  coverImageId: string | null;
   status: "active" | "inactive";
   createdAt: Date;
 }
@@ -202,7 +203,9 @@ const PRODUCT_COLUMNS = `p.id, p.sku, p.barcode, p.name, p.description, p.catego
   p.unit_id AS "unitId", u.code AS "unitCode", p.supplier_id AS "supplierId", s.name AS "supplierName",
   p.sale_price::text AS "salePrice", p.cost_price::text AS "costPrice", p.min_stock::text AS "minStock",
   p.stock_qty::text AS "stockQty", p.track_stock AS "trackStock", p.item_type AS "itemType",
-  p.custom_values AS "customValues", p.status, p.created_at AS "createdAt"`;
+  p.custom_values AS "customValues",
+  (SELECT i.id FROM controle_vendas_estoque.product_images i WHERE i.product_id = p.id ORDER BY i.position, i.created_at LIMIT 1) AS "coverImageId",
+  p.status, p.created_at AS "createdAt"`;
 const PRODUCT_FROM = `controle_vendas_estoque.products p
   JOIN controle_vendas_estoque.units u ON u.id = p.unit_id
   LEFT JOIN controle_vendas_estoque.categories c ON c.id = p.category_id

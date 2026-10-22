@@ -1,10 +1,11 @@
 import Link from "next/link";
-import { can, ITEM_TYPES, listCategories, listCustomFields, listProducts, listSupplierProducts, listSuppliers, listUnits } from "@erp/core";
+import { can, ITEM_TYPES, listCategories, listCustomFields, listProductImages, listProducts, listSupplierProducts, listSuppliers, listUnits } from "@erp/core";
 import { requirePermission } from "@/lib/auth";
 import { query } from "@/lib/actions";
 import { money, quantity } from "@/lib/format";
 import { ProductForm, type ProductFormOptions } from "./product-form";
 import { SupplierPrices } from "../fornecedores/supplier-prices";
+import { ProductPhotos } from "./photos";
 
 export const metadata = { title: "Produtos" };
 
@@ -25,9 +26,10 @@ export default async function ProductsPage({
   const selected = params.id ? products.find((p) => p.id === params.id) : undefined;
 
   const seesSuppliers = can(actor, "suppliers.view");
-  const [suppliers, supplierPrices] = await Promise.all([
+  const [suppliers, supplierPrices, images] = await Promise.all([
     seesSuppliers && (params.novo === "1" || selected) ? query(listSuppliers, { limit: 500 }) : Promise.resolve([]),
     seesSuppliers && selected ? query(listSupplierProducts, { productId: selected.id }) : Promise.resolve([]),
+    selected ? query(listProductImages, { productId: selected.id }) : Promise.resolve([]),
   ]);
   let options: ProductFormOptions | null = null;
   if (canManage && (params.novo === "1" || selected)) {
@@ -52,6 +54,11 @@ export default async function ProductsPage({
         <section className="card">
           <h2>{selected.name}</h2>
           <ProductForm key={selected.id} product={selected} options={options} />
+        </section>
+      )}
+      {selected && (
+        <section className="card">
+          <ProductPhotos key={selected.id} productId={selected.id} images={images} canManage={canManage} />
         </section>
       )}
       {selected && seesSuppliers && (
@@ -97,8 +104,18 @@ export default async function ProductsPage({
                   return (
                     <tr key={p.id} className="clickable">
                       <td>
-                        <Link href={`/produtos?id=${p.id}`}>{p.name}</Link>
-                        {p.itemType !== "stock" && <small className="muted">{ITEM_TYPES[p.itemType].label}</small>}
+                        <div className="with-thumb">
+                          {p.coverImageId ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img className="thumb" src={`/imagens/${p.coverImageId}`} alt="" loading="lazy" />
+                          ) : (
+                            <span className="thumb empty">{p.name[0]}</span>
+                          )}
+                          <div>
+                            <Link href={`/produtos?id=${p.id}`}>{p.name}</Link>
+                            {p.itemType !== "stock" && <small className="muted">{ITEM_TYPES[p.itemType].label}</small>}
+                          </div>
+                        </div>
                       </td>
                       <td>{p.sku}</td>
                       <td>{p.categoryName}</td>
