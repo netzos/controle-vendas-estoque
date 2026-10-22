@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useActionState } from "react";
 import { Field, FormMessage, SubmitButton } from "@/components/form";
 import { loginAction } from "./actions";
@@ -17,6 +18,7 @@ export function LoginForm() {
       </Field>
       <div className="actions">
         <SubmitButton pendingText="Entrando...">Entrar</SubmitButton>
+        <Link href="/esqueci-senha" className="muted">Esqueci minha senha</Link>
       </div>
     </form>
   );

@@ -37,7 +37,7 @@ function RoleSelect({ roles, defaultValue, id }: { roles: Role[]; defaultValue?:
   );
 }
 
-export function AddMemberForm({ roles, branches }: { roles: Role[]; branches: Branch[] }) {
+export function AddMemberForm({ roles, branches, mailEnabled }: { roles: Role[]; branches: Branch[]; mailEnabled: boolean }) {
   const [state, action] = useActionState(addMemberAction, null);
   return (
     <form action={action}>
@@ -52,7 +52,12 @@ export function AddMemberForm({ roles, branches }: { roles: Role[]; branches: Br
         <Field label="Perfil de acesso" name="roleId" state={state}>
           <RoleSelect roles={roles} id="new-role" />
         </Field>
-        <Field label="Senha provisória" name="temporaryPassword" state={state} hint="Obrigatória para quem ainda não tem conta. Mínimo de 10 caracteres.">
+        <Field
+          label={mailEnabled ? "Senha provisória (opcional)" : "Senha provisória"}
+          name="temporaryPassword"
+          state={state}
+          hint={mailEnabled ? "Deixe vazio para enviar um convite por e-mail." : "Obrigatória para quem ainda não tem conta. Mínimo de 10 caracteres."}
+        >
           <input id="new-password" name="temporaryPassword" type="text" autoComplete="off" minLength={10} />
         </Field>
       </div>

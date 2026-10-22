@@ -9,7 +9,7 @@ import { LoginForm } from "./login-form";
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Entrar" };
 
-export default async function LoginPage() {
+export default async function LoginPage({ searchParams }: { searchParams: Promise<{ senha?: string }> }) {
   if (!(await isSetupDone(db()))) redirect("/setup");
   if (await currentSession()) redirect("/");
   return (
@@ -18,6 +18,7 @@ export default async function LoginPage() {
         <div className="auth-brand"><LogoMark size={48} /><strong>{BRAND_NAME}</strong></div>
         <h1>Entrar</h1>
         <p className="muted">Entre com sua conta para continuar.</p>
+        {(await searchParams).senha === "nova" && <div className="alert success" role="status">Senha salva. Entre com a senha nova.</div>}
         <LoginForm />
       </div>
     </main>

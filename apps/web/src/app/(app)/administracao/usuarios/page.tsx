@@ -1,4 +1,4 @@
-import { can, listBranches, listMembers, listRoles } from "@erp/core";
+import { can, listBranches, listMembers, listRoles, mailConfigured } from "@erp/core";
 import { requirePermission } from "@/lib/auth";
 import { query } from "@/lib/actions";
 import { AddMemberForm, EditMemberForm } from "./member-forms";
@@ -55,7 +55,7 @@ export default async function UsersPage() {
       {canManage && (
         <section className="card">
           <h2>Adicionar usuário</h2>
-          <AddMemberForm roles={assignable} branches={branches} />
+          <AddMemberForm roles={assignable} branches={branches} mailEnabled={mailConfigured()} />
         </section>
       )}
     </>

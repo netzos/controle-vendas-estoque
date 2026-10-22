@@ -19,7 +19,12 @@ export async function addMemberAction(_: FormState, form: FormData): Promise<For
       branchIds: branchIds(form),
       temporaryPassword: password || undefined,
     },
-    { successMessage: "Usuário adicionado. No primeiro acesso ele precisará trocar a senha provisória.", revalidate: "/administracao/usuarios" },
+    {
+      successMessage: password
+        ? "Usuário adicionado. No primeiro acesso ele precisará trocar a senha provisória."
+        : "Usuário adicionado. Quem ainda não tinha conta recebe um convite por e-mail para criar a senha.",
+      revalidate: "/administracao/usuarios",
+    },
   );
 }
 

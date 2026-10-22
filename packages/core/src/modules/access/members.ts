@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { hashPassword, MIN_PASSWORD_LENGTH } from "../../auth/password.ts";
+import { sendInvite } from "../../auth/recovery.ts";
 import { normalizeEmail } from "../../auth/session.ts";
+import { mailConfigured } from "../../mail.ts";
 import { AppError, forbidden, notFound } from "../../errors.ts";
 import { defineService } from "../../service.ts";
 
@@ -91,16 +93,26 @@ export const addMember = defineService({
     const existing = await tx.query<{ id: string }>("SELECT id FROM controle_vendas_estoque.users WHERE email = $1", [email]);
     let userId = existing.rows[0]?.id;
     let createdAccount = false;
+    let invited = false;
     if (!userId) {
-      if (!input.temporaryPassword) {
-        throw new AppError("invalid_input", "Defina uma senha provisória para o novo usuário.");
+      // Sem senha provisória, a pessoa recebe um convite por e-mail e cria a
+      // própria senha. Enquanto o e-mail não estiver ativo, a senha é exigida.
+      if (!input.temporaryPassword && !mailConfigured()) {
+        throw new AppError("invalid_input", "O envio de convite por e-mail ainda não está ativo. Defina uma senha provisória.", {
+          details: { issues: [{ path: "temporaryPassword", message: "Obrigatória enquanto o e-mail não estiver ativo." }] },
+        });
       }
       const u = await tx.query<{ id: string }>(
-        "INSERT INTO controle_vendas_estoque.users (email, name, password_hash, must_change_password) VALUES ($1, $2, $3, true) RETURNING id",
-        [email, input.name, await hashPassword(input.temporaryPassword)],
+        "INSERT INTO controle_vendas_estoque.users (email, name, password_hash, must_change_password) VALUES ($1, $2, $3, $4) RETURNING id",
+        [email, input.name, input.temporaryPassword ? await hashPassword(input.temporaryPassword) : null, Boolean(input.temporaryPassword)],
       );
       userId = u.rows[0]!.id;
       createdAccount = true;
+      if (!input.temporaryPassword) {
+        const org = await tx.query<{ name: string }>("SELECT name FROM controle_vendas_estoque.organizations WHERE id = $1", [actor.organizationId]);
+        await sendInvite(tx, { userId, email, name: input.name, organizationId: actor.organizationId, organizationName: org.rows[0]!.name });
+        invited = true;
+      }
     }
 
     const dup = await tx.query("SELECT 1 FROM controle_vendas_estoque.memberships WHERE organization_id = $1 AND user_id = $2", [
@@ -120,10 +132,10 @@ export const addMember = defineService({
       entityType: "membership",
       entityId: membershipId,
       summary: `${input.name} <${email}> adicionado com perfil ${role.key}`,
-      after: { email, roleKey: role.key, branchIds: input.branchIds, createdAccount },
+      after: { email, roleKey: role.key, branchIds: input.branchIds, createdAccount, invited },
     });
     await emit("member.added", { membershipId, userId, roleKey: role.key }, { type: "membership", id: membershipId });
-    return { membershipId, userId, createdAccount };
+    return { membershipId, userId, createdAccount, invited };
   },
 });
 

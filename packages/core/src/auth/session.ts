@@ -8,7 +8,7 @@ export const SESSION_TTL_HOURS = 12;
 const MAX_FAILED_LOGINS = 5;
 const FAILED_LOGIN_WINDOW_MINUTES = 15;
 
-function hashToken(token: string): Buffer {
+export function hashToken(token: string): Buffer {
   return createHash("sha256").update(token).digest();
 }
 
