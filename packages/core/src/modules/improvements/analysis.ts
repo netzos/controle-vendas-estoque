@@ -1,4 +1,5 @@
 import type { Db } from "@erp/db";
+import { recordAiUsage } from "../../usage.ts";
 import { withTenant } from "@erp/db";
 import { AppError, forbidden } from "../../errors.ts";
 import { defaultNetsModel, NETS_MODEL, netsConfigured, type NetsModel } from "../nets/service.ts";
@@ -93,6 +94,7 @@ export async function analyzeImprovementsWithAI(db: Db, viewer: ImprovementViewe
       system: SYSTEM,
       messages: [{ role: "user", content: `Pedidos em aberto (${rows.length}):\n\n${list}` }],
     });
+    await recordAiUsage(db, viewer, "improvements_analysis", response.model ?? NETS_MODEL, response.usage);
     const text = response.content.map((b) => (b.type === "text" ? b.text : "")).join("");
     const result = parseResult(text);
     const valid = new Set(rows.map((r) => Number(r.number)));

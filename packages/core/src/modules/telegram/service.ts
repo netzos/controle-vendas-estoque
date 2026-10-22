@@ -5,7 +5,8 @@ import { can, resolveActor, type Actor } from "../../context.ts";
 import { enabledFeatures } from "../../features.ts";
 import { AppError, forbidden } from "../../errors.ts";
 import { appUrl } from "../../mail.ts";
-import { transcribeAudio, transcriptionConfigured, type Transcriber } from "../../transcribe.ts";
+import { transcribeAudioDetailed, transcriptionConfigured, type Transcriber } from "../../transcribe.ts";
+import { recordTranscriptionUsage } from "../../usage.ts";
 import { decideNetsAction, postNetsMessage, processNetsTurn, type NetsModel } from "../nets/service.ts";
 import { telegramApi, telegramConfigured, telegramWebhookSecret, type TelegramApi } from "./api.ts";
 
@@ -239,7 +240,7 @@ async function connect(db: Db, api: TelegramApi, msg: TgMessage, code: string) {
 }
 
 /** Baixa o áudio e transcreve. Devolve null quando já avisou a pessoa. */
-async function hear(api: TelegramApi, msg: TgMessage, transcribe?: Transcriber): Promise<string | null> {
+async function hear(db: Db, owner: { organizationId: string; userId: string }, api: TelegramApi, msg: TgMessage, transcribe?: Transcriber): Promise<string | null> {
   const voice = msg.voice ?? msg.video_note;
   const media = (voice ?? msg.audio)!;
   if (!transcribe && !transcriptionConfigured()) {
@@ -256,7 +257,12 @@ async function hear(api: TelegramApi, msg: TgMessage, transcribe?: Transcriber):
   const data = await api.download(file.file_path);
   // A voz do Telegram vem como .oga, extensão que a API de transcrição não reconhece.
   const fileName = msg.voice ? "voz.ogg" : msg.video_note ? "video.mp4" : (msg.audio?.file_name ?? file.file_path.split("/").pop() ?? "audio.mp3");
-  const heard = (await (transcribe ?? transcribeAudio)({ data, fileName, mimeType: msg.voice ? "audio/ogg" : media.mime_type })).trim();
+  const audio = { data, fileName, mimeType: msg.voice ? "audio/ogg" : media.mime_type };
+  const t = transcribe
+    ? { text: await transcribe(audio), provider: "teste", model: "teste", seconds: media.duration ?? 0 }
+    : await transcribeAudioDetailed(audio, media.duration);
+  await recordTranscriptionUsage(db, owner, "telegram_audio", t);
+  const heard = t.text.trim();
   if (!heard) {
     await send(api, msg.chat.id, "Não consegui entender o áudio. Pode repetir ou mandar em texto?");
     return null;
@@ -297,7 +303,7 @@ async function onMessage(db: Db, api: TelegramApi, update: TelegramUpdate, deps:
   let said = text;
   const spoken = !!(msg.voice ?? msg.audio ?? msg.video_note);
   if (spoken) {
-    const heard = await hear(api, msg, deps.transcribe);
+    const heard = await hear(db, { organizationId: link.organizationId, userId: link.userId }, api, msg, deps.transcribe);
     if (heard === null) return;
     // A legenda do áudio, se houver, vai junto.
     said = text ? `${heard}\n\n${text}` : heard;

@@ -29,8 +29,19 @@ export function transcriptionConfigured(): boolean {
   return override !== null || provider() !== null;
 }
 
-export async function transcribeAudio(audio: AudioFile): Promise<string> {
-  if (override) return override(audio);
+export interface Transcription {
+  text: string;
+  provider: string;
+  model: string;
+  /** Duração do áudio, para o custo de uso. */
+  seconds: number;
+}
+
+/** Transcreve e diz quem transcreveu e quantos segundos tinha o áudio. */
+export async function transcribeAudioDetailed(audio: AudioFile, knownSeconds?: number): Promise<Transcription> {
+  // Sem a duração, estima pelo tamanho (fala gravada em opus fica perto de 3 KB por segundo).
+  const estimate = knownSeconds ?? Math.max(1, audio.data.byteLength / 3000);
+  if (override) return { text: await override(audio), provider: "teste", model: "teste", seconds: estimate };
   const p = provider();
   if (!p) throw new Error("Transcrição de áudio não configurada");
   const form = new FormData();
@@ -39,7 +50,16 @@ export async function transcribeAudio(audio: AudioFile): Promise<string> {
   form.append("language", "pt");
   form.append("response_format", "json");
   const res = await fetch(p.url, { method: "POST", headers: { Authorization: `Bearer ${p.key}` }, body: form });
-  const data = (await res.json().catch(() => null)) as { text?: string; error?: { message?: string } } | null;
+  const data = (await res.json().catch(() => null)) as { text?: string; usage?: { seconds?: number }; error?: { message?: string } } | null;
   if (!res.ok) throw new Error(`Falha na transcrição (${res.status}${data?.error?.message ? `: ${data.error.message}` : ""})`);
-  return (data?.text ?? "").trim();
+  return {
+    text: (data?.text ?? "").trim(),
+    provider: p.url.includes("groq") ? "groq" : "openai",
+    model: p.model,
+    seconds: data?.usage?.seconds ?? estimate,
+  };
+}
+
+export async function transcribeAudio(audio: AudioFile): Promise<string> {
+  return (await transcribeAudioDetailed(audio)).text;
 }

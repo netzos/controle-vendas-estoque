@@ -3,11 +3,14 @@
 import { revalidatePath } from "next/cache";
 import {
   createPlatformOrganization,
+  deletePlatformOrganization,
   joinOrganizationForSupport,
   leaveOrganizationSupport,
   platformMemberPasswordLink,
   platformOwnerPasswordLink,
+  savePlatformBilling,
   savePlatformOrganizationNotes,
+  setOrganizationKind,
   setOrganizationStatus,
   switchOrganization,
 } from "@erp/core";
@@ -114,4 +117,42 @@ export async function leaveSupportAction(_: FormState, form: FormData): Promise<
   } catch (err) {
     return toFormState(err);
   }
+}
+
+export async function billingAction(_: FormState, form: FormData): Promise<FormState> {
+  try {
+    const id = str(form, "organizationId");
+    await savePlatformBilling(db(), await currentActor(), id, {
+      planName: str(form, "planName"),
+      monthlyPrice: str(form, "monthlyPrice").replace(/\./g, "").replace(",", ".") || "0",
+      status: str(form, "status") as "trial",
+      notes: str(form, "notes"),
+    });
+    revalidatePath("/plataforma", "layout");
+    return { ok: true, message: "Mensalidade salva." };
+  } catch (err) {
+    return toFormState(err);
+  }
+}
+
+export async function organizationKindAction(_: FormState, form: FormData): Promise<FormState> {
+  try {
+    const kind = str(form, "kind") === "internal" ? "internal" : "customer";
+    await setOrganizationKind(db(), await currentActor(), str(form, "organizationId"), kind);
+    revalidatePath("/plataforma", "layout");
+    return { ok: true, message: kind === "internal" ? "Agora é uma empresa interna: saiu das listas e dos números." : "Agora conta como cliente." };
+  } catch (err) {
+    return toFormState(err);
+  }
+}
+
+export async function deleteOrganizationAction(_: FormState, form: FormData): Promise<FormState> {
+  let name: string;
+  try {
+    name = await deletePlatformOrganization(db(), await currentActor(), str(form, "organizationId"), str(form, "confirmName"));
+  } catch (err) {
+    return toFormState(err);
+  }
+  revalidatePath("/", "layout");
+  redirect(`/plataforma/empresas?excluida=${encodeURIComponent(name)}`);
 }

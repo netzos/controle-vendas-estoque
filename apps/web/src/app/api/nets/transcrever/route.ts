@@ -1,6 +1,7 @@
 import { NETS_AUDIO_MAX_BYTES, transcribeForNets } from "@erp/core";
 import { apiError, unauthorized } from "@/lib/claude-api";
 import { netsActor } from "@/lib/nets-api";
+import { db } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -12,7 +13,7 @@ export async function POST(req: Request) {
   if (size > NETS_AUDIO_MAX_BYTES) return Response.json({ error: "A gravação ficou longa demais. Fale em partes de até 4 minutos." }, { status: 413 });
   try {
     const data = new Uint8Array(await req.arrayBuffer());
-    return Response.json(await transcribeForNets(actor, { data, mimeType: req.headers.get("content-type") ?? "audio/webm" }));
+    return Response.json(await transcribeForNets(db(), actor, { data, mimeType: req.headers.get("content-type") ?? "audio/webm" }));
   } catch (err) {
     return apiError(err);
   }

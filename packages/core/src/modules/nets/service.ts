@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { addAiUsage, emptyAiUsage, recordAiUsage } from "../../usage.ts";
 import type { Db, Tx } from "@erp/db";
 import { withTenant } from "@erp/db";
 import { z } from "zod";
@@ -342,34 +343,42 @@ export async function processNetsTurn(
     const model = deps.model ?? defaultNetsModel;
     const texts: string[] = [];
     let action: NetsAction | undefined;
-    for (let step = 0; step < MAX_STEPS; step++) {
-      const response = await model({
-        model: NETS_MODEL,
-        max_tokens: 16000,
-        output_config: { effort: "medium" },
-        system,
-        tools: definitions,
-        messages,
-      });
-      for (const b of response.content) if (b.type === "text" && b.text.trim()) texts.push(b.text.trim());
-      if (response.stop_reason === "refusal") {
-        texts.push("Não posso ajudar com isso.");
-        break;
-      }
-      if (response.stop_reason === "pause_turn") {
+    const used = emptyAiUsage();
+    let usedModel: string = NETS_MODEL;
+    try {
+      for (let step = 0; step < MAX_STEPS; step++) {
+        const response = await model({
+          model: NETS_MODEL,
+          max_tokens: 16000,
+          output_config: { effort: "medium" },
+          system,
+          tools: definitions,
+          messages,
+        });
+        addAiUsage(used, response.usage);
+        usedModel = response.model ?? usedModel;
+        for (const b of response.content) if (b.type === "text" && b.text.trim()) texts.push(b.text.trim());
+        if (response.stop_reason === "refusal") {
+          texts.push("Não posso ajudar com isso.");
+          break;
+        }
+        if (response.stop_reason === "pause_turn") {
+          messages.push({ role: "assistant", content: response.content });
+          continue;
+        }
+        const uses = response.content.filter((b): b is Anthropic.Beta.BetaToolUseBlock => b.type === "tool_use");
+        if (response.stop_reason !== "tool_use" || uses.length === 0) break;
         messages.push({ role: "assistant", content: response.content });
-        continue;
+        const results: Anthropic.Beta.BetaToolResultBlockParam[] = [];
+        for (const use of uses) {
+          const out = await runTool(db, actor, tools, use, !!action);
+          if (out.action) action = out.action;
+          results.push({ type: "tool_result", tool_use_id: use.id, content: out.content, ...(out.isError ? { is_error: true } : {}) });
+        }
+        messages.push({ role: "user", content: results });
       }
-      const uses = response.content.filter((b): b is Anthropic.Beta.BetaToolUseBlock => b.type === "tool_use");
-      if (response.stop_reason !== "tool_use" || uses.length === 0) break;
-      messages.push({ role: "assistant", content: response.content });
-      const results: Anthropic.Beta.BetaToolResultBlockParam[] = [];
-      for (const use of uses) {
-        const out = await runTool(db, actor, tools, use, !!action);
-        if (out.action) action = out.action;
-        results.push({ type: "tool_result", tool_use_id: use.id, content: out.content, ...(out.isError ? { is_error: true } : {}) });
-      }
-      messages.push({ role: "user", content: results });
+    } finally {
+      if (used.input_tokens || used.output_tokens) await recordAiUsage(db, owner, "netz", usedModel, used);
     }
     const body = texts.join("\n\n") || (action ? action.title : "Pronto.");
     await finish(body, action);

@@ -173,15 +173,16 @@ export const NAVIGATION: NavGroup[] = [
   {
     label: "Plataforma",
     short: "Plataforma",
-    hint: "Pedidos de cadastro, melhorias, liberações e quem está usando",
+    hint: "Clientes, crescimento, receita e custos de todo o netzsales",
     icon: "shield",
     items: [
-      { label: "Visão geral", href: "/plataforma", developerOnly: true, phase: 1 },
+      { label: "Painel", href: "/plataforma", developerOnly: true, phase: 1 },
+      { label: "Empresas", href: "/plataforma/empresas", developerOnly: true, phase: 1 },
       { label: "Pedidos de cadastro", href: "/plataforma/pedidos", developerOnly: true, phase: 1 },
+      { label: "Usuários", href: "/plataforma/usuarios", developerOnly: true, phase: 1 },
+      { label: "Receita e custos", href: "/plataforma/financeiro", developerOnly: true, phase: 1 },
       { label: "Melhorias", href: "/plataforma/melhorias", developerOnly: true, phase: 1 },
       { label: "Liberações", href: "/plataforma/liberacoes", developerOnly: true, phase: 1 },
-      { label: "Empresas", href: "/plataforma/empresas", developerOnly: true, phase: 1 },
-      { label: "Usuários", href: "/plataforma/usuarios", developerOnly: true, phase: 1 },
     ],
   },
 ];
