@@ -3,6 +3,7 @@ import { after, before, describe, it } from "node:test";
 import { withTenant } from "@erp/db";
 import {
   addMember,
+  createOrganization,
   AppError,
   changePassword,
   createBranch,
@@ -278,5 +279,18 @@ describe("serviços: validação, auditoria, outbox e idempotência", () => {
     );
     const org = await runService(t.app, updateOrganization, ownerA, { name: "Empresa A Ltda", legalName: "Empresa A Comércio Ltda", document: "12.345.678/0001-90", timezone: "America/Manaus" });
     assert.equal(org.timezone, "America/Manaus");
+  });
+});
+
+describe("dono de duas empresas", () => {
+  it("vê e escolhe só os perfis da empresa aberta", async () => {
+    const other = await createOrganization(t.app, companyA.userId, { name: "Empresa A2" });
+    const roles = await runService(t.app, listRoles, ownerA, {});
+    assert.equal(roles.filter((r) => r.key === "owner").length, 1);
+    const foreign = (await runService(t.app, listRoles, await actorFor(t.app, companyA.userId, other.organizationId), {})).find((r) => r.key === "viewer")!;
+    await assert.rejects(
+      runService(t.app, addMember, ownerA, { email: "x2@teste.com", name: "X", roleId: foreign.id, branchIds: null, temporaryPassword: PASSWORD }),
+      (err: unknown) => err instanceof AppError,
+    );
   });
 });

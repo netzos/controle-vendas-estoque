@@ -59,7 +59,7 @@ async function assertBranches(tx: import("@erp/db").Tx, ids: string[] | null) {
 }
 
 async function assertAssignableRole(tx: import("@erp/db").Tx, roleId: string, actorIsOwner: boolean) {
-  const { rows } = await tx.query<{ key: string }>("SELECT key FROM controle_vendas_estoque.roles WHERE id = $1", [roleId]);
+  const { rows } = await tx.query<{ key: string }>("SELECT key FROM controle_vendas_estoque.roles WHERE id = $1 AND organization_id = controle_vendas_estoque.current_org()", [roleId]);
   const role = rows[0];
   if (!role) throw notFound("Perfil");
   // Apenas um proprietário pode criar outro proprietário.

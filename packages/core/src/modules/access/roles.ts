@@ -21,8 +21,12 @@ const ROLE_SELECT = `
     FROM controle_vendas_estoque.roles r
     LEFT JOIN controle_vendas_estoque.role_permissions rp ON rp.role_id = r.id`;
 
+// A política roles_own_membership deixa ver o perfil da pessoa em outras
+// empresas (para o seletor de empresa); as telas de perfis ficam só nesta.
+const THIS_ORG = "r.organization_id = controle_vendas_estoque.current_org()";
+
 async function loadRole(tx: Tx, id: string): Promise<Role> {
-  const { rows } = await tx.query<Role>(`${ROLE_SELECT} WHERE r.id = $1 GROUP BY r.id`, [id]);
+  const { rows } = await tx.query<Role>(`${ROLE_SELECT} WHERE r.id = $1 AND ${THIS_ORG} GROUP BY r.id`, [id]);
   if (!rows[0]) throw notFound("Perfil");
   return rows[0];
 }
@@ -34,7 +38,7 @@ export const listRoles = defineService({
   risk: 1,
   input: z.object({}),
   async handler({ tx }) {
-    const { rows } = await tx.query<Role>(`${ROLE_SELECT} GROUP BY r.id ORDER BY r.is_system DESC, r.name`);
+    const { rows } = await tx.query<Role>(`${ROLE_SELECT} WHERE ${THIS_ORG} GROUP BY r.id ORDER BY r.is_system DESC, r.name`);
     return rows;
   },
 });
@@ -71,7 +75,7 @@ export const createRole = defineService({
       .replace(/^_|_$/g, "")
       .slice(0, 30) || "perfil";
     let key = `custom_${base}`.slice(0, 40);
-    for (let i = 2; (await tx.query("SELECT 1 FROM controle_vendas_estoque.roles WHERE key = $1", [key])).rowCount; i++) {
+    for (let i = 2; (await tx.query(`SELECT 1 FROM controle_vendas_estoque.roles r WHERE key = $1 AND ${THIS_ORG}`, [key])).rowCount; i++) {
       key = `custom_${base}_${i}`.slice(0, 40);
     }
     const { rows } = await tx.query<{ id: string }>(

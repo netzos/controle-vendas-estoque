@@ -131,7 +131,7 @@ describe("Nets no Telegram", () => {
     const ana = { id: 999, first_name: "Ana", username: "ana" };
     await handleTelegramUpdate(t.app, text(`/start ${url.split("start=")[1]}`, ana), { api: f.api });
     const { messages } = await listNetsMessages(t.app, owner);
-    const pending = messages.findLast((m) => m.actionStatus);
+    const pending = [...messages].reverse().find((m) => m.actionStatus);
     await handleTelegramUpdate(
       t.app,
       { update_id: nextUpdate++, callback_query: { id: "cb2", from: ana, data: `nets:c:${pending!.id}` } },
