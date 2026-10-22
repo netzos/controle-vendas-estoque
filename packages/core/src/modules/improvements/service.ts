@@ -20,6 +20,7 @@ export const IMPROVEMENT_MODULES = [
   { key: "assistente", label: "Assistente IA" },
   { key: "automacoes", label: "Automações" },
   { key: "administracao", label: "Administração" },
+  { key: "comunicacao", label: "Comunicação da Netz" },
 ] as const;
 
 export type ImprovementModule = (typeof IMPROVEMENT_MODULES)[number]["key"];
@@ -293,6 +294,29 @@ export async function decideImprovement(
     await addMessage(tx, id, "person", viewer.userId, viewer.userName, text);
     return load(tx, id);
   });
+}
+
+/**
+ * Pedido de ajuste na comunicação da Netz aplicado no manual dela: não passa
+ * por código, então vai direto para publicado, na mesma transação da versão
+ * nova do manual.
+ */
+export async function publishImprovementInTx(tx: Tx, viewer: ImprovementViewer, id: string, link: string, text: string) {
+  if (!viewer.isDeveloper) throw forbidden("Somente o desenvolvedor aplica pedidos.");
+  const item = await load(tx, id, true);
+  if (item.mergedInto) throw new AppError("conflict", `Este pedido foi juntado ao #${item.mergedIntoNumber}; aplique por lá.`);
+  if (item.status === "rejected" || item.status === "published") throw new AppError("conflict", "Este pedido já foi encerrado.");
+  const expected = item.version;
+  item.status = "published";
+  item.link = link;
+  if (!item.decidedAt) {
+    item.decidedBy = viewer.userId;
+    item.decidedByName = clip(viewer.userName, 120);
+    item.decidedAt = new Date();
+  }
+  await save(tx, item, expected);
+  await addMessage(tx, id, "person", viewer.userId, viewer.userName, text);
+  return item;
 }
 
 /**

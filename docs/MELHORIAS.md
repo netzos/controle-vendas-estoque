@@ -97,3 +97,12 @@ Mudanças de status que o Claude pode fazer:
 | Comando do Claude | `packages/core/src/cli-improvements.ts` |
 | Rota do Claude | `apps/web/src/app/api/claude/improvements/` |
 | Painel | `apps/web/src/app/(app)/melhorias/` |
+
+## Comunicação da Netz (padrão para todos os sistemas)
+
+As melhorias de **como o agente conversa** ficam separadas das melhorias do sistema. É o mesmo desenho das instruções da IA do IONPA (`ai_guidance`) e do manual AGENTS.md do Netz no NetzOS, e deve se repetir em todo sistema novo:
+
+1. **Regras fixas** (código, `NETS_RULES` em `packages/core/src/modules/nets/instructions.ts`): quem o agente é, ferramentas, confirmação antes de mudar dados, permissões, melhorias e limites de segurança. Só mudam por código.
+2. **Manual de comunicação** (banco, `nets_guidance`): tom, tamanho das respostas, proatividade. Uma versão por alteração, nada é apagado. A Netz lê a mais nova antes de cada resposta; sem versão salva vale `NETS_MANUAL_DEFAULT`.
+3. **Pedidos de ajuste**: pedidos de melhoria com módulo `comunicacao`. Chegam pela tela Melhorias ou pela própria Netz (`registrar_melhoria` com `module: "comunicacao"`) quando alguém reclama do jeito dela falar.
+4. **Plataforma › Comunicação da Netz** (`/plataforma/comunicacao`, só o administrador): manual atual, "Pedir uma mudança" (a IA reescreve só o necessário), antes e depois linha a linha, aprovar, histórico com restaurar, pedidos de ajuste com "Preparar mudança" e as regras fixas e ferramentas para consulta. Aprovar uma mudança ligada a um pedido marca o pedido como publicado, com link para a versão.

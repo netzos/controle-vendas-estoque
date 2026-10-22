@@ -532,3 +532,30 @@ summary .edit-hint { float: right; font-size: 13px; color: var(--muted); font-we
 /* Administrador olhando uma empresa sem ser membro */
 .view-banner { background: var(--text); color: #fff; }
 .view-banner a { color: #fff; text-decoration: underline; }
+
+/* Comunicação da Netz (Plataforma): manual versionado, antes e depois, pedidos de ajuste. */
+.comm-text { white-space: pre-wrap; word-break: break-word; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 14px 16px; font-family: inherit; font-size: 14px; line-height: 1.55; max-height: 520px; overflow-y: auto; margin: 10px 0; }
+.comm-edit { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; line-height: 1.5; }
+.comm-review { display: grid; gap: 10px; }
+.comm-review h3 { margin: 0; }
+.comm-diff p { display: flex; gap: 10px; margin: 0 0 8px; font-size: 13px; }
+.comm-diff p .add { color: var(--success); }
+.comm-diff p .del { color: var(--danger); }
+.comm-diff ul { list-style: none; margin: 0; padding: 8px 0; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 13px; line-height: 1.5; max-height: 480px; overflow-y: auto; }
+.comm-diff li { padding: 1px 12px; white-space: pre-wrap; word-break: break-word; }
+.comm-diff li span { display: inline-block; width: 16px; }
+.comm-diff li.add { background: var(--success-soft); }
+.comm-diff li.del { background: var(--danger-soft); text-decoration: line-through; color: var(--muted); }
+.comm-diff li.fold { color: var(--muted); font-style: italic; }
+.comm-list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 10px; }
+.comm-list > li { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: 8px 14px; padding: 12px 0; border-top: 1px solid var(--border); }
+.comm-list > li > div:first-child { flex: 1 1 320px; min-width: 0; }
+.comm-list > li .actions { margin-top: 0; }
+.comm-list > li > pre { flex-basis: 100%; }
+.comm-list > li.highlight { background: var(--surface-2); border-radius: var(--radius-sm); padding: 12px; }
+.comm-clip { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.comm-history { margin-top: 14px; }
+.comm-history > summary { cursor: pointer; font-weight: 600; }
+.comm-tools { list-style: none; padding: 0; display: grid; gap: 8px; font-size: 13px; }
+.comm-tools li { display: grid; grid-template-columns: minmax(160px, 220px) 1fr; gap: 12px; }
+@media (max-width: 640px) { .comm-tools li { grid-template-columns: 1fr; gap: 2px; } }

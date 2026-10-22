@@ -182,6 +182,7 @@ export const NAVIGATION: NavGroup[] = [
       { label: "Usuários", href: "/plataforma/usuarios", developerOnly: true, phase: 1 },
       { label: "Receita e custos", href: "/plataforma/financeiro", developerOnly: true, phase: 1 },
       { label: "Melhorias", href: "/plataforma/melhorias", developerOnly: true, phase: 1 },
+      { label: "Comunicação da Netz", href: "/plataforma/comunicacao", developerOnly: true, phase: 1 },
       { label: "Liberações", href: "/plataforma/liberacoes", developerOnly: true, phase: 1 },
     ],
   },

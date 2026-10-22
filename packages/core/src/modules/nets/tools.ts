@@ -118,7 +118,8 @@ const improvementTool: Anthropic.Beta.BetaTool = {
       kind: { type: "string", enum: ["suggestion", "noticed"], description: "suggestion: a pessoa pediu. noticed: você percebeu." },
       module: {
         type: "string",
-        enum: ["geral", "comercial", "catalogo", "estoque", "compras", "financeiro", "inteligencia", "assistente", "automacoes", "administracao"],
+        enum: ["geral", "comercial", "catalogo", "estoque", "compras", "financeiro", "inteligencia", "assistente", "automacoes", "administracao", "comunicacao"],
+        description: "comunicacao: pedidos sobre o seu jeito de conversar (vão para o seu manual, não para as telas).",
       },
       original: { type: "string", maxLength: 1500, description: "O que a pessoa disse, nas palavras dela." },
       problem: { type: "string", maxLength: 1500, description: "O problema ou a lacuna." },
@@ -169,4 +170,12 @@ const deliveriesTool: Anthropic.Beta.BetaTool = {
 export function netsTools(actor: Actor): { tools: NetsTool[]; definitions: Anthropic.Beta.BetaTool[] } {
   const tools = TOOLS.filter((t) => !t.service.permission || can(actor, t.service.permission));
   return { tools, definitions: [...tools.map((t) => t.definition), improvementTool, improvementListTool, improvementComplementTool, deliveriesTool] };
+}
+
+/** Todas as ferramentas da Netz, para a tela da Plataforma (cada pessoa só recebe as permitidas). */
+export function netsToolCatalog(): Array<{ name: string; description: string }> {
+  return [...TOOLS.map((t) => t.definition), improvementTool, improvementListTool, improvementComplementTool, deliveriesTool].map((d) => ({
+    name: d.name,
+    description: d.description ?? "",
+  }));
 }
