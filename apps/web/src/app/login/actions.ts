@@ -1,7 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { login, logout } from "@erp/core";
+import { isPlatformDeveloper, login, logout } from "@erp/core";
 import { db } from "@/lib/db";
 import { clearSessionCookie, clientIp, sessionToken, setSessionCookie } from "@/lib/auth";
 import { str, toFormState, type FormState } from "@/lib/actions";
@@ -9,6 +9,7 @@ import { headers } from "next/headers";
 
 export async function loginAction(_: FormState, form: FormData): Promise<FormState> {
   let mustChange = false;
+  let developer = false;
   try {
     const result = await login(db(), {
       email: str(form, "email"),
@@ -18,10 +19,12 @@ export async function loginAction(_: FormState, form: FormData): Promise<FormSta
     });
     await setSessionCookie(result.token);
     mustChange = result.session.mustChangePassword;
+    developer = await isPlatformDeveloper(db(), result.session.userId);
   } catch (err) {
     return toFormState(err);
   }
-  redirect(mustChange ? "/conta/senha?primeiro=1" : "/");
+  // O administrador da plataforma começa pelo painel da Plataforma.
+  redirect(mustChange ? "/conta/senha?primeiro=1" : developer ? "/plataforma" : "/");
 }
 
 export async function logoutAction(): Promise<void> {

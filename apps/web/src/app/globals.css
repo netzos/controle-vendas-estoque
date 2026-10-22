@@ -470,3 +470,4 @@ summary .edit-hint { float: right; font-size: 13px; color: var(--muted); font-we
 .imp-analysis h3 { margin-top: 14px; }
 .imp-groups li { margin-bottom: 8px; }
 .imp-groups .imp-inline { display: inline-flex; margin-left: 8px; }
+.topbar-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }

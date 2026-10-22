@@ -1,6 +1,7 @@
 import { listPlatformOrganizations } from "@erp/core";
 import { requireDeveloper } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { openOrganizationAction } from "./actions";
 import { CreateOrganizationForm, OrganizationStatus, OwnerLink } from "./forms";
 
 export const metadata = { title: "Empresas" };
@@ -37,6 +38,20 @@ export default async function OrganizationsPage() {
             {o.sales === 1 ? "venda" : "vendas"}
             {o.lastSaleAt ? ` · última venda em ${fmt.format(new Date(o.lastSaleAt))}` : ""}
           </p>
+          {o.status === "active" && (
+            <form action={openOrganizationAction} className="actions">
+              <input type="hidden" name="organizationId" value={o.id} />
+              {o.developerIsMember ? (
+                <button type="submit">Abrir esta empresa</button>
+              ) : (
+                <>
+                  <input type="hidden" name="join" value="1" />
+                  <button type="submit">Entrar para dar suporte</button>
+                  <span className="muted">Você entra como Administrador; a empresa vê isso em Ajustes › Usuários.</span>
+                </>
+              )}
+            </form>
+          )}
           {o.ownerMembershipId && <OwnerLink organizationId={o.id} firstAccess={!o.ownerLastLoginAt} />}
           <OrganizationStatus organizationId={o.id} name={o.name} status={o.status} />
         </details>

@@ -81,11 +81,17 @@ export async function login(
   const token = randomBytes(32).toString("base64url");
   const session = await withTransaction(db, async (tx) => {
     await tx.query("UPDATE controle_vendas_estoque.users SET last_login_at = now() WHERE id = $1", [user.id]);
-    // Organização inicial: a primeira em que o usuário está ativo.
+    // Organização inicial: a última que o usuário usou; sem histórico, a primeira em que está ativo.
     await tx.query("SELECT set_config('app.user_id', $1, true)", [user.id]);
     const org = await tx.query<{ organization_id: string }>(
       `SELECT m.organization_id FROM controle_vendas_estoque.memberships m
-        WHERE m.user_id = $1 AND m.status = 'active' ORDER BY m.created_at LIMIT 1`,
+         JOIN controle_vendas_estoque.organizations o ON o.id = m.organization_id AND o.status = 'active'
+        WHERE m.user_id = $1 AND m.status = 'active'
+        ORDER BY (m.organization_id = (SELECT s.active_organization_id FROM controle_vendas_estoque.sessions s
+                                        WHERE s.user_id = $1 AND s.active_organization_id IS NOT NULL
+                                        ORDER BY s.created_at DESC LIMIT 1)) DESC NULLS LAST,
+                 m.created_at
+        LIMIT 1`,
       [user.id],
     );
     const { rows: s } = await tx.query<{ id: string }>(

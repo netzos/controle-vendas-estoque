@@ -213,3 +213,30 @@ export async function setOrganizationStatus(
     });
   });
 }
+
+/**
+ * O administrador entra numa empresa de cliente para dar suporte, com o perfil
+ * Administrador. Fica visível para a empresa em Ajustes › Usuários e na auditoria.
+ */
+export async function joinOrganizationForSupport(db: Db, developer: { userId: string; userName: string }, organizationId: string): Promise<void> {
+  await assertDeveloper(db, developer.userId);
+  const org = (await listPlatformOrganizations(db, developer.userId)).find((o) => o.id === organizationId);
+  if (!org) throw notFound("Empresa");
+  if (org.developerIsMember) return;
+  await withTransaction(db, async (tx) => {
+    await setTenant(tx, { organizationId, userId: developer.userId });
+    const r = await tx.query(
+      `INSERT INTO controle_vendas_estoque.memberships (organization_id, user_id, role_id, is_owner)
+       SELECT $1, $2, r.id, false FROM controle_vendas_estoque.roles r WHERE r.organization_id = $1 AND r.key = 'admin'
+       ON CONFLICT (organization_id, user_id) DO UPDATE SET status = 'active'`,
+      [organizationId, developer.userId],
+    );
+    if (!r.rowCount) throw new AppError("conflict", "A empresa não tem o perfil Administrador.");
+    await recordAudit(tx, { organizationId, userId: developer.userId, channel: "web" }, {
+      action: "member.support_join",
+      entityType: "organization",
+      entityId: organizationId,
+      summary: `${developer.userName} (equipe netzsales) entrou para dar suporte`,
+    });
+  });
+}

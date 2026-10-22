@@ -4,6 +4,7 @@ import { currentActor } from "@/lib/auth";
 import { CURRENT_PHASE, NAVIGATION } from "@/lib/navigation";
 import { OrganizationSwitcher, Shell } from "@/components/shell";
 import { NetsBubble } from "@/components/nets-bubble";
+import Link from "next/link";
 import { Suspense } from "react";
 import { logoutAction } from "../login/actions";
 import { switchOrganizationAction } from "./actions";
@@ -28,7 +29,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       navigation={navigation}
       user={{ name: actor.userName }}
       logout={logoutAction}
-      topbar={<OrganizationSwitcher organizations={organizations} activeId={actor.organizationId} action={switchOrganizationAction} />}
+      topbar={
+        <div className="topbar-actions">
+          {developer && <Link href="/plataforma" className="button secondary small">Painel da plataforma</Link>}
+          <OrganizationSwitcher organizations={organizations} activeId={actor.organizationId} action={switchOrganizationAction} />
+        </div>
+      }
     >
       {children}
       {can(actor, "nets.use") && features.has("netz") && (
