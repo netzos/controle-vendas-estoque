@@ -15,6 +15,7 @@ export * from "./mail.ts";
 export * from "./transcribe.ts";
 export * from "./modules/organizations/bootstrap.ts";
 export * from "./modules/organizations/service.ts";
+export * from "./modules/organizations/platform.ts";
 export * from "./modules/access/members.ts";
 export * from "./modules/access/roles.ts";
 export * from "./modules/settings/service.ts";

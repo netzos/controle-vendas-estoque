@@ -6,6 +6,8 @@ export interface NavItem {
   label: string;
   href: string;
   permission?: Permission;
+  /** Só o administrador da plataforma vê. */
+  developerOnly?: boolean;
   phase: number;
 }
 
@@ -164,6 +166,7 @@ export const NAVIGATION: NavGroup[] = [
       { label: "Permissões", href: "/administracao/permissoes", permission: "roles.view", phase: 1 },
       { label: "Auditoria", href: "/administracao/auditoria", permission: "audit.view", phase: 1 },
       { label: "Configurações gerais", href: "/administracao/configuracoes", permission: "settings.view", phase: 1 },
+      { label: "Todas as empresas", href: "/administracao/empresas", developerOnly: true, phase: 1 },
     ],
   },
 ];
