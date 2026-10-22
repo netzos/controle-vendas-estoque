@@ -2,7 +2,7 @@ import "server-only";
 import { cache } from "react";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { can, getSession, isPlatformDeveloper, resolveActor, SESSION_TTL_HOURS, type Actor, type Permission, type SessionInfo } from "@erp/core";
+import { can, enabledFeatures, getSession, isPlatformDeveloper, resolveActor, type FeatureKey, SESSION_TTL_HOURS, type Actor, type Permission, type SessionInfo } from "@erp/core";
 import { db } from "./db";
 
 export const SESSION_COOKIE = "erp_session";
@@ -72,4 +72,10 @@ export async function requireDeveloper(): Promise<Actor> {
   const actor = await currentActor();
   if (!(await isPlatformDeveloper(db(), actor.userId))) redirect("/sem-permissao");
   return actor;
+}
+
+/** Telas de uma parte do sistema que a Plataforma pode desligar por empresa. */
+export async function requireFeature(feature: FeatureKey): Promise<void> {
+  const actor = await currentActor();
+  if (!(await enabledFeatures(db(), actor.organizationId)).has(feature)) redirect("/sem-permissao");
 }

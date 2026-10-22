@@ -2,6 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import type { Db } from "@erp/db";
 import { withTenant, withTransaction } from "@erp/db";
 import { can, resolveActor, type Actor } from "../../context.ts";
+import { enabledFeatures } from "../../features.ts";
 import { AppError, forbidden } from "../../errors.ts";
 import { appUrl } from "../../mail.ts";
 import { transcribeAudio, transcriptionConfigured, type Transcriber } from "../../transcribe.ts";
@@ -165,7 +166,8 @@ async function findLink(db: Db, telegramUserId: number): Promise<LinkRow | null>
 async function linkActor(db: Db, link: LinkRow): Promise<Actor | null> {
   try {
     const actor = await resolveActor(db, { userId: link.userId, organizationId: link.organizationId, channel: "telegram" });
-    return can(actor, "nets.use") ? actor : null;
+    // O Telegram também precisa estar liberado para a empresa (Plataforma › Liberações).
+    return can(actor, "nets.use") && (await enabledFeatures(db, link.organizationId)).has("telegram") ? actor : null;
   } catch {
     return null;
   }

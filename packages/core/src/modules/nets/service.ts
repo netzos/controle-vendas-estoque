@@ -52,7 +52,7 @@ export function netsConfigured(): boolean {
 }
 
 let client: Anthropic | null = null;
-const defaultModel: NetsModel = (req) => {
+export const defaultNetsModel: NetsModel = (req) => {
   client ??= new Anthropic();
   // Se o modelo recusar por política, a API tenta de novo num modelo de reserva.
   return client.beta.messages.create({ ...req, betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" });
@@ -339,7 +339,7 @@ export async function processNetsTurn(
     }
 
     const { tools, definitions } = netsTools(actor);
-    const model = deps.model ?? defaultModel;
+    const model = deps.model ?? defaultNetsModel;
     const texts: string[] = [];
     let action: NetsAction | undefined;
     for (let step = 0; step < MAX_STEPS; step++) {

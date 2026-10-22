@@ -1,4 +1,4 @@
-import type { Permission } from "@erp/core";
+import type { FeatureKey, Permission } from "@erp/core";
 
 // Estrutura de telas da seção 25. Itens de fases futuras ficam fora do menu
 // até serem entregues; não há tela vazia fingindo funcionalidade.
@@ -8,6 +8,8 @@ export interface NavItem {
   permission?: Permission;
   /** Só o administrador da plataforma vê. */
   developerOnly?: boolean;
+  /** Parte do sistema que precisa estar liberada para a empresa (Plataforma › Liberações). */
+  feature?: FeatureKey;
   phase: number;
 }
 
@@ -43,8 +45,8 @@ export const NAVIGATION: NavGroup[] = [
     icon: "cart",
     items: [
       { label: "Vendas", href: "/vendas", permission: "sales.view", phase: 2 },
-      { label: "Entregas", href: "/entregas", permission: "deliveries.view", phase: 2 },
-      { label: "Etapas depois da venda", href: "/etapas", permission: "deliveries.view", phase: 2 },
+      { label: "Entregas", href: "/entregas", permission: "deliveries.view", feature: "deliveries", phase: 2 },
+      { label: "Etapas depois da venda", href: "/etapas", permission: "deliveries.view", feature: "deliveries", phase: 2 },
       { label: "Orçamentos", href: "/orcamentos", phase: 3 },
       { label: "Clientes", href: "/clientes", permission: "customers.view", phase: 2 },
       { label: "Vendedores", href: "/vendedores", phase: 3 },
@@ -62,7 +64,7 @@ export const NAVIGATION: NavGroup[] = [
       { label: "Marcas", href: "/marcas", phase: 3 },
       { label: "Unidades de medida", href: "/unidades", permission: "products.view", phase: 2 },
       { label: "Tabelas de preços", href: "/tabelas-de-precos", phase: 3 },
-      { label: "Campos personalizados", href: "/campos-personalizados", permission: "products.view", phase: 2 },
+      { label: "Campos personalizados", href: "/campos-personalizados", permission: "products.view", feature: "custom_fields", phase: 2 },
     ],
   },
   {
@@ -98,9 +100,9 @@ export const NAVIGATION: NavGroup[] = [
     hint: "Quanto custa vender e o lucro de verdade",
     icon: "coins",
     items: [
-      { label: "Painel de custos", href: "/custos", permission: "costs.view", phase: 2 },
-      { label: "Custo de obtenção", href: "/custos/obtencao", permission: "costs.view", phase: 2 },
-      { label: "Tipos de custo", href: "/custos/tipos", permission: "costs.view", phase: 2 },
+      { label: "Painel de custos", href: "/custos", permission: "costs.view", feature: "costs", phase: 2 },
+      { label: "Custo de obtenção", href: "/custos/obtencao", permission: "costs.view", feature: "costs", phase: 2 },
+      { label: "Tipos de custo", href: "/custos/tipos", permission: "costs.view", feature: "costs", phase: 2 },
     ],
   },
   {
@@ -131,7 +133,7 @@ export const NAVIGATION: NavGroup[] = [
     hint: "Netz no painel e no Telegram",
     icon: "bot",
     items: [
-      { label: "Telegram", href: "/assistente/telegram", permission: "nets.use", phase: 2 },
+      { label: "Telegram", href: "/assistente/telegram", permission: "nets.use", feature: "telegram", phase: 2 },
       { label: "Operações", href: "/assistente/operacoes", phase: 8 },
       { label: "Configurações do assistente", href: "/assistente/configuracoes", phase: 8 },
     ],
@@ -171,11 +173,13 @@ export const NAVIGATION: NavGroup[] = [
   {
     label: "Plataforma",
     short: "Plataforma",
-    hint: "Pedidos de cadastro, empresas e quem está usando",
+    hint: "Pedidos de cadastro, melhorias, liberações e quem está usando",
     icon: "shield",
     items: [
       { label: "Visão geral", href: "/plataforma", developerOnly: true, phase: 1 },
       { label: "Pedidos de cadastro", href: "/plataforma/pedidos", developerOnly: true, phase: 1 },
+      { label: "Melhorias", href: "/plataforma/melhorias", developerOnly: true, phase: 1 },
+      { label: "Liberações", href: "/plataforma/liberacoes", developerOnly: true, phase: 1 },
       { label: "Empresas", href: "/plataforma/empresas", developerOnly: true, phase: 1 },
       { label: "Usuários", href: "/plataforma/usuarios", developerOnly: true, phase: 1 },
     ],

@@ -3,7 +3,15 @@
 import { useActionState } from "react";
 import type { Improvement } from "@erp/core";
 import { Field, FormMessage, SubmitButton } from "@/components/form";
-import { commentImprovementAction, createImprovementAction, decideImprovementAction, editImprovementAction } from "./actions";
+import {
+  analyzeImprovementsAction,
+  commentImprovementAction,
+  createImprovementAction,
+  decideImprovementAction,
+  editImprovementAction,
+  mergeGroupAction,
+  mergeImprovementAction,
+} from "./actions";
 
 type Module = { key: string; label: string };
 
@@ -92,5 +100,47 @@ export function CorrectForm({ item }: { item: Improvement }) {
         <div className="actions"><SubmitButton>Salvar correção</SubmitButton></div>
       </form>
     </details>
+  );
+}
+
+export function MergeForm({ id, targets }: { id: string; targets: Array<{ id: string; label: string }> }) {
+  const [state, action] = useActionState(mergeImprovementAction, null);
+  return (
+    <details className="imp-correct">
+      <summary>Juntar a um pedido parecido</summary>
+      <form action={action}>
+        <FormMessage state={state} />
+        <input type="hidden" name="id" value={id} />
+        <Field label="Este pedido é a mesma necessidade de" name="into" state={state} hint="Este pedido sai da lista, conta no outro e segue a decisão dele.">
+          <select id={`into-${id}`} name="into" required defaultValue="">
+            <option value="" disabled>Escolha o pedido principal</option>
+            {targets.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
+          </select>
+        </Field>
+        <div className="actions"><SubmitButton pendingText="Juntando...">Juntar</SubmitButton></div>
+      </form>
+    </details>
+  );
+}
+
+export function MergeGroupButton({ numbers }: { numbers: number[] }) {
+  const [state, action] = useActionState(mergeGroupAction, null);
+  if (state?.ok) return <span className="tag ok">Juntado</span>;
+  return (
+    <form action={action} className="imp-inline">
+      <input type="hidden" name="numbers" value={numbers.join(",")} />
+      <SubmitButton className="secondary small" pendingText="Juntando...">Juntar no #{numbers[0]}</SubmitButton>
+      {state?.message && <span className="error">{state.message}</span>}
+    </form>
+  );
+}
+
+export function AnalyzeButton() {
+  const [state, action] = useActionState(analyzeImprovementsAction, null);
+  return (
+    <form action={action} className="imp-inline">
+      <SubmitButton pendingText="A IA está lendo os pedidos...">Analisar com IA</SubmitButton>
+      {state && !state.ok && <span className="error">{state.message}</span>}
+    </form>
   );
 }

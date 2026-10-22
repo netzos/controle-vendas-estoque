@@ -463,3 +463,10 @@ summary .edit-hint { float: right; font-size: 13px; color: var(--muted); font-we
 .link-box input { font-size: 13px; }
 .auth-footer { margin-top: 18px; }
 .request-card .actions { flex-wrap: wrap; }
+.toggle { background: var(--surface); color: var(--muted); border-color: var(--border); padding: 6px 14px; font-size: 13px; border-radius: 999px; }
+.toggle:hover { background: var(--surface-2); }
+.toggle.on { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+.toggle.on:hover { background: var(--accent-hover); }
+.imp-analysis h3 { margin-top: 14px; }
+.imp-groups li { margin-bottom: 8px; }
+.imp-groups .imp-inline { display: inline-flex; margin-left: 8px; }
