@@ -19,6 +19,7 @@ export default async function NewSalePage() {
       </div>
       <SaleForm
         canChangePrice={can(actor, "sales.change_price")}
+        canTradeIn={can(actor, "sales.trade_in")}
         customers={customers.map((c) => ({ id: c.id, name: c.name }))}
         products={products.map((p) => ({
           id: p.id,

@@ -35,6 +35,7 @@ export const PERMISSIONS = [
   { key: "sales.create", module: "comercial", description: "Registrar vendas", risk: 3 },
   { key: "sales.cancel", module: "comercial", description: "Cancelar vendas", risk: 4 },
   { key: "sales.change_price", module: "comercial", description: "Mudar o preço de um item na hora da venda", risk: 3 },
+  { key: "sales.trade_in", module: "comercial", description: "Aceitar item na troca como parte do pagamento", risk: 3 },
   { key: "stock.view", module: "estoque", description: "Ver estoque, movimentações e o painel do estoque", risk: 1 },
   { key: "stock.manage", module: "estoque", description: "Lançar entradas, saídas e ajustes de estoque", risk: 3 },
 ] as const satisfies readonly PermissionDef[];

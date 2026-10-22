@@ -33,10 +33,12 @@ export function SaleForm({
   products,
   customers,
   canChangePrice,
+  canTradeIn,
 }: {
   products: PosProduct[];
   customers: { id: string; name: string }[];
   canChangePrice: boolean;
+  canTradeIn: boolean;
 }) {
   const [state, action] = useActionState(createSaleAction, null);
   const [search, setSearch] = useState("");
@@ -45,12 +47,15 @@ export function SaleForm({
   const [discount, setDiscount] = useState("");
   // Preço negociado por item; vazio = preço do cadastro.
   const [prices, setPrices] = useState<Record<string, string>>({});
+  // Itens que o cliente entrega como parte do pagamento.
+  const [trades, setTrades] = useState<{ key: number; productId: string; name: string; value: string }[]>([]);
 
   // Venda registrada: limpa o carrinho para a próxima.
   useEffect(() => {
     if (state?.ok) {
       setCart({});
       setPrices({});
+      setTrades([]);
       setDiscount("");
       setSearch("");
     }
@@ -64,6 +69,10 @@ export function SaleForm({
   const lines = Object.entries(cart).map(([id, qty]) => ({ product: byId.get(id)!, qty }));
   const subtotal = lines.reduce((a, l) => a + Math.round(toNumber(l.qty) * priceOf(l.product) * 100) / 100, 0);
   const total = Math.max(subtotal - toNumber(discount), 0);
+  const tradeTotal = trades.reduce((a, t) => a + toNumber(t.value), 0);
+  const toPay = total - tradeTotal;
+  const tracked = products.filter((p) => p.trackStock);
+  const setTrade = (key: number, patch: Partial<(typeof trades)[number]>) => setTrades((ts) => ts.map((t) => (t.key === key ? { ...t, ...patch } : t)));
 
   const add = (id: string) => setCart((c) => ({ ...c, [id]: String(toNumber(c[id] ?? "0") + 1).replace(".", ",") }));
   const dec = (id: string) =>
@@ -82,6 +91,11 @@ export function SaleForm({
         }),
       )} />
       <input type="hidden" name="paymentMethod" value={payment} />
+      <input
+        type="hidden"
+        name="tradeIns"
+        value={JSON.stringify(trades.map((t) => (t.productId ? { productId: t.productId, value: t.value } : { name: t.name, value: t.value })))}
+      />
 
       <section className="card pos-catalog">
         <input type="search" placeholder="Buscar produto por nome ou código" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Buscar produto" />
@@ -152,6 +166,25 @@ export function SaleForm({
           </ul>
         )}
 
+        {canTradeIn && (
+          <div className="trade-ins">
+            {trades.map((t) => (
+              <div className="trade-row" key={t.key}>
+                <select aria-label="Item recebido" value={t.productId} onChange={(e) => setTrade(t.key, { productId: e.target.value })}>
+                  <option value="">Item novo</option>
+                  {tracked.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+                {!t.productId && <input aria-label="O que foi recebido" placeholder="O que recebeu (ex.: Onix 2019)" value={t.name} onChange={(e) => setTrade(t.key, { name: e.target.value })} />}
+                <input aria-label="Valor da troca" inputMode="decimal" placeholder="Valor R$" value={t.value} onChange={(e) => setTrade(t.key, { value: e.target.value })} className="trade-value" />
+                <button type="button" className="secondary small" onClick={() => setTrades((ts) => ts.filter((x) => x.key !== t.key))} aria-label="Tirar item da troca">×</button>
+              </div>
+            ))}
+            <button type="button" className="secondary small" onClick={() => setTrades((ts) => [...ts, { key: Date.now(), productId: "", name: "", value: "" }])}>
+              + Recebeu um item na troca
+            </button>
+          </div>
+        )}
+
         <div className="pay-options" role="radiogroup" aria-label="Forma de pagamento">
           {PAYMENTS.map((p) => (
             <button type="button" key={p.key} role="radio" aria-checked={payment === p.key} className={payment === p.key ? "active" : ""} onClick={() => setPayment(p.key)}>
@@ -175,9 +208,13 @@ export function SaleForm({
         </div>
 
         <div className="cart-sum">
-          <span>Subtotal <b>{money(subtotal)}</b></span>
-          <span className="cart-grand">{money(total)}</span>
+          <span>
+            Subtotal <b>{money(subtotal)}</b>
+            {tradeTotal > 0 && <> · Troca <b>−{money(tradeTotal)}</b></>}
+          </span>
+          <span className="cart-grand">{money(tradeTotal > 0 ? Math.max(toPay, 0) : total)}</span>
         </div>
+        {tradeTotal > 0 && <p className={`muted trade-note${toPay < 0 ? " warn-text" : ""}`}>{toPay < 0 ? "A troca passa do valor da venda." : `Venda de ${money(total)}; falta receber ${money(toPay)}.`}</p>}
         <SubmitButton className="block" pendingText="Registrando...">Finalizar venda</SubmitButton>
       </section>
     </form>

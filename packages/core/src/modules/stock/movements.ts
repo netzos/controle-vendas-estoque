@@ -5,7 +5,7 @@ import { AppError, notFound } from "../../errors.ts";
 import { defineService } from "../../service.ts";
 import { decimalField, optionalText } from "../catalog/fields.ts";
 
-export type MovementKind = "in" | "out" | "adjust" | "sale" | "sale_cancel";
+export type MovementKind = "in" | "out" | "adjust" | "sale" | "sale_cancel" | "trade_in";
 
 export const MOVEMENT_LABELS: Record<MovementKind, string> = {
   in: "Entrada",
@@ -13,6 +13,7 @@ export const MOVEMENT_LABELS: Record<MovementKind, string> = {
   adjust: "Ajuste",
   sale: "Venda",
   sale_cancel: "Venda cancelada",
+  trade_in: "Recebido na troca",
 };
 
 export interface StockMovement {
@@ -55,6 +56,18 @@ export async function applyMovement(
     [actor.organizationId, m.productId, m.kind, m.quantity, rows[0].balance, m.unitCost ?? null, m.saleId ?? null, m.notes ?? null, actor.userId],
   );
   return rows[0];
+}
+
+// Custo médio ponderado após uma entrada de quantity unidades a unitCost.
+// Com saldo zerado ou negativo, vale o custo da entrada.
+export async function averageCost(tx: Tx, productId: string, quantity: string, unitCost: string): Promise<void> {
+  await tx.query(
+    `UPDATE controle_vendas_estoque.products
+        SET cost_price = CASE WHEN stock_qty <= 0 THEN $2::numeric
+                              ELSE round((stock_qty * cost_price + $3::numeric * $2::numeric) / (stock_qty + $3::numeric), 4) END
+      WHERE id = $1`,
+    [productId, unitCost, quantity],
+  );
 }
 
 export const listMovements = defineService({
@@ -117,15 +130,7 @@ export const createMovement = defineService({
     }
 
     // Entrada com custo informado atualiza o custo médio do produto.
-    if (input.kind === "in" && input.unitCost != null) {
-      await tx.query(
-        `UPDATE controle_vendas_estoque.products
-            SET cost_price = CASE WHEN stock_qty <= 0 THEN $2::numeric
-                                  ELSE round((stock_qty * cost_price + $3::numeric * $2::numeric) / (stock_qty + $3::numeric), 4) END
-          WHERE id = $1`,
-        [input.productId, input.unitCost, input.quantity],
-      );
-    }
+    if (input.kind === "in" && input.unitCost != null) await averageCost(tx, input.productId, input.quantity, input.unitCost);
 
     const { balance } = await applyMovement(tx, actor, {
       productId: input.productId,

@@ -3,17 +3,28 @@ import { can } from "../../context.ts";
 import { AppError, notFound } from "../../errors.ts";
 import { defineService } from "../../service.ts";
 import { decimalField, optionalText, uuidOrNull } from "../catalog/fields.ts";
-import { applyMovement } from "../stock/movements.ts";
+import { applyMovement, averageCost } from "../stock/movements.ts";
 
 export type PaymentMethod = "cash" | "pix" | "credit" | "debit" | "other";
 
-export const PAYMENT_LABELS: Record<PaymentMethod, string> = {
+export const PAYMENT_LABELS: Record<PaymentMethod | "trade_in", string> = {
   pix: "Pix",
   cash: "Dinheiro",
   credit: "Cartão de crédito",
   debit: "Cartão de débito",
   other: "Outro",
+  trade_in: "Item na troca",
 };
+
+export interface SaleTradeIn {
+  id: string;
+  productId: string;
+  productName: string;
+  unitCode: string;
+  quantity: string;
+  value: string;
+  notes: string | null;
+}
 
 export interface SaleItem {
   id: string;
@@ -36,6 +47,7 @@ export interface Sale {
   subtotal: string;
   discount: string;
   total: string;
+  tradeInTotal: string;
   costTotal: string;
   notes: string | null;
   soldAt: Date;
@@ -47,7 +59,7 @@ export interface Sale {
 
 const SALE_COLUMNS = `s.id, s.number, s.customer_id AS "customerId", c.name AS "customerName", s.status,
   s.payment_method AS "paymentMethod", s.subtotal::text AS subtotal, s.discount::text AS discount, s.total::text AS total,
-  s.cost_total::text AS "costTotal", s.notes, s.sold_at AS "soldAt", u.name AS "userName",
+  s.trade_in_total::text AS "tradeInTotal", s.cost_total::text AS "costTotal", s.notes, s.sold_at AS "soldAt", u.name AS "userName",
   (SELECT count(*) FROM controle_vendas_estoque.sale_items i WHERE i.sale_id = s.id)::int AS "itemCount",
   s.cancelled_at AS "cancelledAt", s.cancel_reason AS "cancelReason"`;
 const SALE_FROM = `controle_vendas_estoque.sales s
@@ -74,6 +86,21 @@ export const createSale = defineService({
         }),
       )
       .min(1, "Adicione pelo menos um item."),
+    // Itens que o cliente entrega como parte do pagamento. Um item já
+    // cadastrado (productId) ou um novo (name), que é criado na hora.
+    tradeIns: z
+      .array(
+        z.object({
+          productId: uuidOrNull,
+          name: optionalText(160),
+          quantity: decimalField(3, "Quantidade da troca").default("1"),
+          value: decimalField(2, "Valor da troca"),
+          salePrice: decimalField(2, "Preço de revenda").optional(),
+          notes: optionalText(500),
+        }),
+      )
+      .max(10)
+      .default([]),
   }),
   async handler({ tx, actor, audit, emit }, input) {
     if (input.customerId) {
@@ -109,15 +136,28 @@ export const createSale = defineService({
     const { subtotal, cost } = totals.rows[0]!;
     if (Number(input.discount) > Number(subtotal)) throw new AppError("invalid_input", "O desconto é maior que o valor da venda.");
 
+    if (input.tradeIns.length > 0 && !can(actor, "sales.trade_in")) {
+      throw new AppError("forbidden", "Você não tem permissão para aceitar item na troca.");
+    }
+    const tradeTotal = input.tradeIns.reduce((a, t) => a + Math.round(Number(t.value) * 100), 0) / 100;
+    for (const t of input.tradeIns) {
+      if (!t.productId && !t.name) throw new AppError("invalid_input", "Diga qual item foi recebido na troca.");
+      if (Number(t.quantity) <= 0) throw new AppError("invalid_input", "Quantidade da troca deve ser maior que zero.");
+    }
+    if (tradeTotal > Number(subtotal) - Number(input.discount)) {
+      throw new AppError("invalid_input", "O valor da troca passa do valor da venda. Registre a diferença como compra.");
+    }
+
     // Número sequencial por empresa, sem buracos por concorrência.
     await tx.query("SELECT pg_advisory_xact_lock(hashtext('sales:' || $1))", [actor.organizationId]);
     const { rows } = await tx.query<{ id: string; number: number; total: string }>(
       `INSERT INTO controle_vendas_estoque.sales
-         (organization_id, number, customer_id, payment_method, subtotal, discount, total, cost_total, notes, created_by)
+         (organization_id, number, customer_id, payment_method, subtotal, discount, total, cost_total, notes, created_by, trade_in_total)
        VALUES ($1, (SELECT coalesce(max(number), 0) + 1 FROM controle_vendas_estoque.sales WHERE organization_id = $1),
-               $2, $3, $4, $5, $4::numeric - $5::numeric, $6, $7, $8)
+               $2, $3, $4, $5, $4::numeric - $5::numeric, $6, $7, $8, $9)
        RETURNING id, number, total::text AS total`,
-      [actor.organizationId, input.customerId ?? null, input.paymentMethod, subtotal, input.discount, cost, input.notes ?? null, actor.userId],
+      [actor.organizationId, input.customerId ?? null, input.paymentMethod, subtotal, input.discount, cost, input.notes ?? null, actor.userId,
+        tradeTotal.toFixed(2)],
     );
     const sale = rows[0]!;
 
@@ -132,7 +172,47 @@ export const createSale = defineService({
       }
     }
 
-    await audit({ action: "sale.create", entityType: "sale", entityId: sale.id, summary: `Venda nº ${sale.number} de R$ ${sale.total}`, after: { ...sale, items: lines.length } });
+    // Item recebido entra no estoque com o valor da troca como custo.
+    for (const [i, t] of input.tradeIns.entries()) {
+      let productId = t.productId ?? null;
+      if (productId) {
+        const p = await tx.query<{ track: boolean; name: string }>(
+          "SELECT track_stock AS track, name FROM controle_vendas_estoque.products WHERE id = $1 FOR UPDATE",
+          [productId],
+        );
+        if (!p.rows[0]) throw new AppError("invalid_input", "Item da troca não encontrado.");
+        if (!p.rows[0].track) throw new AppError("invalid_input", `${p.rows[0].name} não tem estoque; não pode ser recebido na troca.`);
+      } else {
+        const unit = await tx.query<{ id: string }>(
+          "SELECT id FROM controle_vendas_estoque.units WHERE status = 'active' ORDER BY (code = 'UN') DESC, code LIMIT 1",
+        );
+        if (!unit.rows[0]) throw new AppError("invalid_input", "Cadastre uma unidade de medida antes.");
+        const created = await tx.query<{ id: string }>(
+          `INSERT INTO controle_vendas_estoque.products
+             (organization_id, sku, name, unit_id, sale_price, cost_price, item_type, track_stock, description)
+           VALUES ($1, $2, $3, $4, $5, round($6::numeric / $7::numeric, 4), 'stock', true, $8) RETURNING id`,
+          [actor.organizationId, `TROCA-${sale.number}-${i + 1}`, t.name, unit.rows[0].id, t.salePrice ?? "0", t.value, t.quantity,
+            `Recebido na troca da venda nº ${sale.number}.`],
+        );
+        productId = created.rows[0]!.id;
+      }
+      const unitCost = (await tx.query<{ c: string }>("SELECT round($1::numeric / $2::numeric, 4)::text AS c", [t.value, t.quantity])).rows[0]!.c;
+      if (t.productId) await averageCost(tx, productId, t.quantity, unitCost);
+      await tx.query(
+        `INSERT INTO controle_vendas_estoque.sale_trade_ins (organization_id, sale_id, product_id, quantity, value, notes)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [actor.organizationId, sale.id, productId, t.quantity, t.value, t.notes ?? null],
+      );
+      await applyMovement(tx, actor, { productId, kind: "trade_in", quantity: t.quantity, unitCost, saleId: sale.id, notes: t.notes ?? null });
+    }
+
+    await audit({
+      action: "sale.create",
+      entityType: "sale",
+      entityId: sale.id,
+      summary: `Venda nº ${sale.number} de R$ ${sale.total}${tradeTotal > 0 ? ` (R$ ${tradeTotal.toFixed(2)} em troca)` : ""}`,
+      after: { ...sale, items: lines.length, tradeIns: input.tradeIns.length },
+    });
     await emit("sale.created", { saleId: sale.id, number: sale.number, total: sale.total }, { type: "sale", id: sale.id });
     return sale;
   },
@@ -158,7 +238,7 @@ export const cancelSale = defineService({
     );
     const moved = await tx.query<{ productId: string; quantity: string; unitCost: string | null }>(
       `SELECT product_id AS "productId", (-quantity)::text AS quantity, unit_cost::text AS "unitCost"
-         FROM controle_vendas_estoque.stock_movements WHERE sale_id = $1 AND kind = 'sale'`,
+         FROM controle_vendas_estoque.stock_movements WHERE sale_id = $1 AND kind IN ('sale', 'trade_in')`,
       [input.id],
     );
     for (const m of moved.rows) {
@@ -206,7 +286,16 @@ export const getSale = defineService({
         WHERE i.sale_id = $1 ORDER BY p.name`,
       [input.id],
     );
-    return { ...rows[0], items: items.rows };
+    const tradeIns = await tx.query<SaleTradeIn>(
+      `SELECT t.id, t.product_id AS "productId", p.name AS "productName", u.code AS "unitCode",
+              t.quantity::text AS quantity, t.value::text AS value, t.notes
+         FROM controle_vendas_estoque.sale_trade_ins t
+         JOIN controle_vendas_estoque.products p ON p.id = t.product_id
+         JOIN controle_vendas_estoque.units u ON u.id = p.unit_id
+        WHERE t.sale_id = $1 ORDER BY t.created_at`,
+      [input.id],
+    );
+    return { ...rows[0], items: items.rows, tradeIns: tradeIns.rows };
   },
 });
 
@@ -220,7 +309,7 @@ export interface SalesDashboard {
   previous: { revenue: string; count: number; ticket: string; profit: string };
   series: { label: string; revenue: string; count: number }[];
   topProducts: { productId: string; name: string; unitCode: string; quantity: string; revenue: string; share: number }[];
-  payments: { method: PaymentMethod; revenue: string; count: number }[];
+  payments: { method: PaymentMethod | "trade_in"; revenue: string; count: number }[];
   hours: { hour: number; revenue: string; count: number }[];
   recent: Sale[];
 }
@@ -302,10 +391,15 @@ export const salesDashboard = defineService({
       [start, end],
     );
 
-    const payments = await tx.query<{ method: PaymentMethod; revenue: string; count: number }>(
-      `SELECT payment_method AS method, sum(total)::text AS revenue, count(*)::int AS count
-         FROM controle_vendas_estoque.sales WHERE status = 'completed' AND sold_at >= $1 AND sold_at < $2
-        GROUP BY payment_method ORDER BY sum(total) DESC`,
+    // A parte paga com item na troca aparece separada da forma de pagamento.
+    const payments = await tx.query<{ method: PaymentMethod | "trade_in"; revenue: string; count: number }>(
+      `SELECT method, sum(amount)::text AS revenue, count(*)::int AS count FROM (
+         SELECT payment_method AS method, total - trade_in_total AS amount FROM controle_vendas_estoque.sales
+          WHERE status = 'completed' AND sold_at >= $1 AND sold_at < $2 AND total > trade_in_total
+         UNION ALL
+         SELECT 'trade_in', trade_in_total FROM controle_vendas_estoque.sales
+          WHERE status = 'completed' AND sold_at >= $1 AND sold_at < $2 AND trade_in_total > 0
+       ) x GROUP BY method ORDER BY sum(amount) DESC`,
       [start, end],
     );
 

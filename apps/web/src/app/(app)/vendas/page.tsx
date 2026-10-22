@@ -48,8 +48,30 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
               </tbody>
             </table>
           </div>
+          {selected.tradeIns.length > 0 && (
+            <>
+              <h3 className="form-section">Recebido na troca</h3>
+              <div className="table-wrap">
+                <table>
+                  <tbody>
+                    {selected.tradeIns.map((t) => (
+                      <tr key={t.id}>
+                        <td><Link href={`/estoque/movimentacoes?produto=${t.productId}`}>{t.productName}</Link>{t.notes && <small className="muted">{t.notes}</small>}</td>
+                        <td className="num">{quantity(t.quantity)} {t.unitCode}</td>
+                        <td className="num">−{money(t.value)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
           <div className="cart-sum">
-            <span>Subtotal {money(selected.subtotal)}{Number(selected.discount) > 0 && ` · desconto ${money(selected.discount)}`}</span>
+            <span>
+              Subtotal {money(selected.subtotal)}
+              {Number(selected.discount) > 0 && ` · desconto ${money(selected.discount)}`}
+              {Number(selected.tradeInTotal) > 0 && ` · troca ${money(selected.tradeInTotal)} · pago em ${PAYMENT_LABELS[selected.paymentMethod].toLowerCase()} ${money(Number(selected.total) - Number(selected.tradeInTotal))}`}
+            </span>
             <span className="cart-grand">{money(selected.total)}</span>
           </div>
           {selected.status === "cancelled" && <p className="muted">Cancelada: {selected.cancelReason}</p>}

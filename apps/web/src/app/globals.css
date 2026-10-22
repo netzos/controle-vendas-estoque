@@ -358,3 +358,12 @@ td .tag { margin-left: 8px; font-size: 12px; padding: 1px 8px; }
 .with-thumb { display: flex; align-items: center; gap: 12px; }
 .pos-thumb { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 10px; margin-bottom: 8px; background: var(--surface-2); }
 .pos-grid { align-items: start; }
+
+/* Item recebido na troca, no caixa */
+.trade-ins { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; margin: 4px 0 12px; }
+.trade-row { display: flex; gap: 6px; width: 100%; flex-wrap: wrap; }
+.trade-row select { flex: 1 1 110px; min-width: 0; }
+.trade-row input { flex: 2 1 120px; min-width: 0; }
+.trade-row .trade-value { flex: 1 1 80px; }
+.trade-row { flex-wrap: nowrap; }
+.trade-note { margin: 4px 0 10px; font-size: 13px; text-align: right; }
