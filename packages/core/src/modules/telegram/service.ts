@@ -48,8 +48,7 @@ async function botUsername(api: TelegramApi): Promise<string> {
 /** Aponta o robô para este sistema (só muda se ainda não estiver apontado). */
 async function ensureWebhook(api: TelegramApi) {
   const url = `${appUrl()}/api/telegram/webhook`;
-  const info = await api.call<{ url: string }>("getWebhookInfo");
-  if (info.url === url) return;
+  // Sempre regrava: se o token mudou, o segredo do webhook também muda.
   await api.call("setWebhook", { url, secret_token: telegramWebhookSecret(), allowed_updates: ["message", "callback_query"] });
 }
 
@@ -68,7 +67,20 @@ export async function createTelegramLink(db: Db, actor: Actor, deps: TelegramDep
   if (!can(actor, "nets.use")) throw forbidden("Você não tem permissão para conversar com a Nets.");
   if (!telegramConfigured()) throw new AppError("invalid_input", "O robô do Telegram ainda não foi ligado (falta TELEGRAM_BOT_TOKEN na Vercel).");
   const api = deps.api ?? telegramApi;
-  await ensureWebhook(api);
+  let bot: string;
+  try {
+    await ensureWebhook(api);
+    bot = await botUsername(api);
+  } catch (err) {
+    console.error("telegram connect", err);
+    const reason = err instanceof Error ? err.message : String(err);
+    throw new AppError(
+      "invalid_input",
+      /unauthorized|not found/i.test(reason)
+        ? "O Telegram não aceitou o token do robô. Copie o token atual no BotFather e troque o TELEGRAM_BOT_TOKEN na Vercel."
+        : `O Telegram recusou a ligação (${reason}).`,
+    );
+  }
   const code = randomBytes(18).toString("base64url");
   await withTransaction(db, async (tx) => {
     await tx.query("UPDATE controle_vendas_estoque.telegram_link_codes SET used_at = now() WHERE user_id = $1 AND used_at IS NULL", [actor.userId]);
@@ -78,7 +90,7 @@ export async function createTelegramLink(db: Db, actor: Actor, deps: TelegramDep
       [actor.userId, actor.organizationId, hash(code), CODE_TTL_MINUTES],
     );
   });
-  return { url: `https://t.me/${await botUsername(api)}?start=${code}` };
+  return { url: `https://t.me/${bot}?start=${code}` };
 }
 
 export async function unlinkTelegram(db: Db, actor: Actor): Promise<void> {
