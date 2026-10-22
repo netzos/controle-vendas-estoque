@@ -24,6 +24,13 @@ A tela **Melhorias** (menu Colaboração) é o quadro onde quem usa o ERP pede m
 
 **Módulos:** geral, comercial, catálogo, estoque, compras, financeiro, inteligência, assistente IA, automações, administração.
 
+## Plataforma › Melhorias e Liberações
+
+- **Plataforma › Melhorias** (só o desenvolvedor): pedidos de todas as empresas, do mais pedido para o menos pedido, com filtro por categoria e empresa. É o único lugar onde se aprova, recusa, muda a categoria ou **junta** pedidos parecidos: o juntado sai da lista, conta no principal ("pedido 3 vezes") e segue a situação dele (`merged_into`). A empresa continua vendo o pedido dela, com "juntado ao #N".
+- **Analisar com IA** lê os pedidos em aberto e devolve resumo, grupos para juntar, prioridades e o que cada empresa precisa (`improvement_analyses`). Só sugere; quem junta e decide é o desenvolvedor.
+- Dentro de cada empresa, a tela **Melhorias** mostra só os pedidos daquela empresa, inclusive para o desenvolvedor.
+- **Plataforma › Liberações** liga ou desliga partes do sistema por empresa (`organization_features`, catálogo em `packages/core/src/features.ts`). Toda novidade que só deve aparecer para algumas empresas entra no catálogo com `defaultOn: false`, ganha `feature` no item do menu e um `layout.tsx` com `requireFeature` na pasta da tela.
+
 ## Quem vê o quê
 
 - Cada empresa vê só os próprios pedidos (garantido pelo RLS do banco).

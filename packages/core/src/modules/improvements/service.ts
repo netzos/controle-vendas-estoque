@@ -58,6 +58,13 @@ export interface Improvement {
   decidedByName: string | null;
   decidedAt: Date | null;
   link: string | null;
+  /** Pedido principal, quando este foi juntado a outro parecido. */
+  mergedInto: string | null;
+  mergedIntoNumber: string | null;
+  /** Quantos pedidos este representa (ele mais os juntados a ele). */
+  requests: number;
+  /** Empresas que pediram, contando os pedidos juntados. */
+  organizations: string[];
   version: number;
   createdAt: Date;
   updatedAt: Date;
@@ -92,6 +99,11 @@ const ITEM_SELECT = `
          i.title, i.body, i.module, i.status, i.source, i.details,
          i.created_by AS "createdBy", i.created_by_name AS "createdByName",
          i.decided_by AS "decidedBy", i.decided_by_name AS "decidedByName", i.decided_at AS "decidedAt", i.link, i.version,
+         i.merged_into AS "mergedInto",
+         i.merged_into_number::text AS "mergedIntoNumber",
+         1 + (SELECT count(*)::int FROM controle_vendas_estoque.improvements c WHERE c.merged_into = i.id) AS requests,
+         (SELECT coalesce(array_agg(DISTINCT x.organization_name) FILTER (WHERE x.organization_name IS NOT NULL), '{}')
+            FROM controle_vendas_estoque.improvements x WHERE x.id = i.id OR x.merged_into = i.id) AS organizations,
          i.created_at AS "createdAt", i.updated_at AS "updatedAt",
          (SELECT count(*)::int FROM controle_vendas_estoque.improvement_messages m WHERE m.improvement_id = i.id) AS messages,
          (SELECT json_build_object('kind', m.author_kind, 'name', m.author_name, 'at', m.created_at)
@@ -162,6 +174,13 @@ async function save(tx: Tx, item: Improvement, expectedVersion: number) {
     ],
   );
   if (r.rowCount === 0) throw new AppError("conflict", "O pedido foi alterado por outra pessoa. Atualize a página.");
+  // Pedidos juntados a este seguem a situação dele.
+  await tx.query(
+    `UPDATE controle_vendas_estoque.improvements
+        SET status = $2, link = $3, decided_by = $4, decided_by_name = $5, decided_at = $6, version = version + 1, updated_at = now()
+      WHERE merged_into = $1 AND (status, link) IS DISTINCT FROM ($2, $3)`,
+    [item.id, item.status, item.link, item.decidedBy, item.decidedByName, item.decidedAt],
+  );
 }
 
 // Leitura -------------------------------------------------------------------
@@ -169,6 +188,9 @@ async function save(tx: Tx, item: Improvement, expectedVersion: number) {
 export interface ImprovementFilters {
   status?: ImprovementStatus[];
   module?: ImprovementModule;
+  organizationId?: string;
+  /** Inclui os pedidos juntados a outros (a tela da empresa mostra os dela). */
+  includeMerged?: boolean;
 }
 
 export async function listImprovements(db: Db, viewer: ImprovementViewer, filters: ImprovementFilters = {}) {
@@ -180,9 +202,11 @@ async function queryList(tx: Tx, filters: ImprovementFilters) {
     `${ITEM_SELECT}
       WHERE ($1::text[] IS NULL OR i.status = ANY($1))
         AND ($2::text IS NULL OR i.module = $2)
+        AND ($3::uuid IS NULL OR i.organization_id = $3)
+        AND ($4 OR i.merged_into IS NULL)
       ORDER BY i.updated_at DESC
       LIMIT 300`,
-    [filters.status ?? null, filters.module ?? null],
+    [filters.status ?? null, filters.module ?? null, filters.organizationId ?? null, filters.includeMerged ?? false],
   );
   return rows;
 }
@@ -257,6 +281,7 @@ export async function decideImprovement(
   if (decision !== "approve" && decision !== "reject") throw new AppError("invalid_input", "Decisão inválida.");
   return asViewer(db, viewer, async (tx) => {
     const item = await load(tx, id, true);
+    if (item.mergedInto) throw new AppError("conflict", `Este pedido foi juntado ao #${item.mergedIntoNumber}; decida por lá.`);
     if (item.status !== "new" && item.status !== "analysis") throw new AppError("conflict", "Este pedido já foi decidido.");
     const expected = item.version;
     item.status = decision === "approve" ? "approved" : "rejected";
@@ -267,6 +292,34 @@ export async function decideImprovement(
     const text = (decision === "approve" ? "Aprovado." : "Recusado.") + (note.trim() ? " " + clip(note, 1000) : "");
     await addMessage(tx, id, "person", viewer.userId, viewer.userName, text);
     return load(tx, id);
+  });
+}
+
+/**
+ * Junta um pedido a outro parecido (de qualquer empresa). O juntado sai da
+ * lista da Plataforma, conta no principal e passa a seguir a situação dele.
+ */
+export async function mergeImprovement(db: Db, viewer: ImprovementViewer, id: string, intoId: string) {
+  if (!viewer.isDeveloper) throw forbidden("Somente o desenvolvedor junta pedidos.");
+  if (id === intoId) throw new AppError("invalid_input", "Escolha outro pedido.");
+  return asViewer(db, viewer, async (tx) => {
+    const item = await load(tx, id, true);
+    const into = await load(tx, intoId, true);
+    if (into.mergedInto) throw new AppError("conflict", `O #${into.number} já foi juntado ao #${into.mergedIntoNumber}. Junte direto nele.`);
+    if (item.mergedInto) throw new AppError("conflict", "Este pedido já foi juntado a outro.");
+    // Os que já estavam juntados a este passam para o principal.
+    await tx.query("UPDATE controle_vendas_estoque.improvements SET merged_into = $2 WHERE merged_into = $1", [id, intoId]);
+    await tx.query("UPDATE controle_vendas_estoque.improvements SET merged_into_number = $2 WHERE merged_into = $1 OR id = $3", [intoId, into.number, id]);
+    await tx.query(
+      `UPDATE controle_vendas_estoque.improvements
+          SET merged_into = $2, status = $3, link = $4, decided_by = $5, decided_by_name = $6, decided_at = $7, version = version + 1, updated_at = now()
+        WHERE id = $1 OR merged_into = $2`,
+      [id, intoId, into.status, into.link, into.decidedBy, into.decidedByName, into.decidedAt],
+    );
+    const from = item.organizationName ? ` (${item.organizationName})` : "";
+    await addMessage(tx, intoId, "person", viewer.userId, viewer.userName, `Pedido parecido juntado a este: #${item.number} ${item.title}${from}.\n\n${clip(item.body, 3000)}`);
+    await addMessage(tx, id, "person", viewer.userId, viewer.userName, `Juntado ao pedido #${into.number}, que trata da mesma necessidade. A situação deste pedido segue a dele.`);
+    return load(tx, intoId);
   });
 }
 

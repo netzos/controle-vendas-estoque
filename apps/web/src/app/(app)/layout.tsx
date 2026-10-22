@@ -1,4 +1,4 @@
-import { can, isPlatformDeveloper, listUserOrganizations } from "@erp/core";
+import { can, enabledFeatures, isPlatformDeveloper, listUserOrganizations } from "@erp/core";
 import { db } from "@/lib/db";
 import { currentActor } from "@/lib/auth";
 import { CURRENT_PHASE, NAVIGATION } from "@/lib/navigation";
@@ -12,14 +12,15 @@ export const dynamic = "force-dynamic";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const actor = await currentActor();
-  const [organizations, developer] = await Promise.all([
+  const [organizations, developer, features] = await Promise.all([
     listUserOrganizations(db(), actor.userId),
     isPlatformDeveloper(db(), actor.userId),
+    enabledFeatures(db(), actor.organizationId),
   ]);
   // O menu mostra só o que o perfil pode abrir; as páginas verificam de novo.
   const navigation = NAVIGATION.map((g) => ({
     ...g,
-    items: g.items.filter((i) => i.phase <= CURRENT_PHASE && (!i.developerOnly || developer) && (!i.permission || can(actor, i.permission))),
+    items: g.items.filter((i) => i.phase <= CURRENT_PHASE && (!i.developerOnly || developer) && (!i.feature || features.has(i.feature)) && (!i.permission || can(actor, i.permission))),
   })).filter((g) => g.items.length > 0);
 
   return (
@@ -30,7 +31,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       topbar={<OrganizationSwitcher organizations={organizations} activeId={actor.organizationId} action={switchOrganizationAction} />}
     >
       {children}
-      {can(actor, "nets.use") && (
+      {can(actor, "nets.use") && features.has("netz") && (
         <Suspense fallback={null}>
           <NetsBubble />
         </Suspense>
