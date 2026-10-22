@@ -28,6 +28,7 @@ A tela **Melhorias** (menu Colaboração) é o quadro onde quem usa o ERP pede m
 
 - **Plataforma › Melhorias** (só o desenvolvedor): pedidos de todas as empresas, do mais pedido para o menos pedido, com filtro por categoria e empresa. É o único lugar onde se aprova, recusa, muda a categoria ou **junta** pedidos parecidos: o juntado sai da lista, conta no principal ("pedido 3 vezes") e segue a situação dele (`merged_into`). A empresa continua vendo o pedido dela, com "juntado ao #N".
 - **Analisar com IA** lê os pedidos em aberto e devolve resumo, grupos para juntar, prioridades e o que cada empresa precisa (`improvement_analyses`). Só sugere; quem junta e decide é o desenvolvedor.
+- **Executar prioridades** (embaixo das prioridades da análise) aprova de uma vez os pedidos da lista, grava na conversa de cada um a prioridade e as orientações escritas pelo administrador, e marca a análise como executada (`executed_at`). O Claude desenvolve os aprovados nessa ordem na conferência de hora em hora.
 - Dentro de cada empresa, a tela **Melhorias** mostra só os pedidos daquela empresa, inclusive para o desenvolvedor.
 - **Plataforma › Liberações** liga ou desliga partes do sistema por empresa (`organization_features`, catálogo em `packages/core/src/features.ts`). Toda novidade que só deve aparecer para algumas empresas entra no catálogo com `defaultOn: false`, ganha `feature` no item do menu e um `layout.tsx` com `requireFeature` na pasta da tela.
 
@@ -81,9 +82,9 @@ Mudanças de status que o Claude pode fazer:
 
 1. Liste os pedidos `new`. Para cada um, leia o pedido e a conversa, escreva a análise e mova para `analysis` com a análise no corpo.
 2. Releia os pedidos `analysis` que receberam correção depois da sua análise e atualize a análise.
-3. Liste os pedidos `approved`. Para cada um:
+3. Liste os pedidos `approved`, na ordem das prioridades da última análise executada (`improvement_analyses.executed_at`), seguindo as orientações do administrador na conversa. Para cada um:
    1. mova para `building`;
-   2. implemente numa branch `melhoria/<assunto>`, com testes, e abra o PR em netzos/netz-erp;
+   2. implemente numa branch `melhoria/<assunto>`, com testes, e abra o PR em netzos/controle-vendas-estoque;
    3. depois do merge e da publicação, mova para `published` com o link e a explicação.
 
 ## Onde fica o código

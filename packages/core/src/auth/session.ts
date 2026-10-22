@@ -164,7 +164,13 @@ export async function listUserOrganizations(db: Db, userId: string): Promise<Org
 
 export async function switchOrganization(db: Db, session: SessionInfo, organizationId: string): Promise<void> {
   const orgs = await listUserOrganizations(db, session.userId);
-  if (!orgs.some((o) => o.id === organizationId)) {
+  // O administrador da plataforma pode olhar qualquer empresa (só consulta, ver resolveActor).
+  const { rows: dev } = await db.query<{ ok: boolean }>(
+    `SELECT controle_vendas_estoque.is_platform_developer($1)
+            AND EXISTS (SELECT 1 FROM controle_vendas_estoque.organizations WHERE id = $2) AS ok`,
+    [session.userId, organizationId],
+  );
+  if (!orgs.some((o) => o.id === organizationId) && !dev[0]?.ok) {
     throw new AppError("forbidden", "Você não tem acesso a esta empresa.");
   }
   await db.query("UPDATE controle_vendas_estoque.sessions SET active_organization_id = $2 WHERE id = $1", [session.sessionId, organizationId]);

@@ -522,3 +522,13 @@ summary .edit-hint { float: right; font-size: 13px; color: var(--muted); font-we
 .fixed-cost { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; padding: 10px 0; border-top: 1px solid var(--border); }
 .fixed-cost .field { margin: 0; flex: 1 1 140px; }
 .fixed-cost button { margin-bottom: 2px; }
+
+/* Melhorias: executar as prioridades da análise da IA */
+.imp-execute { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 12px 0 4px; }
+.imp-execute.ok { color: var(--text); font-weight: 500; }
+.imp-guidance { display: grid; gap: 4px; width: 100%; font-size: 14px; }
+.imp-guidance textarea { width: 100%; }
+
+/* Administrador olhando uma empresa sem ser membro */
+.view-banner { background: var(--text); color: #fff; }
+.view-banner a { color: #fff; text-decoration: underline; }

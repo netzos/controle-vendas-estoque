@@ -6,6 +6,8 @@ import {
   createImprovement,
   decideImprovement,
   enabledFeatures,
+  executeImprovementAnalysis,
+  getImprovement,
   improvementViewer,
   latestImprovementAnalysis,
   listImprovements,
@@ -90,6 +92,28 @@ describe("melhorias na plataforma", () => {
     assert.equal(r.result.necessidades[0]!.empresa, "Fazenda");
     const latest = await latestImprovementAnalysis(t.app, dev);
     assert.equal(latest?.id, r.id);
+  });
+
+  it("executar a partir da análise aprova as prioridades, na ordem, com as orientações", async () => {
+    const p1 = await createImprovement(t.app, a, { title: "Etiqueta de preço", body: "Imprimir etiquetas.", module: "catalogo" });
+    const p2 = await createImprovement(t.app, b, { title: "Relatório mensal", body: "Ver o mês.", module: "inteligencia" });
+    const fake: NetsModel = async () =>
+      ({
+        content: [{ type: "text", text: `{"resumo": "r", "grupos": [], "necessidades": [], "prioridades": [{"numero": ${p2.number}, "motivo": "a"}, {"numero": ${p1.number}, "motivo": "b"}]}` }],
+      }) as any;
+    const analysis = await analyzeImprovementsWithAI(t.app, dev, fake);
+    assert.equal(analysis.executedAt, null);
+    await assert.rejects(executeImprovementAnalysis(t.app, a, analysis.id), rejectsWith("forbidden"));
+
+    const r = await executeImprovementAnalysis(t.app, dev, analysis.id, "Teste com uma venda curta.");
+    assert.deepEqual(r.queued, [Number(p2.number), Number(p1.number)]);
+    for (const id of [p1.id, p2.id]) {
+      const { item, messages } = await getImprovement(t.app, dev, id);
+      assert.equal(item.status, "approved");
+      assert.ok(messages.some((m) => /prioridade \d/.test(m.body)));
+      assert.ok(messages.some((m) => m.body.includes("Teste com uma venda curta.")));
+    }
+    assert.ok((await latestImprovementAnalysis(t.app, dev))?.executedAt);
   });
 
   it("liberações: liga e desliga por empresa ou para todas", async () => {

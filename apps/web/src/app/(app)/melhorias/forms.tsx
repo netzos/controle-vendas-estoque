@@ -9,6 +9,7 @@ import {
   createImprovementAction,
   decideImprovementAction,
   editImprovementAction,
+  executeAnalysisAction,
   mergeGroupAction,
   mergeImprovementAction,
 } from "./actions";
@@ -140,6 +141,24 @@ export function AnalyzeButton() {
   return (
     <form action={action} className="imp-inline">
       <SubmitButton pendingText="A IA está lendo os pedidos...">Analisar com IA</SubmitButton>
+      {state && !state.ok && <span className="error">{state.message}</span>}
+    </form>
+  );
+}
+
+/** Aprova as prioridades da análise e põe na fila do Claude, na mesma ordem. */
+export function ExecuteAnalysisButton({ analysisId, numbers }: { analysisId: string; numbers: number[] }) {
+  const [state, action] = useActionState(executeAnalysisAction, null);
+  if (state?.ok) return <p className="imp-execute ok">{state.message} O Claude começa na próxima conferência (em até 1 hora) e avisa na conversa de cada pedido.</p>;
+  return (
+    <form action={action} className="imp-execute">
+      <input type="hidden" name="analysisId" value={analysisId} />
+      <label className="imp-guidance">
+        <span>Orientações para a execução (opcional)</span>
+        <textarea name="guidance" rows={3} maxLength={3000} placeholder="Ex.: no #8, mostre também quando a mensagem falhou; teste com uma mensagem curta." />
+      </label>
+      <SubmitButton pendingText="Mandando para a fila...">Executar prioridades ({numbers.map((n) => `#${n}`).join(", ")})</SubmitButton>
+      <span className="muted">Aprova esses pedidos e o Claude desenvolve e publica nessa ordem.</span>
       {state && !state.ok && <span className="error">{state.message}</span>}
     </form>
   );

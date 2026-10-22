@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import {
   analyzeImprovementsWithAI,
+  executeImprovementAnalysis,
   commentImprovement,
   improvementIdByNumber,
   mergeImprovement,
@@ -123,4 +124,15 @@ export async function analyzeImprovementsAction(_: FormState): Promise<FormState
   }
   revalidate();
   return { ok: true, message: "Análise pronta." };
+}
+
+export async function executeAnalysisAction(_: FormState, form: FormData): Promise<FormState> {
+  let queued: number[];
+  try {
+    ({ queued } = await executeImprovementAnalysis(db(), await viewer(), str(form, "analysisId"), str(form, "guidance")));
+  } catch (err) {
+    return toFormState(err);
+  }
+  revalidate();
+  return { ok: true, message: `Na fila: ${queued.map((n) => `#${n}`).join(", ")}.` };
 }

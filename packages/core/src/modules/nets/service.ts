@@ -7,8 +7,10 @@ import { can, resolveActor, type Actor, type Channel } from "../../context.ts";
 import { AppError, forbidden, parseInput } from "../../errors.ts";
 import { runService } from "../../service.ts";
 import { agentComplementImprovement, agentCreateImprovement, agentListImprovements } from "../improvements/service.ts";
+import { cleanReply } from "./clean.ts";
 import { NETS_INSTRUCTIONS } from "./instructions.ts";
-import { IMPROVEMENT_COMPLEMENT_TOOL, IMPROVEMENT_LIST_TOOL, IMPROVEMENT_TOOL, netsTools, type NetsTool } from "./tools.ts";
+import { listNetsDeliveries } from "./deliveries.ts";
+import { DELIVERIES_TOOL, IMPROVEMENT_COMPLEMENT_TOOL, IMPROVEMENT_LIST_TOOL, IMPROVEMENT_TOOL, netsTools, type NetsTool } from "./tools.ts";
 
 // Netz: o agente global. A conversa fica no banco; cada mensagem da pessoa é
 // respondida fora da requisição (processNetsTurn). Consultas rodam na hora;
@@ -140,11 +142,11 @@ function channelOf(c: Channel): "web" | "telegram" | "whatsapp" {
   return c === "telegram" || c === "whatsapp" ? c : "web";
 }
 
-async function insertReply(tx: Tx, actor: Pick<Actor, "organizationId" | "userId">, body: string, action?: NetsAction, status = "done") {
+async function insertReply(tx: Tx, actor: Pick<Actor, "organizationId" | "userId">, body: string, action?: NetsAction, status = "done", cleaned: string[] = []) {
   await tx.query(
-    `INSERT INTO controle_vendas_estoque.nets_messages (organization_id, user_id, role, body, status, action, action_status)
-     VALUES ($1, $2, 'assistant', $3, $4, $5, $6)`,
-    [actor.organizationId, actor.userId, body.slice(0, 20000), status, action ? JSON.stringify(action) : null, action ? "pending" : null],
+    `INSERT INTO controle_vendas_estoque.nets_messages (organization_id, user_id, role, body, status, action, action_status, cleaned)
+     VALUES ($1, $2, 'assistant', $3, $4, $5, $6, $7)`,
+    [actor.organizationId, actor.userId, body.slice(0, 20000), status, action ? JSON.stringify(action) : null, action ? "pending" : null, cleaned.length ? cleaned : null],
   );
 }
 
@@ -246,6 +248,7 @@ async function runTool(db: Db, actor: Actor, tools: NetsTool[], block: Anthropic
     }
   }
   if (block.name === IMPROVEMENT_LIST_TOOL) return { content: serialize(await agentListImprovements(db, actor)) };
+  if (block.name === DELIVERIES_TOOL) return { content: serialize(await listNetsDeliveries(db, actor, Number(input.limit) || 10)) };
   if (block.name === IMPROVEMENT_COMPLEMENT_TOOL) {
     try {
       const item = await agentComplementImprovement(db, actor, input as Parameters<typeof agentComplementImprovement>[2]);
@@ -292,9 +295,9 @@ export async function processNetsTurn(
   });
   if (!trigger) return;
 
-  const finish = (body: string | null, action?: NetsAction) =>
+  const finish = (body: string | null, action?: NetsAction, cleaned: string[] = []) =>
     asUser(db, owner, async (tx) => {
-      if (body !== null) await insertReply(tx, owner, body, action);
+      if (body !== null) await insertReply(tx, owner, body, action, "done", cleaned);
       await tx.query("UPDATE controle_vendas_estoque.nets_messages SET status = 'done' WHERE id = $1", [trigger.id]);
     });
 
@@ -342,6 +345,7 @@ export async function processNetsTurn(
     const { tools, definitions } = netsTools(actor);
     const model = deps.model ?? defaultNetsModel;
     const texts: string[] = [];
+    const cleaned: string[] = [];
     let action: NetsAction | undefined;
     const used = emptyAiUsage();
     let usedModel: string = NETS_MODEL;
@@ -357,7 +361,12 @@ export async function processNetsTurn(
         });
         addAiUsage(used, response.usage);
         usedModel = response.model ?? usedModel;
-        for (const b of response.content) if (b.type === "text" && b.text.trim()) texts.push(b.text.trim());
+        for (const b of response.content) {
+          if (b.type !== "text") continue;
+          const c = cleanReply(b.text);
+          cleaned.push(...c.removed);
+          if (c.text.trim()) texts.push(c.text.trim());
+        }
         if (response.stop_reason === "refusal") {
           texts.push("Não posso ajudar com isso.");
           break;
@@ -381,7 +390,7 @@ export async function processNetsTurn(
       if (used.input_tokens || used.output_tokens) await recordAiUsage(db, owner, "netz", usedModel, used);
     }
     const body = texts.join("\n\n") || (action ? action.title : "Pronto.");
-    await finish(body, action);
+    await finish(body, action, cleaned);
   } catch (err) {
     console.error("nets turn failed", err instanceof Error ? err.message : err);
     await finish("Não consegui responder agora. Tente de novo em instantes.");
