@@ -2,7 +2,16 @@
 
 import { useActionState, useState } from "react";
 import { Field, FormMessage, SubmitButton } from "@/components/form";
-import { createOrganizationAction, leaveSupportAction, organizationNotesAction, organizationStatusAction, ownerLinkAction } from "./actions";
+import {
+  billingAction,
+  createOrganizationAction,
+  deleteOrganizationAction,
+  leaveSupportAction,
+  organizationKindAction,
+  organizationNotesAction,
+  organizationStatusAction,
+  ownerLinkAction,
+} from "./actions";
 
 /** Link pronto para copiar ou mandar no WhatsApp. */
 function LinkBox({ url, text }: { url: string; text: string }) {
@@ -37,11 +46,11 @@ export function CreateOrganizationForm() {
       <form action={action} key={state?.ok ? state.url ?? state.organizationName : "form"}>
         <div className="grid-2">
           <Field label="Nome da empresa" name="organizationName" state={fieldState}>
-            <input id="organizationName" name="organizationName" required maxLength={120} placeholder="Ex.: Apple Ends" />
+            <input id="organizationName" name="organizationName" required maxLength={120} placeholder="Ex.: Loja da Maria" />
           </Field>
           <span />
           <Field label="Nome do dono" name="ownerName" state={fieldState}>
-            <input id="ownerName" name="ownerName" required maxLength={120} placeholder="Ex.: Anne" />
+            <input id="ownerName" name="ownerName" required maxLength={120} placeholder="Ex.: Maria" />
           </Field>
           <Field label="E-mail do dono" name="ownerEmail" state={fieldState} hint="É com este e-mail que ele(a) vai entrar.">
             <input id="ownerEmail" name="ownerEmail" type="email" required />
@@ -143,6 +152,72 @@ export function LeaveSupport({ organizationId, name }: { organizationId: string;
       <FormMessage state={state} />
       <input type="hidden" name="organizationId" value={organizationId} />
       <SubmitButton className="secondary" pendingText="Saindo...">Encerrar suporte e sair da empresa</SubmitButton>
+    </form>
+  );
+}
+
+/** Mensalidade que a empresa paga (anotada pela equipe). */
+export function BillingForm({ organizationId, planName, monthlyPrice, status, notes }: { organizationId: string; planName: string | null; monthlyPrice: string; status: string; notes: string }) {
+  const [state, action] = useActionState(billingAction, null);
+  const price = Number(monthlyPrice);
+  return (
+    <form action={action}>
+      <FormMessage state={state} />
+      <input type="hidden" name="organizationId" value={organizationId} />
+      <div className="grid-2">
+        <Field label="Situação" name="status" state={state}>
+          <select id="status" name="status" defaultValue={status}>
+            <option value="trial">Em teste</option>
+            <option value="paying">Pagando</option>
+            <option value="overdue">Em atraso</option>
+            <option value="free">Cortesia</option>
+            <option value="cancelled">Cancelado</option>
+          </select>
+        </Field>
+        <Field label="Mensalidade (R$)" name="monthlyPrice" state={state}>
+          <input id="monthlyPrice" name="monthlyPrice" inputMode="decimal" defaultValue={price ? price.toFixed(2).replace(".", ",") : ""} placeholder="0,00" />
+        </Field>
+        <Field label="Plano" name="planName" state={state} hint="Ex.: Básico, Completo">
+          <input id="planName" name="planName" maxLength={80} defaultValue={planName ?? ""} />
+        </Field>
+        <Field label="Observação" name="notes" state={state}>
+          <input id="notes" name="notes" maxLength={2000} defaultValue={notes} placeholder="Ex.: paga todo dia 10 por Pix" />
+        </Field>
+      </div>
+      <div className="actions"><SubmitButton>Salvar mensalidade</SubmitButton></div>
+    </form>
+  );
+}
+
+/** Cliente ou interna da equipe. */
+export function OrganizationKind({ organizationId, kind }: { organizationId: string; kind: "customer" | "internal" }) {
+  const [state, action] = useActionState(organizationKindAction, null);
+  return (
+    <form action={action}>
+      <FormMessage state={state} />
+      <input type="hidden" name="organizationId" value={organizationId} />
+      <input type="hidden" name="kind" value={kind === "customer" ? "internal" : "customer"} />
+      <SubmitButton className="secondary" pendingText="Salvando...">{kind === "customer" ? "Marcar como interna da equipe" : "Marcar como cliente"}</SubmitButton>
+    </form>
+  );
+}
+
+/** Exclui a empresa de vez: pede o nome digitado. */
+export function DeleteOrganization({ organizationId, name }: { organizationId: string; name: string }) {
+  const [state, action] = useActionState(deleteOrganizationAction, null);
+  return (
+    <form
+      action={action}
+      onSubmit={(e) => {
+        if (!window.confirm(`Excluir ${name} de vez? Todas as vendas, produtos, clientes e pessoas dela serão apagados. Não dá para desfazer.`)) e.preventDefault();
+      }}
+    >
+      <FormMessage state={state} />
+      <input type="hidden" name="organizationId" value={organizationId} />
+      <Field label={`Para confirmar, digite: ${name}`} name="confirmName" state={state}>
+        <input id="confirmName" name="confirmName" autoComplete="off" required />
+      </Field>
+      <SubmitButton className="danger" pendingText="Excluindo...">Excluir empresa de vez</SubmitButton>
     </form>
   );
 }

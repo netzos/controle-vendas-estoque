@@ -23,7 +23,11 @@ export interface PlatformOrganization {
   sales: number;
   lastSaleAt: Date | null;
   developerIsMember: boolean;
+  /** customer: empresa de cliente. internal: da própria equipe (casa da equipe, testes). */
+  kind: OrganizationKind;
 }
+
+export type OrganizationKind = "customer" | "internal";
 
 export async function isPlatformDeveloper(db: Db, userId: string): Promise<boolean> {
   const { rows } = await db.query<{ dev: boolean }>("SELECT controle_vendas_estoque.is_platform_developer($1) AS dev", [userId]);
@@ -39,7 +43,7 @@ export async function listPlatformOrganizations(db: Db, developerUserId: string)
   const { rows } = await db.query<PlatformOrganization>(
     `SELECT id, name, status, created_at AS "createdAt", owner_name AS "ownerName", owner_email AS "ownerEmail",
             owner_membership_id AS "ownerMembershipId", owner_last_login_at AS "ownerLastLoginAt",
-            members, sales, last_sale_at AS "lastSaleAt", developer_is_member AS "developerIsMember"
+            members, sales, last_sale_at AS "lastSaleAt", developer_is_member AS "developerIsMember", kind
        FROM controle_vendas_estoque.platform_organizations($1)`,
     [developerUserId],
   );
@@ -146,30 +150,37 @@ export async function platformMemberPasswordLink(db: Db, developerUserId: string
   });
 }
 
-export interface PlatformOverview {
-  organizations: number;
-  organizationsSuspended: number;
-  pendingRequests: number;
-  usersTotal: number;
-  usersToday: number;
-  users7d: number;
-  users30d: number;
-  usersNever: number;
-  sales30d: number;
-  revenue30d: string;
-  netzMessages30d: number;
+export interface PlatformDashboard {
+  companies: { total: number; active: number; suspended: number; new30d: number; newPrev30d: number; activeLast7d: number; activePrev7d: number; activeLast30d: number };
+  users: { total: number; new30d: number; today: number; last7d: number; last30d: number; never: number };
+  signups: { pending: number; last30d: number; approved30d: number; rejected30d: number; avgHoursToDecide: number | null };
+  activation: { created90d: number; withSale90d: number; medianDaysToFirstSale: number | null };
+  usage: { sales30d: number; salesPrev30d: number; gmv30d: number; gmvPrev30d: number; netzMessages30d: number; telegramLinks: number; improvementsOpen: number };
+  money: {
+    mrr: number; paying: number; overdue: number; trial: number; free: number;
+    usageCustomers30dUsd: number; usageInternal30dUsd: number; fixedMonthlyBrl: number; usdBrl: number;
+  };
+  monthly: Array<{ month: string; newCompanies: number; activeCompanies: number; newUsers: number; gmv: number; costUsd: number }>;
+  weekly: Array<{ week: string; activeCompanies: number }>;
 }
 
-export async function platformOverview(db: Db, developerUserId: string): Promise<PlatformOverview> {
+/** Indicadores do dashboard da plataforma (só clientes reais; a equipe fica de fora). */
+export async function platformDashboard(db: Db, developerUserId: string): Promise<PlatformDashboard> {
   await assertDeveloper(db, developerUserId);
-  const { rows } = await db.query<PlatformOverview>(
-    `SELECT organizations, organizations_suspended AS "organizationsSuspended", pending_requests AS "pendingRequests",
-            users_total AS "usersTotal", users_today AS "usersToday", users_7d AS "users7d", users_30d AS "users30d",
-            users_never AS "usersNever", sales_30d AS "sales30d", revenue_30d AS "revenue30d", netz_messages_30d AS "netzMessages30d"
-       FROM controle_vendas_estoque.platform_overview($1)`,
-    [developerUserId],
-  );
-  return rows[0]!;
+  const { rows } = await db.query<{ d: PlatformDashboard }>("SELECT controle_vendas_estoque.platform_dashboard($1) AS d", [developerUserId]);
+  const d = rows[0]!.d;
+  // O jsonb devolve numeric como número ou texto, conforme o tamanho; normaliza tudo.
+  const num = (o: Record<string, unknown>) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, v === null ? null : typeof v === "string" && k !== "month" && k !== "week" ? Number(v) : v]));
+  return {
+    companies: num(d.companies) as PlatformDashboard["companies"],
+    users: num(d.users) as PlatformDashboard["users"],
+    signups: num(d.signups) as PlatformDashboard["signups"],
+    activation: num(d.activation) as PlatformDashboard["activation"],
+    usage: num(d.usage) as PlatformDashboard["usage"],
+    money: { ...(num(d.money) as PlatformDashboard["money"]), usdBrl: Number(d.money.usdBrl ?? 5.5) },
+    monthly: (d.monthly ?? []).map((m) => num(m) as PlatformDashboard["monthly"][number]),
+    weekly: (d.weekly ?? []).map((w) => num(w) as PlatformDashboard["weekly"][number]),
+  };
 }
 
 export interface PlatformUser {
@@ -179,16 +190,22 @@ export interface PlatformUser {
   status: "active" | "disabled";
   lastLoginAt: Date | null;
   createdAt: Date;
+  /** Empresas de cliente da pessoa. */
   organizations: string[];
+  organizationIds: string[];
+  /** Empresas internas da equipe. */
+  internalOrganizations: string[];
   isDeveloper: boolean;
   netzMessages30d: number;
+  lastSeenAt: Date | null;
 }
 
 export async function listPlatformUsers(db: Db, developerUserId: string): Promise<PlatformUser[]> {
   await assertDeveloper(db, developerUserId);
   const { rows } = await db.query<PlatformUser>(
     `SELECT id, name, email, status, last_login_at AS "lastLoginAt", created_at AS "createdAt", organizations,
-            is_developer AS "isDeveloper", netz_messages_30d AS "netzMessages30d"
+            organization_ids AS "organizationIds", internal_organizations AS "internalOrganizations",
+            is_developer AS "isDeveloper", netz_messages_30d AS "netzMessages30d", last_seen_at AS "lastSeenAt"
        FROM controle_vendas_estoque.platform_users($1)`,
     [developerUserId],
   );
@@ -268,7 +285,7 @@ export async function leaveOrganizationSupport(db: Db, developer: { userId: stri
 
 // Ficha da empresa ------------------------------------------------------------
 
-export type OrganizationHealth = "active" | "cooling" | "idle" | "never" | "suspended" | "team";
+export type OrganizationHealth = "active" | "cooling" | "idle" | "never" | "suspended";
 
 export const HEALTH_LABELS: Record<OrganizationHealth, string> = {
   active: "Em uso",
@@ -276,7 +293,21 @@ export const HEALTH_LABELS: Record<OrganizationHealth, string> = {
   idle: "Parada",
   never: "Nunca usou",
   suspended: "Suspensa",
-  team: "Equipe netzsales",
+};
+
+export const KIND_LABELS: Record<OrganizationKind, string> = {
+  customer: "Cliente",
+  internal: "Interna da equipe",
+};
+
+export type BillingStatus = "trial" | "paying" | "free" | "overdue" | "cancelled";
+
+export const BILLING_LABELS: Record<BillingStatus, string> = {
+  trial: "Em teste",
+  paying: "Pagando",
+  free: "Cortesia",
+  overdue: "Em atraso",
+  cancelled: "Cancelado",
 };
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -305,6 +336,12 @@ export interface PlatformOrganizationStats {
   netzMessages30d: number;
   telegramLinks: number;
   improvementsOpen: number;
+  firstSaleAt: Date | null;
+  planName: string | null;
+  monthlyPrice: string;
+  billingStatus: BillingStatus;
+  usageCost30dUsd: string;
+  usageCostMonthUsd: string;
 }
 
 export interface PlatformOrganizationRow extends PlatformOrganization, PlatformOrganizationStats {
@@ -319,16 +356,16 @@ export async function listPlatformOrganizationRows(db: Db, developerUserId: stri
             sales_prev_30d AS "salesPrev30d", revenue_prev_30d AS "revenuePrev30d", sales_total AS "salesTotal",
             users_total AS "usersTotal", users_active_7d AS "usersActive7d", last_activity_at AS "lastActivityAt",
             products, customers, netz_messages_30d AS "netzMessages30d", telegram_links AS "telegramLinks",
-            improvements_open AS "improvementsOpen"
+            improvements_open AS "improvementsOpen", first_sale_at AS "firstSaleAt", plan_name AS "planName",
+            monthly_price AS "monthlyPrice", billing_status AS "billingStatus", usage_cost_30d_usd AS "usageCost30dUsd",
+            usage_cost_month_usd AS "usageCostMonthUsd"
        FROM controle_vendas_estoque.platform_organization_stats($1)`,
     [developerUserId],
   );
   const stats = new Map(rows.map((r) => [r.organizationId, r]));
   return orgs.map((o) => {
     const { organizationId: _, ...s } = stats.get(o.id)!;
-    // Sem ninguém de fora da equipe: é a empresa da própria equipe (ex.: netzsales).
-    const health = s.usersTotal === 0 && o.status === "active" ? "team" : organizationHealth(o.status, s.lastActivityAt);
-    return { ...o, ...s, health };
+    return { ...o, ...s, health: organizationHealth(o.status, s.lastActivityAt) };
   });
 }
 
@@ -444,4 +481,186 @@ export async function savePlatformOrganizationNotes(
       [organizationId, input.notes, input.contact || null, developer.userId],
     );
   });
+}
+
+// Tipo, mensalidade, exclusão ----------------------------------------------------
+
+/** Marca a empresa como cliente ou interna da equipe (internas saem das listas e dos números). */
+export async function setOrganizationKind(
+  db: Db,
+  developer: { userId: string; userName: string },
+  organizationId: string,
+  kind: OrganizationKind,
+): Promise<void> {
+  if (kind !== "customer" && kind !== "internal") throw new AppError("invalid_input", "Tipo de empresa desconhecido.");
+  const org = (await listPlatformOrganizations(db, developer.userId)).find((o) => o.id === organizationId);
+  if (!org) throw notFound("Empresa");
+  if (org.kind === kind) return;
+  await withTransaction(db, async (tx) => {
+    await setTenant(tx, { organizationId, userId: developer.userId });
+    await tx.query("UPDATE controle_vendas_estoque.organizations SET kind = $2 WHERE id = $1", [organizationId, kind]);
+    await recordAudit(tx, { organizationId, userId: developer.userId, channel: "web" }, {
+      action: "organization.kind",
+      entityType: "organization",
+      entityId: organizationId,
+      summary: `Empresa ${org.name} marcada como ${KIND_LABELS[kind].toLowerCase()} por ${developer.userName}`,
+    });
+  });
+}
+
+export const billingInput = z.object({
+  planName: z.string().trim().max(80, "Use até 80 caracteres.").optional(),
+  monthlyPrice: z.coerce.number({ message: "Informe o valor." }).min(0, "O valor não pode ser negativo.").max(1_000_000),
+  status: z.enum(["trial", "paying", "free", "overdue", "cancelled"]),
+  notes: z.string().trim().max(2000, "Use até 2.000 caracteres.").optional(),
+});
+
+/** Mensalidade que a empresa paga (anotada pela equipe; cobrança automática vem depois). */
+export async function savePlatformBilling(
+  db: Db,
+  developer: { userId: string; userName: string },
+  organizationId: string,
+  raw: z.input<typeof billingInput>,
+): Promise<void> {
+  const input = parseInput(billingInput, raw);
+  const org = (await listPlatformOrganizations(db, developer.userId)).find((o) => o.id === organizationId);
+  if (!org) throw notFound("Empresa");
+  await withTransaction(db, async (tx) => {
+    await setTenant(tx, { organizationId, userId: developer.userId });
+    await tx.query(
+      `INSERT INTO controle_vendas_estoque.organization_billing (organization_id, plan_name, monthly_price, status, notes, updated_by)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       ON CONFLICT (organization_id) DO UPDATE SET plan_name = EXCLUDED.plan_name, monthly_price = EXCLUDED.monthly_price,
+         status = EXCLUDED.status, notes = EXCLUDED.notes, updated_by = EXCLUDED.updated_by, updated_at = now()`,
+      [organizationId, input.planName || null, input.monthlyPrice.toFixed(2), input.status, input.notes || null, developer.userId],
+    );
+    await recordAudit(tx, { organizationId, userId: developer.userId, channel: "web" }, {
+      action: "organization.billing",
+      entityType: "organization",
+      entityId: organizationId,
+      summary: `Mensalidade de ${org.name}: ${BILLING_LABELS[input.status]}, R$ ${input.monthlyPrice.toFixed(2)} (por ${developer.userName})`,
+    });
+  });
+}
+
+/** Observação da mensalidade, para a ficha. */
+export async function platformBillingNotes(db: Db, developerUserId: string, organizationId: string): Promise<string> {
+  await assertDeveloper(db, developerUserId);
+  return withTransaction(db, async (tx) => {
+    await setTenant(tx, { organizationId, userId: developerUserId });
+    const { rows } = await tx.query<{ notes: string | null }>(
+      "SELECT notes FROM controle_vendas_estoque.organization_billing WHERE organization_id = $1",
+      [organizationId],
+    );
+    return rows[0]?.notes ?? "";
+  });
+}
+
+/**
+ * Exclui de vez a empresa e todos os dados dela. Só para empresa interna ou
+ * suspensa, e só quando o nome digitado confere.
+ */
+export async function deletePlatformOrganization(
+  db: Db,
+  developer: { userId: string; userName: string },
+  organizationId: string,
+  typedName: string,
+): Promise<string> {
+  const org = (await listPlatformOrganizations(db, developer.userId)).find((o) => o.id === organizationId);
+  if (!org) throw notFound("Empresa");
+  if (org.kind === "customer" && org.status !== "suspended") {
+    throw new AppError("conflict", "Suspenda a empresa antes de excluir. Assim nenhum cliente ativo é apagado por engano.");
+  }
+  if (typedName.trim() !== org.name) {
+    throw new AppError("invalid_input", "O nome digitado não confere.", {
+      details: { issues: [{ path: "confirmName", message: `Digite exatamente: ${org.name}` }] },
+    });
+  }
+  const { rows } = await db.query<{ name: string | null }>(
+    "SELECT controle_vendas_estoque.platform_delete_organization($1, $2) AS name",
+    [developer.userId, organizationId],
+  );
+  if (!rows[0]?.name) throw new AppError("conflict", "Não foi possível excluir esta empresa.");
+  console.info(`organization deleted: ${org.name} (${organizationId}) by ${developer.userName}`);
+  return rows[0].name;
+}
+
+// Custos da plataforma ---------------------------------------------------------
+
+export interface PlatformFixedCost {
+  id: string;
+  name: string;
+  monthlyBrl: string;
+  status: "active" | "inactive";
+}
+
+export async function listPlatformFixedCosts(db: Db, developerUserId: string): Promise<PlatformFixedCost[]> {
+  await assertDeveloper(db, developerUserId);
+  const { rows } = await db.query<PlatformFixedCost>(
+    `SELECT id, name, monthly_brl AS "monthlyBrl", status FROM controle_vendas_estoque.platform_fixed_costs ORDER BY status, monthly_brl DESC, name`,
+  );
+  return rows;
+}
+
+export const fixedCostInput = z.object({
+  id: z.string().uuid().optional(),
+  name: z.string().trim().min(2, "Dê um nome (ex.: Vercel).").max(80),
+  monthlyBrl: z.coerce.number({ message: "Informe o valor." }).min(0, "O valor não pode ser negativo.").max(1_000_000),
+  status: z.enum(["active", "inactive"]).default("active"),
+});
+
+export async function savePlatformFixedCost(db: Db, developerUserId: string, raw: z.input<typeof fixedCostInput>): Promise<void> {
+  await assertDeveloper(db, developerUserId);
+  const input = parseInput(fixedCostInput, raw);
+  if (input.id) {
+    const r = await db.query(
+      `UPDATE controle_vendas_estoque.platform_fixed_costs SET name = $2, monthly_brl = $3, status = $4, updated_by = $5, updated_at = now() WHERE id = $1`,
+      [input.id, input.name, input.monthlyBrl.toFixed(2), input.status, developerUserId],
+    );
+    if (!r.rowCount) throw notFound("Custo");
+  } else {
+    await db.query(
+      `INSERT INTO controle_vendas_estoque.platform_fixed_costs (name, monthly_brl, status, updated_by) VALUES ($1, $2, $3, $4)`,
+      [input.name, input.monthlyBrl.toFixed(2), input.status, developerUserId],
+    );
+  }
+}
+
+export async function platformUsdBrl(db: Db): Promise<number> {
+  const { rows } = await db.query<{ v: string }>("SELECT value #>> '{}' AS v FROM controle_vendas_estoque.platform_settings WHERE key = 'usd_brl'");
+  const v = Number(rows[0]?.v);
+  return Number.isFinite(v) && v > 0 ? v : 5.5;
+}
+
+export async function setPlatformUsdBrl(db: Db, developerUserId: string, raw: unknown): Promise<void> {
+  await assertDeveloper(db, developerUserId);
+  const rate = parseInput(z.object({ rate: z.coerce.number({ message: "Informe a cotação." }).min(1, "Cotação inválida.").max(50, "Cotação inválida.") }), raw).rate;
+  await db.query(
+    `INSERT INTO controle_vendas_estoque.platform_settings (key, value, updated_by) VALUES ('usd_brl', to_jsonb($1::numeric), $2)
+     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_by = EXCLUDED.updated_by, updated_at = now()`,
+    [rate, developerUserId],
+  );
+}
+
+export interface PlatformUsageRow {
+  organizationId: string;
+  kind: "ai" | "transcription";
+  feature: string;
+  calls: number;
+  inputTokens: string;
+  outputTokens: string;
+  seconds: string;
+  costUsd: string;
+}
+
+/** Custo de uso por empresa e por tipo, desde a data dada. */
+export async function platformUsageSummary(db: Db, developerUserId: string, since: Date): Promise<PlatformUsageRow[]> {
+  await assertDeveloper(db, developerUserId);
+  const { rows } = await db.query<PlatformUsageRow>(
+    `SELECT organization_id AS "organizationId", kind, feature, calls, input_tokens AS "inputTokens", output_tokens AS "outputTokens",
+            seconds, cost_usd AS "costUsd"
+       FROM controle_vendas_estoque.platform_usage_summary($1, $2)`,
+    [developerUserId, since],
+  );
+  return rows;
 }

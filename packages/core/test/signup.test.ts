@@ -8,7 +8,7 @@ import {
   listSignupRequests,
   listUserOrganizations,
   login,
-  platformOverview,
+  platformDashboard,
   rejectSignup,
   requestSignup,
   setOrganizationStatus,
@@ -96,11 +96,13 @@ describe("cadastro aberto com aprovação", () => {
   });
 
   it("painel: números gerais e usuários só para o desenvolvedor", async () => {
-    await assert.rejects(platformOverview(t.app, other.userId), rejectsWith("forbidden"));
-    const o = await platformOverview(t.app, dev.userId);
-    assert.equal(o.organizations, 3);
-    assert.equal(o.pendingRequests, 0);
-    assert.ok(o.usersToday >= 1);
+    await assert.rejects(platformDashboard(t.app, other.userId), rejectsWith("forbidden"));
+    const o = await platformDashboard(t.app, dev.userId);
+    assert.equal(o.companies.total, 3);
+    assert.equal(o.signups.pending, 0);
+    assert.ok(o.users.today >= 1);
+    assert.equal(o.monthly.length, 12);
+    assert.equal(o.weekly.length, 12);
     const users = await listPlatformUsers(t.app, dev.userId);
     const maria = users.find((u) => u.email === "maria@loja.com")!;
     assert.deepEqual(maria.organizations, ["Loja da Maria"]);

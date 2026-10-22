@@ -1,14 +1,17 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
+  BILLING_LABELS,
   FEATURES,
   HEALTH_LABELS,
   IMPROVEMENT_MODULES,
   improvementViewer,
   isAppError,
   listImprovements,
+  platformBillingNotes,
   platformFeatures,
   platformOrganizationDetail,
+  platformUsdBrl,
   type ImprovementStatus,
 } from "@erp/core";
 import { BarChart, Kpi } from "@/components/charts";
@@ -17,7 +20,7 @@ import { db } from "@/lib/db";
 import { documentLabel, money, whatsappLabel, whatsappLink } from "@/lib/format";
 import { FeatureToggle } from "../../liberacoes/forms";
 import { openOrganizationAction } from "../actions";
-import { LeaveSupport, MemberLink, NotesForm, OrganizationStatus, OwnerLink } from "../forms";
+import { BillingForm, DeleteOrganization, LeaveSupport, MemberLink, NotesForm, OrganizationKind, OrganizationStatus, OwnerLink } from "../forms";
 import { HEALTH_TONE, sinceLabel } from "../health";
 
 export const metadata = { title: "Ficha da empresa" };
@@ -37,7 +40,12 @@ export default async function OrganizationDetailPage({ params }: { params: Promi
     if (isAppError(err) && err.code === "not_found") notFound();
     throw err;
   }
-  const [features, viewer] = await Promise.all([platformFeatures(db(), actor.userId), improvementViewer(db(), await currentActor())]);
+  const [features, viewer, rate, billingNotes] = await Promise.all([
+    platformFeatures(db(), actor.userId),
+    improvementViewer(db(), await currentActor()),
+    platformUsdBrl(db()),
+    platformBillingNotes(db(), actor.userId, id),
+  ]);
   const improvements = await listImprovements(db(), viewer, { organizationId: id, includeMerged: true });
   const { organization: o, members, dailySales, activity, notes, signup } = detail;
   const tz = o.timezone;
@@ -49,6 +57,9 @@ export default async function OrganizationDetailPage({ params }: { params: Promi
   const enabled = features.get(o.id);
   const openImprovements = improvements.filter((i) => ["new", "analysis", "approved", "building"].includes(i.status));
   const moduleLabel = (key: string) => IMPROVEMENT_MODULES.find((m) => m.key === key)?.label ?? key;
+  const cost30 = Number(o.usageCost30dUsd) * rate;
+  const costMonth = Number(o.usageCostMonthUsd) * rate;
+  const margin = Number(o.monthlyPrice) - cost30;
 
   return (
     <>
@@ -57,7 +68,7 @@ export default async function OrganizationDetailPage({ params }: { params: Promi
         <div>
           <h1>{o.name}</h1>
           <p>
-            <span className={`tag ${HEALTH_TONE[o.health]}`}>{HEALTH_LABELS[o.health]}</span>{" "}
+            {o.kind === "internal" ? <span className="tag">Interna da equipe</span> : <span className={`tag ${HEALTH_TONE[o.health]}`}>{HEALTH_LABELS[o.health]}</span>}{" "}
             {o.ownerName ? `Dono: ${o.ownerName} · ${o.ownerEmail}` : "Sem dono"} · cliente desde {date.format(new Date(o.createdAt))}
           </p>
         </div>
@@ -120,6 +131,29 @@ export default async function OrganizationDetailPage({ params }: { params: Promi
         </section>
       </div>
 
+      <div className="dash-grid two">
+        <section className="card">
+          <div className="card-head">
+            <h2>Mensalidade</h2>
+            <span className={`tag ${o.billingStatus === "paying" ? "ok" : o.billingStatus === "overdue" ? "warn" : ""}`}>{BILLING_LABELS[o.billingStatus]}</span>
+          </div>
+          <BillingForm organizationId={o.id} planName={o.planName} monthlyPrice={o.monthlyPrice} status={o.billingStatus} notes={billingNotes} />
+        </section>
+        <section className="card">
+          <div className="card-head">
+            <h2>Custo e lucro</h2>
+            <Link href="/plataforma/financeiro" className="muted">Receita e custos ›</Link>
+          </div>
+          <dl className="org-facts">
+            <dt>Paga por mês</dt><dd>{money(o.monthlyPrice)}</dd>
+            <dt>Custo de uso (30 dias)</dt><dd>{money(cost30)} <span className="muted">IA da Netz e áudios</span></dd>
+            <dt>Custo neste mês</dt><dd>{money(costMonth)}</dd>
+            <dt>Sobra</dt><dd className={margin < 0 ? "negative" : ""}>{money(margin)}{Number(o.monthlyPrice) > 0 ? ` (${Math.round((margin / Number(o.monthlyPrice)) * 100)}%)` : ""}</dd>
+          </dl>
+          <p className="muted small-text">O custo em reais usa a cotação de {money(rate)} por dólar (muda em Receita e custos). Custos fixos da plataforma não entram aqui.</p>
+        </section>
+      </div>
+
       <section className="card">
         <div className="card-head">
           <h2>Pessoas</h2>
@@ -156,7 +190,7 @@ export default async function OrganizationDetailPage({ params }: { params: Promi
         <section className="card">
           <div className="card-head">
             <h2>Liberações</h2>
-            <Link href="/plataforma/liberacoes" className="muted">Ver todas as empresas ›</Link>
+            <Link href="/plataforma/liberacoes" className="muted">Todas as liberações ›</Link>
           </div>
           <ul className="feature-list">
             {FEATURES.map((f) => (
@@ -212,6 +246,15 @@ export default async function OrganizationDetailPage({ params }: { params: Promi
             </div>
           )}
           <div className="admin-block">
+            <h3>Tipo de empresa</h3>
+            <p className="muted">
+              {o.kind === "customer"
+                ? "Cliente: aparece nas listas e nos números da Plataforma. Marque como interna se for da equipe ou de teste."
+                : "Interna da equipe: fica fora das listas, dos números e dos usuários."}
+            </p>
+            <OrganizationKind organizationId={o.id} kind={o.kind} />
+          </div>
+          <div className="admin-block">
             <h3>Acesso da empresa</h3>
             <p className="muted">
               {o.status === "active"
@@ -219,6 +262,17 @@ export default async function OrganizationDetailPage({ params }: { params: Promi
                 : "A empresa está suspensa: ninguém dela consegue entrar."}
             </p>
             <OrganizationStatus organizationId={o.id} name={o.name} status={o.status} />
+          </div>
+          <div className="admin-block">
+            <h3>Excluir de vez</h3>
+            {o.kind === "internal" || o.status === "suspended" ? (
+              <>
+                <p className="muted">Apaga a empresa com todas as vendas, produtos, clientes e pessoas dela. Não dá para desfazer.</p>
+                <DeleteOrganization organizationId={o.id} name={o.name} />
+              </>
+            ) : (
+              <p className="muted">Para excluir uma empresa cliente, suspenda primeiro. Assim nenhum cliente ativo é apagado por engano.</p>
+            )}
           </div>
         </section>
       </div>

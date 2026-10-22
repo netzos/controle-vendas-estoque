@@ -505,3 +505,20 @@ summary .edit-hint { float: right; font-size: 13px; color: var(--muted); font-we
   .org-open { align-items: flex-start; text-align: left; }
   .org-search, .org-search input { width: 100%; }
 }
+
+/* Plataforma: painel, listas grandes e receita */
+.section-title { font-size: 18px; margin: 26px 0 12px; display: flex; align-items: baseline; gap: 12px; }
+.small-link { font-size: 14px; font-weight: 500; }
+.todo-card h2 { margin-bottom: 8px; }
+.todo-list { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 10px; }
+.todo-list a { display: inline-block; padding: 8px 14px; border-radius: 999px; background: var(--surface-2); color: var(--text); }
+.todo-list a:hover { background: var(--accent-soft); text-decoration: none; }
+.pager { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 14px; font-size: 14px; }
+.pager-links { display: flex; gap: 16px; align-items: center; }
+.sort-links { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; font-size: 14px; margin: 4px 0 12px; }
+.sort-links a { color: var(--muted); }
+.sort-links a.active { color: var(--text); font-weight: 600; }
+.negative { color: var(--danger); }
+.fixed-cost { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; padding: 10px 0; border-top: 1px solid var(--border); }
+.fixed-cost .field { margin: 0; flex: 1 1 140px; }
+.fixed-cost button { margin-bottom: 2px; }

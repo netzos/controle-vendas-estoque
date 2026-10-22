@@ -1,6 +1,8 @@
 import { can, type Actor } from "../../context.ts";
 import { AppError, forbidden } from "../../errors.ts";
-import { transcribeAudio, transcriptionConfigured, type AudioFile } from "../../transcribe.ts";
+import type { Db } from "@erp/db";
+import { transcribeAudioDetailed, transcriptionConfigured, type AudioFile } from "../../transcribe.ts";
+import { recordTranscriptionUsage } from "../../usage.ts";
 
 // Microfone do balão da Netz: o navegador grava e manda o áudio; a transcrição
 // é a mesma do Telegram (OpenAI ou Groq).
@@ -16,7 +18,7 @@ export function audioFileName(mimeType: string): string {
   return `fala.${EXT[sub] ?? "webm"}`;
 }
 
-export async function transcribeForNets(actor: Actor, audio: { data: Uint8Array<ArrayBuffer>; mimeType: string }): Promise<{ text: string }> {
+export async function transcribeForNets(db: Db, actor: Actor, audio: { data: Uint8Array<ArrayBuffer>; mimeType: string }): Promise<{ text: string }> {
   if (!can(actor, "nets.use")) throw forbidden("Você não tem permissão para conversar com a Netz.");
   if (!transcriptionConfigured()) throw new AppError("invalid_input", "A transcrição de áudio ainda não foi ligada (falta OPENAI_API_KEY na Vercel).");
   if (audio.data.byteLength === 0) throw new AppError("invalid_input", "Não chegou nenhum áudio. Tente de novo.");
@@ -24,7 +26,9 @@ export async function transcribeForNets(actor: Actor, audio: { data: Uint8Array<
   const file: AudioFile = { data: audio.data, fileName: audioFileName(audio.mimeType), mimeType: audio.mimeType.split(";")[0] };
   let text: string;
   try {
-    text = await transcribeAudio(file);
+    const t = await transcribeAudioDetailed(file);
+    text = t.text;
+    await recordTranscriptionUsage(db, actor, "panel_audio", t);
   } catch (err) {
     console.error("nets transcribe", err instanceof Error ? err.message : err);
     throw new AppError("invalid_input", "Não consegui transcrever agora. Tente de novo ou digite.");

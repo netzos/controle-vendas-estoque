@@ -6,7 +6,6 @@ export const HEALTH_TONE: Record<OrganizationHealth, string> = {
   idle: "warn",
   never: "off",
   suspended: "warn",
-  team: "",
 };
 
 const DAY = 24 * 60 * 60 * 1000;
