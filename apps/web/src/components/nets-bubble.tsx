@@ -83,7 +83,7 @@ function useDictation(onText: (text: string) => void) {
   return { supported, listening, toggle };
 }
 
-// A Nets em todas as telas: arrastável, minimiza sem perder o rascunho e sabe
+// A Netz em todas as telas: arrastável, minimiza sem perder o rascunho e sabe
 // qual tela está aberta. Mesmo esquema do Netz no NetOS.
 export function NetsBubble() {
   const [open, setOpen] = useState(false);
@@ -105,7 +105,7 @@ export function NetsBubble() {
 
   useEffect(() => setPosition(readPosition()), []);
 
-  // O histórico é lido só com o balão aberto; enquanto a Nets responde, a cada 2 s.
+  // O histórico é lido só com o balão aberto; enquanto a Netz responde, a cada 2 s.
   useEffect(() => {
     if (!open) return;
     const controller = new AbortController();
@@ -210,13 +210,13 @@ export function NetsBubble() {
   return (
     <div className="nets-root" style={{ right: position.right, bottom: position.bottom }}>
       {open && (
-        <section className="nets-panel" aria-label="Conversa com a Nets">
+        <section className="nets-panel" aria-label="Conversa com a Netz">
           <header>
             <div>
-              <strong>Nets</strong>
+              <strong>Netz</strong>
               <span>Peça qualquer coisa do sistema. Eu confirmo antes de mudar algo.</span>
             </div>
-            <button type="button" className="nets-icon-btn" aria-label="Minimizar a Nets" onClick={() => setOpen(false)}>
+            <button type="button" className="nets-icon-btn" aria-label="Minimizar a Netz" onClick={() => setOpen(false)}>
               <Icon name="minus" size={18} />
             </button>
           </header>
@@ -224,7 +224,7 @@ export function NetsBubble() {
             {!loaded && <p className="nets-note">Carregando...</p>}
             {loaded && messages.length === 0 && (
               <div className="nets-empty">
-                <p>Oi! Sou a Nets. Fale comigo como falaria com alguém da equipe:</p>
+                <p>Oi! Sou a Netz. Fale comigo como falaria com alguém da equipe:</p>
                 <ul>
                   <li>quanto vendi esta semana?</li>
                   <li>vendi 3 latas pro João no Pix</li>
@@ -250,7 +250,7 @@ export function NetsBubble() {
                 )}
               </div>
             ))}
-            {pending && <div className="nets-msg assistant"><div className="nets-bubble-text nets-typing" aria-label="A Nets está respondendo"><i /><i /><i /></div></div>}
+            {pending && <div className="nets-msg assistant"><div className="nets-bubble-text nets-typing" aria-label="A Netz está respondendo"><i /><i /><i /></div></div>}
           </div>
           {error && <p className="nets-error" role="alert">{error}</p>}
           <form className="nets-composer" onSubmit={(e) => { e.preventDefault(); void send(); }}>
@@ -273,7 +273,7 @@ export function NetsBubble() {
                 <Icon name={dictation.listening ? "stop" : "mic"} size={18} />
               </button>
             )}
-            <button type="submit" className="nets-send" aria-label="Enviar para a Nets" disabled={busy || pending || !draft.trim()}>
+            <button type="submit" className="nets-send" aria-label="Enviar para a Netz" disabled={busy || pending || !draft.trim()}>
               <Icon name="send" size={18} />
             </button>
           </form>
@@ -282,7 +282,7 @@ export function NetsBubble() {
       <button
         type="button"
         className={`nets-fab${open ? " open" : ""}`}
-        aria-label={open ? "Minimizar a Nets" : "Abrir a Nets"}
+        aria-label={open ? "Minimizar a Netz" : "Abrir a Netz"}
         aria-expanded={open}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}

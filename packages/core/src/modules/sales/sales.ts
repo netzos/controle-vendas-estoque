@@ -1,10 +1,11 @@
+import type { Tx } from "@erp/db";
 import { z } from "zod";
 import { can } from "../../context.ts";
 import { AppError, notFound } from "../../errors.ts";
 import { defineService } from "../../service.ts";
 import { decimalField, optionalText, uuidOrNull } from "../catalog/fields.ts";
 import { applyMovement, averageCost } from "../stock/movements.ts";
-import { ORDER_STEP } from "../../labels.ts";
+import { DELIVERY_STEP, ORDER_STEP, type Fulfillment } from "../../labels.ts";
 import { cancelFollowup, followupInput, insertFollowup } from "./followups.ts";
 
 export type PaymentMethod = "cash" | "pix" | "credit" | "debit" | "other";
@@ -53,6 +54,7 @@ export interface Sale {
   total: string;
   tradeInTotal: string;
   deliveryFee: string;
+  fulfillment: Fulfillment;
   followupStatus: "open" | "done" | "cancelled" | null;
   costTotal: string;
   notes: string | null;
@@ -65,13 +67,20 @@ export interface Sale {
 
 const SALE_COLUMNS = `s.id, s.number, s.customer_id AS "customerId", c.name AS "customerName", s.status,
   s.payment_method AS "paymentMethod", s.subtotal::text AS subtotal, s.discount::text AS discount, s.total::text AS total,
-  s.trade_in_total::text AS "tradeInTotal", s.delivery_fee::text AS "deliveryFee",
+  s.trade_in_total::text AS "tradeInTotal", s.delivery_fee::text AS "deliveryFee", s.fulfillment,
   (SELECT f.status FROM controle_vendas_estoque.sale_followups f WHERE f.sale_id = s.id) AS "followupStatus", s.cost_total::text AS "costTotal", s.notes, s.sold_at AS "soldAt", u.name AS "userName",
   (SELECT count(*) FROM controle_vendas_estoque.sale_items i WHERE i.sale_id = s.id)::int AS "itemCount",
   s.cancelled_at AS "cancelledAt", s.cancel_reason AS "cancelReason"`;
 const SALE_FROM = `controle_vendas_estoque.sales s
   JOIN controle_vendas_estoque.users u ON u.id = s.created_by
   LEFT JOIN controle_vendas_estoque.customers c ON c.id = s.customer_id`;
+
+async function defaultFulfillment(tx: Tx): Promise<Fulfillment> {
+  const { rows } = await tx.query<{ value: unknown }>(
+    "SELECT value FROM controle_vendas_estoque.organization_settings WHERE key = 'sales.default_fulfillment'",
+  );
+  return rows[0]?.value === "delivery" ? "delivery" : "pickup";
+}
 
 export const createSale = defineService({
   name: "sales.create",
@@ -108,9 +117,18 @@ export const createSale = defineService({
       )
       .max(10)
       .default([]),
+    // Retirada no local ou entrega. Se omitido, vale o padrão da empresa
+    // (ou entrega, quando vier endereço ou taxa).
+    fulfillment: z.enum(["pickup", "delivery"]).optional(),
     // Depois da venda: endereço e etapas (entrega, instalação...). Se omitido,
     // a venda ganha as etapas cadastradas nos produtos, sem endereço.
-    followup: followupInput.extend({ fee: decimalField(2, "Taxa de entrega").default("0") }).optional(),
+    followup: followupInput
+      .extend({
+        fee: decimalField(2, "Taxa de entrega").default("0"),
+        // Quanto o transporte custou (motoboy, combustível). Vira o custo da etapa Entrega.
+        deliveryCost: decimalField(2, "Custo do transporte").optional(),
+      })
+      .optional(),
   }),
   async handler({ tx, actor, audit, emit }, input) {
     if (input.customerId) {
@@ -181,6 +199,15 @@ export const createSale = defineService({
     if (input.followup && !can(actor, "deliveries.manage")) {
       throw new AppError("forbidden", "Você não tem permissão para registrar entregas e etapas depois da venda.");
     }
+    const fulfillment: Fulfillment =
+      input.fulfillment ??
+      (input.followup?.address || Number(fee) > 0 || input.followup?.deliveryCost ? "delivery" : await defaultFulfillment(tx));
+    if (fulfillment === "pickup" && Number(fee) > 0) {
+      throw new AppError("invalid_input", "Venda com retirada no local não tem taxa de entrega. Escolha Entrega para cobrar o frete.");
+    }
+    if (fulfillment === "delivery" && !input.followup?.address) {
+      throw new AppError("invalid_input", "Informe o endereço da entrega.");
+    }
     if (tradeTotal > Number(subtotal) - Number(input.discount) + Number(fee)) {
       throw new AppError("invalid_input", "O valor da troca passa do valor da venda. Registre a diferença como compra.");
     }
@@ -189,12 +216,12 @@ export const createSale = defineService({
     await tx.query("SELECT pg_advisory_xact_lock(hashtext('sales:' || $1))", [actor.organizationId]);
     const { rows } = await tx.query<{ id: string; number: number; total: string }>(
       `INSERT INTO controle_vendas_estoque.sales
-         (organization_id, number, customer_id, payment_method, subtotal, discount, total, cost_total, notes, created_by, trade_in_total, delivery_fee)
+         (organization_id, number, customer_id, payment_method, subtotal, discount, total, cost_total, notes, created_by, trade_in_total, delivery_fee, fulfillment)
        VALUES ($1, (SELECT coalesce(max(number), 0) + 1 FROM controle_vendas_estoque.sales WHERE organization_id = $1),
-               $2, $3, $4, $5, $4::numeric - $5::numeric + $10::numeric, $6, $7, $8, $9, $10)
+               $2, $3, $4, $5, $4::numeric - $5::numeric + $10::numeric, $6, $7, $8, $9, $10, $11)
        RETURNING id, number, total::text AS total`,
       [actor.organizationId, input.customerId ?? null, input.paymentMethod, subtotal, input.discount, cost, input.notes ?? null, actor.userId,
-        tradeTotal.toFixed(2), fee],
+        tradeTotal.toFixed(2), fee, fulfillment],
     );
     const sale = rows[0]!;
 
@@ -247,7 +274,9 @@ export const createSale = defineService({
     // acompanhamento mesmo que o caixa não tenha informado nada.
     // O que foi vendido sem estoque entra como a etapa Encomenda, com o que pedir.
     const owed = lines.filter((l) => l.backorder > 0).map((l) => `${fmtQty(l.backorder)} × ${l.product.name}`);
-    await insertFollowup(tx, actor, sale.id, ids, input.followup ?? {}, owed.length > 0 ? [{ name: ORDER_STEP, notes: `Pedir: ${owed.join("; ")}` }] : []);
+    const extra: { name: string; notes?: string; cost?: string }[] = owed.length > 0 ? [{ name: ORDER_STEP, notes: `Pedir: ${owed.join("; ")}` }] : [];
+    if (fulfillment === "delivery") extra.push({ name: DELIVERY_STEP, cost: input.followup?.deliveryCost });
+    await insertFollowup(tx, actor, sale.id, ids, input.followup ?? {}, extra, fulfillment === "pickup" ? [DELIVERY_STEP] : []);
 
     await audit({
       action: "sale.create",
@@ -350,6 +379,8 @@ export type SalesPeriod = "today" | "7d" | "30d" | "month";
 
 export interface SalesDashboard {
   period: SalesPeriod;
+  // Vendas retiradas no local x entregues; transport = custo da etapa Entrega.
+  fulfillment: Record<Fulfillment, { count: number; revenue: string; fees: string; transport: string }>;
   // otherCosts: custos lançados no período; realProfit = profit − otherCosts.
   current: { revenue: string; count: number; ticket: string; profit: string; margin: string | null; items: string; otherCosts: string; realProfit: string; realMargin: string | null };
   previous: { revenue: string; count: number; ticket: string; profit: string; otherCosts: string; realProfit: string };
@@ -465,9 +496,22 @@ export const salesDashboard = defineService({
 
     const recent = await tx.query<Sale>(`SELECT ${SALE_COLUMNS} FROM ${SALE_FROM} ORDER BY s.sold_at DESC LIMIT 6`);
 
+    // Retiradas no local x entregas, com o que o transporte custou.
+    const ways = await tx.query<{ fulfillment: Fulfillment; count: number; revenue: string; fees: string; transport: string }>(
+      `SELECT s.fulfillment, count(*)::int AS count, sum(s.total)::text AS revenue, sum(s.delivery_fee)::text AS fees,
+              coalesce(sum((SELECT sum(k.amount) FROM controle_vendas_estoque.costs k
+                             JOIN controle_vendas_estoque.sale_steps t ON t.id = k.step_id
+                            WHERE k.sale_id = s.id AND k.status = 'active' AND lower(t.name) = lower($3))), 0)::text AS transport
+         FROM controle_vendas_estoque.sales s WHERE s.status = 'completed' AND s.sold_at >= $1 AND s.sold_at < $2
+        GROUP BY s.fulfillment`,
+      [start, end, DELIVERY_STEP],
+    );
+    const way = (f: Fulfillment) => ways.rows.find((r) => r.fulfillment === f) ?? { fulfillment: f, count: 0, revenue: "0", fees: "0", transport: "0" };
+
     const base = Number(current.revenue);
     return {
       period: input.period,
+      fulfillment: { pickup: way("pickup"), delivery: way("delivery") },
       current,
       previous,
       series: series.rows,

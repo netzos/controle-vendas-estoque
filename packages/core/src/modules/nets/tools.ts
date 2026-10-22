@@ -7,6 +7,7 @@ import * as roles from "../access/roles.ts";
 import * as audit from "../audit/service.ts";
 import * as customFields from "../catalog/custom-fields.ts";
 import * as images from "../catalog/images.ts";
+import * as remove from "../catalog/remove.ts";
 import * as parties from "../catalog/parties.ts";
 import * as products from "../catalog/products.ts";
 import * as supplierProducts from "../catalog/supplier-products.ts";
@@ -17,12 +18,13 @@ import * as sales from "../sales/sales.ts";
 import * as settings from "../settings/service.ts";
 import * as movements from "../stock/movements.ts";
 
-// Cada serviço do sistema vira uma ferramenta da Nets. Um serviço novo entra
+// Cada serviço do sistema vira uma ferramenta da Netz. Um serviço novo entra
 // sozinho; os de baixo ficam de fora porque lidam com senha, perfis de acesso
 // ou arquivos.
 const EXCLUDED = new Set([
   "members.add",
   "members.update",
+  "members.password_link",
   "roles.create",
   "roles.update",
   "roles.delete",
@@ -65,7 +67,7 @@ function trim(node: unknown): unknown {
 }
 
 const ALL: AnyService[] = [
-  organizations, settings, audit, members, roles, parties, products, customFields, images, supplierProducts,
+  organizations, settings, audit, members, roles, parties, products, customFields, images, remove, supplierProducts,
   movements, sales, followups, costs,
 ]
   .flatMap((m) => Object.values(m))

@@ -1,12 +1,13 @@
 import { can, listStepTypes } from "@erp/core";
 import { requirePermission } from "@/lib/auth";
+import { Notice, RemoveRecord } from "@/components/remove-record";
 import { query } from "@/lib/actions";
 import { money } from "@/lib/format";
 import { StepTypeForm } from "./forms";
 
 export const metadata = { title: "Etapas depois da venda" };
 
-export default async function StepTypesPage() {
+export default async function StepTypesPage({ searchParams }: { searchParams: Promise<{ aviso?: string }> }) {
   const actor = await requirePermission("deliveries.view");
   const types = await query(listStepTypes, { includeInactive: true });
   const canManage = can(actor, "deliveries.manage");
@@ -19,6 +20,7 @@ export default async function StepTypesPage() {
           responsável e custo padrão, que a venda já usa quando ninguém informa outro.
         </p>
       </div>
+      <Notice text={(await searchParams).aviso} />
       {canManage && (
         <section className="card">
           <h2>Nova etapa</h2>
@@ -42,8 +44,9 @@ export default async function StepTypesPage() {
         );
         return canManage ? (
           <details className="card" key={t.id}>
-            <summary>{info}</summary>
+            <summary>{info} <span className="edit-hint">Editar ›</span></summary>
             <StepTypeForm type={t} />
+            <RemoveRecord kind="step_type" id={t.id} name={t.name} back="/etapas" />
           </details>
         ) : (
           <div className="card" key={t.id}>{info}</div>

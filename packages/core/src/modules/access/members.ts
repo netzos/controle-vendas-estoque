@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { hashPassword, MIN_PASSWORD_LENGTH } from "../../auth/password.ts";
-import { sendInvite } from "../../auth/recovery.ts";
+import { issuePasswordLink, sendInvite } from "../../auth/recovery.ts";
 import { normalizeEmail } from "../../auth/session.ts";
 import { mailConfigured } from "../../mail.ts";
 import { AppError, forbidden, notFound } from "../../errors.ts";
@@ -149,6 +149,9 @@ export const updateMember = defineService({
     roleId: z.string().uuid(),
     branchIds,
     status: z.enum(["active", "disabled"]),
+    // Nome e e-mail só mudam aqui enquanto a pessoa nunca entrou; depois, quem muda é ela.
+    name: z.string().trim().min(2, "Informe o nome.").max(120).optional(),
+    email: z.string().trim().email("E-mail inválido.").optional(),
   }),
   async handler({ tx, actor, audit, emit }, input) {
     const current = await tx.query<Member>(`${MEMBER_SELECT} WHERE m.id = $1 FOR UPDATE OF m`, [input.membershipId]);
@@ -158,6 +161,22 @@ export const updateMember = defineService({
       throw new AppError("conflict", "Você não pode alterar o próprio acesso. Peça a outro administrador.");
     }
     if (before.isOwner && !actor.isOwner) throw forbidden("Apenas um proprietário pode alterar outro proprietário.");
+    const email = input.email ? normalizeEmail(input.email) : before.email;
+    const name = input.name ?? before.name;
+    if (email !== before.email || name !== before.name) {
+      if (before.lastLoginAt) throw new AppError("conflict", `${before.name} já entrou no sistema; nome e e-mail agora só ele(a) muda.`);
+      const taken = await tx.query("SELECT 1 FROM controle_vendas_estoque.users WHERE email = $1 AND id <> $2", [email, before.userId]);
+      if (taken.rowCount) throw new AppError("conflict", "Já existe outra pessoa com este e-mail.");
+      await tx.query("UPDATE controle_vendas_estoque.users SET name = $2, email = $3 WHERE id = $1", [before.userId, name, email]);
+      await audit({
+        action: "member.profile",
+        entityType: "membership",
+        entityId: input.membershipId,
+        summary: `Cadastro de ${name} alterado`,
+        before: { name: before.name, email: before.email },
+        after: { name, email },
+      });
+    }
     const role = await assertAssignableRole(tx, input.roleId, actor.isOwner);
     await assertBranches(tx, input.branchIds);
 
@@ -197,5 +216,23 @@ export const updateMember = defineService({
       );
     }
     return { membershipId: input.membershipId, fields };
+  },
+});
+
+export const memberPasswordLink = defineService({
+  name: "members.password_link",
+  description: "Gera um link para a pessoa criar ou trocar a senha, para mandar por WhatsApp ou outro meio",
+  permission: "users.manage",
+  risk: 4,
+  input: z.object({ membershipId: z.string().uuid() }),
+  async handler({ tx, actor, audit }, input) {
+    const { rows } = await tx.query<Member>(`${MEMBER_SELECT} WHERE m.id = $1`, [input.membershipId]);
+    const m = rows[0];
+    if (!m) throw notFound("Usuário");
+    if (m.status !== "active") throw new AppError("conflict", "Ative o acesso antes de gerar o link.");
+    if (m.isOwner && !actor.isOwner && m.userId !== actor.userId) throw forbidden("Apenas um proprietário gera link para outro proprietário.");
+    const link = await issuePasswordLink(tx, m.userId, actor.organizationId, !m.lastLoginAt);
+    await audit({ action: "member.password_link", entityType: "membership", entityId: m.membershipId, summary: `Link de senha gerado para ${m.name}` });
+    return { ...link, name: m.name, firstAccess: !m.lastLoginAt };
   },
 });

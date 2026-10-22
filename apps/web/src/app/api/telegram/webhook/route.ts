@@ -4,7 +4,7 @@ import { handleTelegramUpdate, telegramConfigured, telegramWebhookSecret, type T
 import { db } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
-// A Nets responde depois de devolver 200 ao Telegram (after) e pode levar alguns minutos.
+// A Netz responde depois de devolver 200 ao Telegram (after) e pode levar alguns minutos.
 export const maxDuration = 300;
 
 // O Telegram manda o segredo combinado no setWebhook em cada chamada.

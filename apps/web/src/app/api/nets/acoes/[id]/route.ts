@@ -7,7 +7,7 @@ import { netsActor } from "@/lib/nets-api";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
-// Confirmar ou cancelar a ação que a Nets propôs.
+// Confirmar ou cancelar a ação que a Netz propôs.
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const actor = await netsActor(req);
   if (!actor) return unauthorized();

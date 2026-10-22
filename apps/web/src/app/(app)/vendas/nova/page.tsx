@@ -1,4 +1,4 @@
-import { can, listCustomers, listProducts, listStepTypes, orgDate } from "@erp/core";
+import { can, getSettings, listCustomers, listProducts, listStepTypes, orgDate } from "@erp/core";
 import { requirePermission } from "@/lib/auth";
 import { query } from "@/lib/actions";
 import { SaleForm } from "./sale-form";
@@ -7,11 +7,12 @@ export const metadata = { title: "Nova venda" };
 
 export default async function NewSalePage() {
   const actor = await requirePermission("sales.create");
-  const [products, customers, today, stepTypes] = await Promise.all([
+  const [products, customers, today, stepTypes, settings] = await Promise.all([
     query(listProducts, { limit: 500 }),
     can(actor, "customers.view") ? query(listCustomers, { limit: 500 }) : [],
     query(orgDate, {}),
     query(listStepTypes, {}),
+    query(getSettings, {}),
   ]);
   return (
     <>
@@ -24,6 +25,7 @@ export default async function NewSalePage() {
         canTradeIn={can(actor, "sales.trade_in")}
         canManageSteps={can(actor, "deliveries.manage")}
         today={today}
+        defaultFulfillment={settings["sales.default_fulfillment"]}
         stepDefaults={stepTypes.map((t) => ({ name: t.name, days: t.defaultDays, responsible: t.defaultResponsible, cost: t.defaultCost }))}
         customers={customers.map((c) => ({ id: c.id, name: c.name }))}
         products={products.map((p) => ({

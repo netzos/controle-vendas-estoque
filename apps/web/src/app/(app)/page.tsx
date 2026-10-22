@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { can, getOrganization, PAYMENT_LABELS, salesDashboard, stepCounts, stockOverview, type SalesPeriod } from "@erp/core";
+import { can, FULFILLMENTS, getOrganization, PAYMENT_LABELS, salesDashboard, stepCounts, stockOverview, type SalesPeriod } from "@erp/core";
 import { currentActor } from "@/lib/auth";
 import { query } from "@/lib/actions";
 import { money, quantity } from "@/lib/format";
@@ -112,6 +112,28 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
                   ratio: Number(p.revenue) / Number(dash.topProducts[0]!.revenue),
                 }))}
               />
+            </section>
+
+            <section className="card">
+              <div className="card-head"><h2>Retirada x entrega</h2></div>
+              {(() => {
+                const f = dash.fulfillment;
+                const max = Math.max(f.pickup.count, f.delivery.count, 1);
+                return (
+                  <RankList
+                    emptyText="Sem vendas no período."
+                    rows={(["pickup", "delivery"] as const).filter((k) => f[k].count > 0).map((k) => ({
+                      key: k,
+                      label: FULFILLMENTS[k],
+                      value: `${f[k].count} ${f[k].count === 1 ? "venda" : "vendas"}`,
+                      sub: k === "delivery"
+                        ? `${money(f[k].revenue)} · frete cobrado ${money(f[k].fees)} · transporte ${money(f[k].transport)}`
+                        : money(f[k].revenue),
+                      ratio: f[k].count / max,
+                    }))}
+                  />
+                );
+              })()}
             </section>
 
             <section className="card">

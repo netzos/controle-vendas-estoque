@@ -5,7 +5,7 @@ import { apiError, jsonBody, unauthorized } from "@/lib/claude-api";
 import { netsActor } from "@/lib/nets-api";
 
 export const dynamic = "force-dynamic";
-// A resposta da Nets roda depois da requisição (after) e pode levar alguns minutos.
+// A resposta da Netz roda depois da requisição (after) e pode levar alguns minutos.
 export const maxDuration = 300;
 
 export async function GET(req: Request) {

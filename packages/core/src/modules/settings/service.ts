@@ -23,6 +23,12 @@ export const SETTINGS = {
     schema: z.number().int().min(0).max(4),
     default: 3,
   },
+  "sales.default_fulfillment": {
+    label: "Como a venda chega ao cliente, por padrão",
+    description: "Retirada no local não cobra frete nem abre a etapa Entrega. Dá para trocar em cada venda.",
+    schema: z.enum(["pickup", "delivery"]),
+    default: "pickup" as "pickup" | "delivery",
+  },
 } as const;
 
 export type SettingKey = keyof typeof SETTINGS;

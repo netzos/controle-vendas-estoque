@@ -112,7 +112,8 @@ describe("depois da venda", () => {
     });
     const f = await runService(t.app, getSaleFollowup, owner, { saleId: sale.id });
     // Guarda-roupa é só por encomenda: a venda já nasce com a etapa Encomenda.
-    assert.deepEqual(f!.steps.map((x) => [x.name, x.status]), [["Encomenda", "pending"], ["Entrega", "pending"], ["Instalação", "pending"], ["Montagem", "pending"]]);
+    // Sem endereço é retirada no local (padrão), então a etapa Entrega sai.
+    assert.deepEqual(f!.steps.map((x) => [x.name, x.status]), [["Encomenda", "pending"], ["Instalação", "pending"], ["Montagem", "pending"]]);
     assert.equal(f!.steps[0]!.notes, "Pedir: 1 × Guarda-roupa");
     // Produto sem etapas: venda sem acompanhamento.
     const plain = await runService(t.app, createSale, owner, { paymentMethod: "pix", items: [{ productId: lata, quantity: "1" }] });

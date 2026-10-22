@@ -4,7 +4,7 @@ import { getSession, resolveActor, type Actor } from "@erp/core";
 import { db } from "./db";
 import { sessionToken } from "./auth";
 
-// Ator das rotas da Nets: mesma sessão do painel, mas responde 401 em vez de redirecionar.
+// Ator das rotas da Netz: mesma sessão do painel, mas responde 401 em vez de redirecionar.
 export async function netsActor(req: Request): Promise<Actor | null> {
   // Só aceita chamadas da própria página (o navegador manda Origin nos POST).
   const origin = req.headers.get("origin");

@@ -68,7 +68,7 @@ async function say(actor: Actor, text: string, model: NetsModel, context?: strin
   return (await listNetsMessages(t.app, actor)).messages.at(-1)!;
 }
 
-describe("Nets", () => {
+describe("Netz", () => {
   it("sem a chave, responde que ainda não está ligada", async () => {
     delete process.env.ANTHROPIC_API_KEY;
     const r = await postNetsMessage(t.app, owner, { requestId: randomUUID(), text: "oi" });
@@ -107,7 +107,7 @@ describe("Nets", () => {
     assert.equal((await runService(t.app, listProducts, owner, { search: "Lata" })).length, 1);
     await assert.rejects(decideNetsAction(t.app, owner, { id: reply.id, decision: "confirm" }), rejectsWith("conflict"));
 
-    // Depois de confirmar, a Nets continua a conversa com o resultado.
+    // Depois de confirmar, a Netz continua a conversa com o resultado.
     const c = script([{ type: "text", text: "Pronto, a lata está cadastrada." }]);
     await processNetsTurn(t.app, { organizationId: owner.organizationId, userId: owner.userId, messageId: reply.id }, { model: c.model });
     const last = c.requests[0]!.messages;
@@ -135,7 +135,7 @@ describe("Nets", () => {
     await assert.rejects(decideNetsAction(t.app, owner, { id: b.id, decision: "confirm" }), rejectsWith("conflict"));
   });
 
-  it("dados inválidos voltam como erro para a Nets corrigir, sem cartão", async () => {
+  it("dados inválidos voltam como erro para a Netz corrigir, sem cartão", async () => {
     const s = script(
       [{ type: "tool_use", name: "products_create", input: { _resumo: "x", sku: "X", name: "X", unitId: un, salePrice: "abc", costPrice: "0", minStock: "0" } }],
       [{ type: "text", text: "O preço ficou estranho, qual é?" }],

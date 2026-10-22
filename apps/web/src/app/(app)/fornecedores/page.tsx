@@ -5,10 +5,11 @@ import { query } from "@/lib/actions";
 import { documentLabel, whatsappLabel, whatsappLink } from "@/lib/format";
 import { SupplierPrices } from "./supplier-prices";
 import { SupplierForm } from "./supplier-form";
+import { Notice, RemoveRecord } from "@/components/remove-record";
 
 export const metadata = { title: "Fornecedores" };
 
-export default async function SuppliersPage({ searchParams }: { searchParams: Promise<{ q?: string; id?: string; novo?: string; inativos?: string }> }) {
+export default async function SuppliersPage({ searchParams }: { searchParams: Promise<{ q?: string; id?: string; novo?: string; inativos?: string; aviso?: string }> }) {
   const actor = await requirePermission("suppliers.view");
   const params = await searchParams;
   const includeInactive = params.inativos === "1";
@@ -23,26 +24,20 @@ export default async function SuppliersPage({ searchParams }: { searchParams: Pr
       ])
     : [[], []];
 
-  return (
-    <>
-      <div className="page-header">
-        <h1>Fornecedores</h1>
-        <p>De quem você compra mercadorias e insumos.</p>
-      </div>
-
-      {canManage && params.novo === "1" && (
+  if (selected) {
+    return (
+      <>
+        <p><Link href="/fornecedores">← Fornecedores</Link></p>
+        <div className="page-header">
+          <h1>{selected.name}</h1>
+          <p><span className={`tag ${selected.status === "active" ? "ok" : "off"}`}>{selected.status === "active" ? "Ativo" : "Inativo"}</span></p>
+        </div>
         <section className="card">
-          <h2>Novo fornecedor</h2>
-          <SupplierForm />
+          <h2>Dados do fornecedor</h2>
+          {canManage ? <SupplierForm key={selected.id} supplier={selected} /> : (
+            <p className="muted">{[documentLabel(selected.document), selected.contactName, selected.phone].filter(Boolean).join(" · ") || "Sem outros dados."}</p>
+          )}
         </section>
-      )}
-      {selected && canManage && (
-        <section className="card">
-          <h2>{selected.name}</h2>
-          <SupplierForm key={selected.id} supplier={selected} />
-        </section>
-      )}
-      {selected && (
         <section className="card">
           <SupplierPrices
             key={selected.id}
@@ -52,6 +47,30 @@ export default async function SuppliersPage({ searchParams }: { searchParams: Pr
             options={products.filter((p) => p.status === "active").map((p) => ({ id: p.id, name: p.name }))}
             canManage={canManage}
           />
+        </section>
+        {canManage && (
+          <section className="card">
+            <h2>Excluir fornecedor</h2>
+            <p className="muted">Sem custos nem produtos ligados, o fornecedor é apagado. Com histórico, ele é desativado.</p>
+            <RemoveRecord kind="supplier" id={selected.id} name={selected.name} back="/fornecedores" />
+          </section>
+        )}
+      </>
+    );
+  }
+
+  return (
+    <>
+      <div className="page-header">
+        <h1>Fornecedores</h1>
+        <p>De quem você compra mercadorias e insumos. Toque em um fornecedor para ver e editar.</p>
+      </div>
+      <Notice text={params.aviso} />
+
+      {canManage && params.novo === "1" && (
+        <section className="card">
+          <h2>Novo fornecedor</h2>
+          <SupplierForm />
         </section>
       )}
 
@@ -70,7 +89,7 @@ export default async function SuppliersPage({ searchParams }: { searchParams: Pr
           <div className="table-wrap">
             <table>
               <thead>
-                <tr><th>Nome</th><th>CPF/CNPJ</th><th>Contato</th><th>WhatsApp</th><th className="num">Prazo</th><th>Cidade</th><th>Situação</th></tr>
+                <tr><th>Nome</th><th>CPF/CNPJ</th><th>Contato</th><th>WhatsApp</th><th className="num">Prazo</th><th>Cidade</th><th>Situação</th><th></th></tr>
               </thead>
               <tbody>
                 {shown.map((c) => (
@@ -82,6 +101,7 @@ export default async function SuppliersPage({ searchParams }: { searchParams: Pr
                     <td className="num">{c.leadTimeDays == null ? "—" : `${c.leadTimeDays}d`}</td>
                     <td>{[c.city, c.state].filter(Boolean).join(" / ")}</td>
                     <td><span className={`tag ${c.status === "active" ? "ok" : "off"}`}>{c.status === "active" ? "Ativo" : "Inativo"}</span></td>
+                    <td><Link className="button secondary small" href={`/fornecedores?id=${c.id}`}>{canManage ? "Editar" : "Abrir"}</Link></td>
                   </tr>
                 ))}
               </tbody>

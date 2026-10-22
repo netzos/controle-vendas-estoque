@@ -4,10 +4,11 @@ import { requirePermission } from "@/lib/auth";
 import { query } from "@/lib/actions";
 import { documentLabel } from "@/lib/format";
 import { CustomerForm } from "./customer-form";
+import { Notice, RemoveRecord } from "@/components/remove-record";
 
 export const metadata = { title: "Clientes" };
 
-export default async function CustomersPage({ searchParams }: { searchParams: Promise<{ q?: string; id?: string; novo?: string; inativos?: string }> }) {
+export default async function CustomersPage({ searchParams }: { searchParams: Promise<{ q?: string; id?: string; novo?: string; inativos?: string; aviso?: string }> }) {
   const actor = await requirePermission("customers.view");
   const params = await searchParams;
   const includeInactive = params.inativos === "1";
@@ -16,23 +17,43 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
   const selected = params.id ? customers.find((c) => c.id === params.id) : undefined;
   const canManage = can(actor, "customers.manage");
 
+  if (selected) {
+    return (
+      <>
+        <p><Link href="/clientes">← Clientes</Link></p>
+        <div className="page-header">
+          <h1>{selected.name}</h1>
+          <p><span className={`tag ${selected.status === "active" ? "ok" : "off"}`}>{selected.status === "active" ? "Ativo" : "Inativo"}</span></p>
+        </div>
+        <section className="card">
+          <h2>Dados do cliente</h2>
+          {canManage ? <CustomerForm key={selected.id} customer={selected} /> : (
+            <p className="muted">{[documentLabel(selected.document), selected.phone, [selected.city, selected.state].filter(Boolean).join(" / ")].filter(Boolean).join(" · ") || "Sem outros dados."}</p>
+          )}
+        </section>
+        {canManage && (
+          <section className="card">
+            <h2>Excluir cliente</h2>
+            <p className="muted">Sem vendas, o cliente é apagado. Com vendas, ele é desativado e some das listas.</p>
+            <RemoveRecord kind="customer" id={selected.id} name={selected.name} back="/clientes" />
+          </section>
+        )}
+      </>
+    );
+  }
+
   return (
     <>
       <div className="page-header">
         <h1>Clientes</h1>
-        <p>Pessoas e empresas para quem você vende.</p>
+        <p>Pessoas e empresas para quem você vende. Toque em um cliente para ver e editar.</p>
       </div>
+      <Notice text={params.aviso} />
 
       {canManage && params.novo === "1" && (
         <section className="card">
           <h2>Novo cliente</h2>
           <CustomerForm />
-        </section>
-      )}
-      {selected && canManage && (
-        <section className="card">
-          <h2>{selected.name}</h2>
-          <CustomerForm key={selected.id} customer={selected} />
         </section>
       )}
 
@@ -51,7 +72,7 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
           <div className="table-wrap">
             <table>
               <thead>
-                <tr><th>Nome</th><th>CPF/CNPJ</th><th>Telefone</th><th>Cidade</th><th>Situação</th></tr>
+                <tr><th>Nome</th><th>CPF/CNPJ</th><th>Telefone</th><th>Cidade</th><th>Situação</th><th></th></tr>
               </thead>
               <tbody>
                 {shown.map((c) => (
@@ -61,6 +82,7 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
                     <td>{c.phone}</td>
                     <td>{[c.city, c.state].filter(Boolean).join(" / ")}</td>
                     <td><span className={`tag ${c.status === "active" ? "ok" : "off"}`}>{c.status === "active" ? "Ativo" : "Inativo"}</span></td>
+                    <td><Link className="button secondary small" href={`/clientes?id=${c.id}`}>{canManage ? "Editar" : "Abrir"}</Link></td>
                   </tr>
                 ))}
               </tbody>

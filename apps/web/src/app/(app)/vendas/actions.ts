@@ -24,6 +24,7 @@ export async function createSaleAction(_: FormState, form: FormData): Promise<Fo
     const sale = await runService(db(), createSale, await currentActor(), {
       customerId: optional(form, "customerId"),
       paymentMethod: str(form, "paymentMethod") as "pix",
+      fulfillment: str(form, "fulfillment") === "delivery" ? "delivery" : "pickup",
       discount: str(form, "discount"),
       notes: optional(form, "notes"),
       items,

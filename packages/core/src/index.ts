@@ -24,6 +24,7 @@ export * from "./modules/catalog/products.ts";
 export * from "./modules/catalog/custom-fields.ts";
 export * from "./modules/catalog/images.ts";
 export * from "./modules/catalog/supplier-products.ts";
+export * from "./modules/catalog/remove.ts";
 export * from "./modules/stock/movements.ts";
 export * from "./modules/sales/sales.ts";
 export * from "./modules/sales/followups.ts";

@@ -7,7 +7,7 @@ import { appUrl } from "../../mail.ts";
 import { decideNetsAction, postNetsMessage, processNetsTurn, type NetsModel } from "../nets/service.ts";
 import { telegramApi, telegramConfigured, telegramWebhookSecret, type TelegramApi } from "./api.ts";
 
-// Nets no Telegram. Um robô da plataforma atende todo mundo; a pessoa liga a
+// Netz no Telegram. Um robô da plataforma atende todo mundo; a pessoa liga a
 // própria conta pelo painel (código de uso único no link t.me/robo?start=...)
 // e a conversa é a mesma do balão do painel, com as mesmas permissões.
 
@@ -64,7 +64,7 @@ export async function getTelegramStatus(db: Db, actor: Actor): Promise<TelegramS
 
 /** Link do botão "Conectar": abre o robô com um código que vale uma vez, por 15 minutos. */
 export async function createTelegramLink(db: Db, actor: Actor, deps: TelegramDeps = {}): Promise<{ url: string }> {
-  if (!can(actor, "nets.use")) throw forbidden("Você não tem permissão para conversar com a Nets.");
+  if (!can(actor, "nets.use")) throw forbidden("Você não tem permissão para conversar com a Netz.");
   if (!telegramConfigured()) throw new AppError("invalid_input", "O robô do Telegram ainda não foi ligado (falta TELEGRAM_BOT_TOKEN na Vercel).");
   const api = deps.api ?? telegramApi;
   let bot: string;
@@ -120,7 +120,7 @@ export interface TelegramUpdate {
 }
 
 const HOW_TO_LINK =
-  "Olá! Eu sou a Nets, a assistente do netzsales.\n\n" +
+  "Olá! Eu sou a Netz, a assistente do netzsales.\n\n" +
   "Para conversar comigo por aqui, ligue sua conta: entre no netzsales pelo navegador, abra Assistente › Telegram e toque em Conectar.";
 
 async function send(api: TelegramApi, chatId: number | string, text: string, markup?: unknown): Promise<number | null> {
@@ -156,7 +156,7 @@ async function linkActor(db: Db, link: LinkRow): Promise<Actor | null> {
   }
 }
 
-/** Manda para o Telegram as respostas da Nets que ainda não foram entregues, a partir da mensagem dada. */
+/** Manda para o Telegram as respostas da Netz que ainda não foram entregues, a partir da mensagem dada. */
 async function deliver(db: Db, api: TelegramApi, actor: Actor, chatId: string, fromId: string) {
   const replies = await withTenant(db, { organizationId: actor.organizationId, userId: actor.userId }, async (tx) => {
     const { rows } = await tx.query<{ id: string; body: string; title: string | null; pending: boolean }>(
@@ -244,7 +244,7 @@ async function onMessage(db: Db, api: TelegramApi, update: TelegramUpdate, model
   }
   const actor = await linkActor(db, link);
   if (!actor) {
-    await send(api, msg.chat.id, "Sua conta não tem mais acesso a essa empresa ou à Nets. Fale com quem administra o netzsales.");
+    await send(api, msg.chat.id, "Sua conta não tem mais acesso a essa empresa ou à Netz. Fale com quem administra o netzsales.");
     return;
   }
   if (start) {

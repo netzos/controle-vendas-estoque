@@ -73,7 +73,7 @@ const text = (body: string, from = tgUser): TelegramUpdate => ({
   message: { message_id: nextUpdate, chat: { id: from.id, type: "private" }, from, text: body },
 });
 
-describe("Nets no Telegram", () => {
+describe("Netz no Telegram", () => {
   it("sem ligar a conta, o robô explica como conectar", async () => {
     const f = fakeApi();
     await handleTelegramUpdate(t.app, text("oi"), { api: f.api });

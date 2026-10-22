@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { can, getOrganization, getSale, getSaleFollowup, listSales, listStepTypes, orgDate, PAYMENT_LABELS } from "@erp/core";
+import { can, FULFILLMENTS, getOrganization, getSale, getSaleFollowup, listSales, listStepTypes, orgDate, PAYMENT_LABELS } from "@erp/core";
 import { requirePermission } from "@/lib/auth";
 import { query } from "@/lib/actions";
 import { money, quantity } from "@/lib/format";
@@ -37,7 +37,7 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
             <span className={`tag ${selected.status === "completed" ? "ok" : "off"}`}>{selected.status === "completed" ? "Concluída" : "Cancelada"}</span>
           </div>
           <p className="muted">
-            {fmt.format(selected.soldAt)} · {PAYMENT_LABELS[selected.paymentMethod]} · {selected.customerName ?? "Consumidor"} · por {selected.userName}
+            {fmt.format(selected.soldAt)} · {PAYMENT_LABELS[selected.paymentMethod]} · {FULFILLMENTS[selected.fulfillment]} · {selected.customerName ?? "Consumidor"} · por {selected.userName}
           </p>
           <div className="table-wrap">
             <table>
@@ -79,7 +79,7 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
             <span>
               Subtotal {money(selected.subtotal)}
               {Number(selected.discount) > 0 && ` · desconto ${money(selected.discount)}`}
-              {Number(selected.deliveryFee) > 0 && ` · taxa ${money(selected.deliveryFee)}`}
+              {Number(selected.deliveryFee) > 0 && ` · frete ${money(selected.deliveryFee)}`}
               {Number(selected.tradeInTotal) > 0 && ` · troca ${money(selected.tradeInTotal)} · pago em ${PAYMENT_LABELS[selected.paymentMethod].toLowerCase()} ${money(Number(selected.total) - Number(selected.tradeInTotal))}`}
             </span>
             <span className="cart-grand">{money(selected.total)}</span>

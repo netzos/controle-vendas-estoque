@@ -33,3 +33,13 @@ export const STEP_STATUS: Record<StepStatus, string> = {
 
 // Etapa que a venda ganha quando algo foi vendido sem ter em estoque.
 export const ORDER_STEP = "Encomenda";
+
+// Etapa que a venda ganha quando vai entregue; o custo dela é o transporte.
+export const DELIVERY_STEP = "Entrega";
+
+export type Fulfillment = "pickup" | "delivery";
+
+export const FULFILLMENTS: Record<Fulfillment, string> = {
+  pickup: "Retirada no local",
+  delivery: "Entrega",
+};

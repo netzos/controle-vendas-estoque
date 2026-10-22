@@ -9,7 +9,7 @@ import { agentCreateImprovement } from "../improvements/service.ts";
 import { NETS_INSTRUCTIONS } from "./instructions.ts";
 import { IMPROVEMENT_TOOL, netsTools, type NetsTool } from "./tools.ts";
 
-// Nets: o agente global. A conversa fica no banco; cada mensagem da pessoa é
+// Netz: o agente global. A conversa fica no banco; cada mensagem da pessoa é
 // respondida fora da requisição (processNetsTurn). Consultas rodam na hora;
 // ações que mudam dados viram um cartão que a pessoa confirma ou cancela.
 
@@ -94,9 +94,9 @@ const postInput = z.object({
   context: z.string().trim().max(200).nullable().optional(),
 });
 
-/** Guarda a mensagem da pessoa. queued: true quando a Nets ainda vai responder. */
+/** Guarda a mensagem da pessoa. queued: true quando a Netz ainda vai responder. */
 export async function postNetsMessage(db: Db, actor: Actor, raw: z.input<typeof postInput>) {
-  if (!can(actor, "nets.use")) throw forbidden("Você não tem permissão para conversar com a Nets.");
+  if (!can(actor, "nets.use")) throw forbidden("Você não tem permissão para conversar com a Netz.");
   const input = parseInput(postInput, raw);
   return asUser(db, actor, async (tx) => {
     const again = await tx.query<{ id: string; status: string }>(
@@ -109,13 +109,13 @@ export async function postNetsMessage(db: Db, actor: Actor, raw: z.input<typeof 
       "SELECT 1 FROM controle_vendas_estoque.nets_messages WHERE organization_id = $1 AND user_id = $2 AND status IN ('queued', 'processing')",
       [actor.organizationId, actor.userId],
     );
-    if (busy.rowCount) throw new AppError("conflict", "A Nets ainda está respondendo a mensagem anterior.");
+    if (busy.rowCount) throw new AppError("conflict", "A Netz ainda está respondendo a mensagem anterior.");
     const today = await tx.query<{ n: number }>(
       `SELECT count(*)::int AS n FROM controle_vendas_estoque.nets_messages
         WHERE user_id = $1 AND role = 'user' AND created_at > now() - interval '1 day'`,
       [actor.userId],
     );
-    if (today.rows[0]!.n >= NETS_DAILY_LIMIT) throw new AppError("rate_limited", "Limite de mensagens com a Nets por hoje atingido. Tente amanhã.");
+    if (today.rows[0]!.n >= NETS_DAILY_LIMIT) throw new AppError("rate_limited", "Limite de mensagens com a Netz por hoje atingido. Tente amanhã.");
     // Nova mensagem: propostas que ficaram sem resposta deixam de valer.
     await tx.query(
       `UPDATE controle_vendas_estoque.nets_messages SET action_status = 'expired'
@@ -157,7 +157,7 @@ function serialize(value: unknown): string {
 
 const decideInput = z.object({ id: z.string().uuid(), decision: z.enum(["confirm", "cancel"]) });
 
-/** A pessoa confirma ou cancela a ação proposta. Confirmada, a Nets continua a conversa. */
+/** A pessoa confirma ou cancela a ação proposta. Confirmada, a Netz continua a conversa. */
 export async function decideNetsAction(db: Db, actor: Actor, raw: z.input<typeof decideInput>) {
   if (!can(actor, "nets.use")) throw forbidden();
   const input = parseInput(decideInput, raw);
@@ -195,7 +195,7 @@ export async function decideNetsAction(db: Db, actor: Actor, raw: z.input<typeof
   return { status, queued };
 }
 
-// Turno da Nets ------------------------------------------------------------------
+// Turno da Netz ------------------------------------------------------------------
 
 const STATUS_NOTE: Record<NetsActionStatus, string> = {
   pending: "esperando a pessoa confirmar",
@@ -250,7 +250,7 @@ async function runTool(db: Db, actor: Actor, tools: NetsTool[], block: Anthropic
   try {
     if (tool.read) return { content: serialize(await runService(db, tool.service, actor, args)) };
     if (proposed) return { content: "Já existe uma ação esperando confirmação neste turno. Proponha uma ação por vez.", isError: true };
-    // Valida agora para a Nets corrigir antes de mostrar o cartão.
+    // Valida agora para a Netz corrigir antes de mostrar o cartão.
     parseInput(tool.service.input, args);
     const title = typeof _resumo === "string" && _resumo.trim() ? _resumo.trim().slice(0, 300) : tool.service.description;
     return {
@@ -296,7 +296,7 @@ export async function processNetsTurn(
     return;
   }
   if (!can(actor, "nets.use")) {
-    await finish("Você não tem permissão para conversar com a Nets. Peça a quem administra a empresa.");
+    await finish("Você não tem permissão para conversar com a Netz. Peça a quem administra a empresa.");
     return;
   }
 

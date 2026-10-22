@@ -126,7 +126,7 @@ export const NAVIGATION: NavGroup[] = [
   {
     label: "Assistente IA",
     short: "Assistente",
-    hint: "Nets no painel e no Telegram",
+    hint: "Netz no painel e no Telegram",
     icon: "bot",
     items: [
       { label: "Telegram", href: "/assistente/telegram", permission: "nets.use", phase: 2 },

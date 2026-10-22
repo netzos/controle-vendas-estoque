@@ -1,11 +1,12 @@
 import { can, CUSTOM_FIELD_TYPES, listCategories, listCustomFields } from "@erp/core";
 import { requirePermission } from "@/lib/auth";
+import { Notice, RemoveRecord } from "@/components/remove-record";
 import { query } from "@/lib/actions";
 import { CustomFieldForm } from "./forms";
 
 export const metadata = { title: "Campos personalizados" };
 
-export default async function CustomFieldsPage() {
+export default async function CustomFieldsPage({ searchParams }: { searchParams: Promise<{ aviso?: string }> }) {
   const actor = await requirePermission("products.view");
   const [fields, categories] = await Promise.all([query(listCustomFields, { includeInactive: true }), query(listCategories, {})]);
   const canManage = can(actor, "custom_fields.manage");
@@ -16,6 +17,7 @@ export default async function CustomFieldsPage() {
         <h1>Campos personalizados</h1>
         <p>Informações que só o seu negócio precisa guardar em cada item: IMEI, cor, chassi, safra, validade.</p>
       </div>
+      <Notice text={(await searchParams).aviso} />
       {canManage && (
         <section className="card">
           <h2>Novo campo</h2>
@@ -37,8 +39,9 @@ export default async function CustomFieldsPage() {
         );
         return canManage ? (
           <details className="card" key={f.id}>
-            <summary>{info}</summary>
+            <summary>{info} <span className="edit-hint">Editar ›</span></summary>
             <CustomFieldForm field={f} categories={cats} />
+            <RemoveRecord kind="custom_field" id={f.id} name={f.label} back="/campos-personalizados" />
           </details>
         ) : (
           <div className="card" key={f.id}>{info}</div>

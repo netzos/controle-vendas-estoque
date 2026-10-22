@@ -1,7 +1,7 @@
 import { can, listBranches, listMembers, listRoles, mailConfigured } from "@erp/core";
 import { requirePermission } from "@/lib/auth";
 import { query } from "@/lib/actions";
-import { AddMemberForm, EditMemberForm } from "./member-forms";
+import { AddMemberForm, EditMemberForm, PasswordLink } from "./member-forms";
 
 export const metadata = { title: "Usuários" };
 
@@ -23,7 +23,7 @@ export default async function UsersPage() {
     <>
       <div className="page-header">
         <h1>Usuários</h1>
-        <p>Quem acessa esta empresa pelo painel e, a partir da Fase 8, pelo Telegram.</p>
+        <p>Quem acessa esta empresa pelo painel e pelo Telegram. Toque em uma pessoa para editar o cadastro ou gerar o link de senha.</p>
       </div>
       {members.map((m) => {
         const summary = (
@@ -41,9 +41,10 @@ export default async function UsersPage() {
         const editable = canManage && m.userId !== actor.userId && (!m.isOwner || actor.isOwner);
         return editable ? (
           <details className="card" key={m.membershipId}>
-            <summary>{summary}</summary>
+            <summary>{summary} <span className="edit-hint">Editar ›</span></summary>
             {details}
             <EditMemberForm member={m} roles={assignable} branches={branches} />
+            {m.status === "active" && <PasswordLink member={m} />}
           </details>
         ) : (
           <div className="card" key={m.membershipId}>

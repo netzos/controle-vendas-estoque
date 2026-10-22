@@ -6,13 +6,14 @@ import { money, quantity } from "@/lib/format";
 import { ProductForm, type ProductFormOptions } from "./product-form";
 import { SupplierPrices } from "../fornecedores/supplier-prices";
 import { ProductPhotos } from "./photos";
+import { Notice, RemoveRecord } from "@/components/remove-record";
 
 export const metadata = { title: "Produtos" };
 
 export default async function ProductsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; id?: string; novo?: string; categoria?: string; inativos?: string }>;
+  searchParams: Promise<{ q?: string; id?: string; novo?: string; categoria?: string; inativos?: string; aviso?: string }>;
 }) {
   const actor = await requirePermission("products.view");
   const params = await searchParams;
@@ -37,40 +38,74 @@ export default async function ProductsPage({
     options = { categories, units, suppliers, customFields, stepNames: stepTypes.map((t) => t.name).filter((n) => n !== ORDER_STEP), canEditPrice: can(actor, "products.update_price") };
   }
 
+  // Ficha do produto: todos os campos (inclusive os vazios), fotos, fornecedores e Excluir.
+  if (selected) {
+    const missing = [
+      !selected.description && "descrição",
+      !selected.barcode && "código de barras",
+      !selected.categoryId && "categoria",
+      !selected.supplierId && "fornecedor principal",
+      images.length === 0 && "fotos",
+      selected.afterSaleSteps.length === 0 && "etapas depois da venda",
+    ].filter(Boolean);
+    return (
+      <>
+        <p><Link href="/produtos">← Produtos</Link></p>
+        <div className="page-header">
+          <h1>{selected.name}</h1>
+          <p>
+            <span className={`tag ${selected.status === "active" ? "ok" : "off"}`}>{selected.status === "active" ? "Ativo" : "Inativo"}</span>{" "}
+            {ITEM_TYPES[selected.itemType].label} · código {selected.sku}
+          </p>
+        </div>
+        {missing.length > 0 && <p className="muted">Ainda dá para preencher: {missing.join(", ")}.</p>}
+        <section className="card">
+          <h2>Dados do produto</h2>
+          {options ? <ProductForm key={selected.id} product={selected} options={options} /> : (
+            <p className="muted">Preço {money(selected.salePrice)} · Estoque {selected.trackStock ? quantity(selected.stockQty) : "—"}{selected.description ? ` · ${selected.description}` : ""}</p>
+          )}
+        </section>
+        <section className="card">
+          <ProductPhotos key={selected.id} productId={selected.id} images={images} canManage={canManage} />
+        </section>
+        {seesSuppliers && (
+          <section className="card">
+            <SupplierPrices
+              key={selected.id}
+              side="product"
+              ownerId={selected.id}
+              rows={supplierPrices}
+              options={suppliers.filter((s) => s.status === "active").map((s) => ({ id: s.id, name: s.name }))}
+              canManage={can(actor, "suppliers.manage")}
+            />
+          </section>
+        )}
+        {can(actor, "costs.view") && (
+          <p className="muted"><Link href="/custos/obtencao">Partes do custo (frete, embalagem...) ficam em Custos › Custo de obtenção.</Link></p>
+        )}
+        {canManage && (
+          <section className="card">
+            <h2>Excluir produto</h2>
+            <p className="muted">Sem vendas nem movimentos, o produto é apagado. Com histórico, ele é desativado e some das listas e da tela de venda.</p>
+            <RemoveRecord kind="product" id={selected.id} name={selected.name} back="/produtos" />
+          </section>
+        )}
+      </>
+    );
+  }
+
   return (
     <>
       <div className="page-header">
         <h1>Produtos</h1>
-        <p>Tudo o que você vende: produtos em estoque, só por encomenda, serviços e produção própria.</p>
+        <p>Tudo o que você vende: produtos em estoque, só por encomenda, serviços e produção própria. Toque em um produto para ver e editar a ficha completa.</p>
       </div>
+      <Notice text={params.aviso} />
 
       {options && params.novo === "1" && (
         <section className="card">
           <h2>Novo produto</h2>
           <ProductForm options={options} />
-        </section>
-      )}
-      {options && selected && (
-        <section className="card">
-          <h2>{selected.name}</h2>
-          <ProductForm key={selected.id} product={selected} options={options} />
-        </section>
-      )}
-      {selected && (
-        <section className="card">
-          <ProductPhotos key={selected.id} productId={selected.id} images={images} canManage={canManage} />
-        </section>
-      )}
-      {selected && seesSuppliers && (
-        <section className="card">
-          <SupplierPrices
-            key={selected.id}
-            side="product"
-            ownerId={selected.id}
-            rows={supplierPrices}
-            options={suppliers.filter((s) => s.status === "active").map((s) => ({ id: s.id, name: s.name }))}
-            canManage={can(actor, "suppliers.manage")}
-          />
         </section>
       )}
 
@@ -94,7 +129,7 @@ export default async function ProductsPage({
               <thead>
                 <tr>
                   <th>Produto</th><th>Código</th><th>Categoria</th><th>Unid.</th>
-                  <th className="num">Preço</th><th className="num">Custo</th><th className="num">Margem</th><th className="num">Estoque</th><th>Situação</th>
+                  <th className="num">Preço</th><th className="num">Custo</th><th className="num">Margem</th><th className="num">Estoque</th><th>Situação</th><th></th>
                 </tr>
               </thead>
               <tbody>
@@ -131,6 +166,7 @@ export default async function ProductsPage({
                         )}
                       </td>
                       <td><span className={`tag ${p.status === "active" ? "ok" : "off"}`}>{p.status === "active" ? "Ativo" : "Inativo"}</span></td>
+                      <td><Link className="button secondary small" href={`/produtos?id=${p.id}`}>{canManage ? "Editar" : "Abrir"}</Link></td>
                     </tr>
                   );
                 })}

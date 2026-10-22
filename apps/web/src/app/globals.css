@@ -403,7 +403,7 @@ td .tag { margin-left: 8px; font-size: 12px; padding: 1px 8px; }
 .notice-link { display: block; color: var(--text); padding: 14px 18px; border-left: 4px solid var(--warning); }
 .notice-link:hover { text-decoration: none; background: var(--surface-2); }
 
-/* Nets: balão do agente global */
+/* Netz: balão do agente global */
 .nets-root { position: fixed; z-index: 60; }
 .nets-fab { position: relative; width: 56px; height: 56px; border-radius: 50%; display: grid; place-items: center; padding: 0; background: var(--accent); color: #fff; border: none; box-shadow: 0 8px 24px rgba(15, 17, 21, .28); cursor: grab; touch-action: none; }
 .nets-fab:active { cursor: grabbing; }
@@ -450,3 +450,14 @@ td .tag { margin-left: 8px; font-size: 12px; padding: 1px 8px; }
 }
 .step-type-desc { display: block; margin-top: 4px; font-weight: 400; }
 .steps-howto { margin: 0 0 14px; padding-left: 20px; display: grid; gap: 6px; }
+
+/* Excluir cadastro */
+.remove-record { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border); }
+.remove-confirm { display: grid; gap: 8px; }
+button.danger-text { color: var(--danger); }
+.record-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.record-head h2 { margin: 0; }
+summary .edit-hint { float: right; font-size: 13px; color: var(--muted); font-weight: 500; }
+.empty-hint { color: var(--muted); font-size: 13px; }
+.link-box { display: grid; gap: 8px; margin-bottom: 10px; }
+.link-box input { font-size: 13px; }

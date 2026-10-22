@@ -73,6 +73,13 @@ export async function sendInvite(tx: Tx, params: { userId: string; email: string
   });
 }
 
+/** Link de senha para o administrador mandar à pessoa (WhatsApp, por exemplo), sem depender de e-mail. */
+export async function issuePasswordLink(tx: Tx, userId: string, organizationId: string, firstAccess: boolean): Promise<{ url: string; validFor: string }> {
+  const minutes = firstAccess ? INVITE_TTL_DAYS * 24 * 60 : 24 * 60;
+  const token = await issueToken(tx, userId, firstAccess ? "invite" : "reset", minutes, organizationId);
+  return { url: `${appUrl()}/redefinir-senha?token=${token}`, validFor: firstAccess ? `${INVITE_TTL_DAYS} dias` : "24 horas" };
+}
+
 // Confere o link sem consumir, para a tela mostrar o nome e o tipo.
 export async function inspectPasswordToken(db: Db, token: string): Promise<{ purpose: TokenPurpose; name: string; email: string } | null> {
   if (!token || token.length < 20 || token.length > 100) return null;

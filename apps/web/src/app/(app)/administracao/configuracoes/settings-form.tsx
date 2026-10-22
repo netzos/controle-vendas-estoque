@@ -27,6 +27,17 @@ export function SettingsForm({ values, readOnly }: { values: SettingValues; read
             </select>
           </Field>
         </div>
+        <Field
+          label="Como a venda chega ao cliente, por padrão"
+          name="sales.default_fulfillment"
+          state={state}
+          hint="Retirada no local não cobra frete nem abre a etapa Entrega. Dá para trocar em cada venda."
+        >
+          <select id="sales.default_fulfillment" name="sales.default_fulfillment" defaultValue={values["sales.default_fulfillment"]}>
+            <option value="pickup">Retirada no local</option>
+            <option value="delivery">Entrega</option>
+          </select>
+        </Field>
         {!readOnly && <div className="actions"><SubmitButton>Salvar</SubmitButton></div>}
       </fieldset>
     </form>

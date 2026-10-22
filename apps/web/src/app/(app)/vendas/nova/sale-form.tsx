@@ -3,7 +3,7 @@
 import { useActionState, useEffect, useMemo, useState } from "react";
 import { FormMessage, SubmitButton } from "@/components/form";
 import { money, quantity } from "@/lib/format";
-import { ITEM_TYPES, ORDER_STEP, type ItemType } from "@erp/core/labels";
+import { DELIVERY_STEP, FULFILLMENTS, ITEM_TYPES, ORDER_STEP, type Fulfillment, type ItemType } from "@erp/core/labels";
 import { createSaleAction } from "../actions";
 
 export interface PosProduct {
@@ -43,6 +43,7 @@ export function SaleForm({
   canManageSteps,
   today,
   stepDefaults,
+  defaultFulfillment,
 }: {
   products: PosProduct[];
   customers: { id: string; name: string }[];
@@ -51,6 +52,7 @@ export function SaleForm({
   canManageSteps: boolean;
   today: string;
   stepDefaults: StepDefault[];
+  defaultFulfillment: Fulfillment;
 }) {
   const [state, action] = useActionState(createSaleAction, null);
   const [search, setSearch] = useState("");
@@ -64,6 +66,8 @@ export function SaleForm({
   // Depois da venda: endereço, taxa cobrada e prazo/responsável/custo de cada etapa.
   const [after, setAfter] = useState({ address: "", recipient: "", phone: "", fee: "" });
   const [stepDrafts, setStepDrafts] = useState<Record<string, StepDraft>>({});
+  // Retirada no local ou entrega. Sem permissão de etapas, é sempre retirada.
+  const [way, setWay] = useState<Fulfillment>(canManageSteps ? defaultFulfillment : "pickup");
 
   // Venda registrada: limpa o carrinho para a próxima.
   useEffect(() => {
@@ -73,6 +77,7 @@ export function SaleForm({
       setTrades([]);
       setAfter({ address: "", recipient: "", phone: "", fee: "" });
       setStepDrafts({});
+      setWay(canManageSteps ? defaultFulfillment : "pickup");
       setDiscount("");
       setSearch("");
     }
@@ -90,11 +95,14 @@ export function SaleForm({
     p.itemType === "made_to_order" ? toNumber(qty) : p.trackStock ? Math.max(toNumber(qty) - Math.max(Number(p.stock), 0), 0) : 0;
   const anyOwed = lines.some((l) => owed(l.product, l.qty) > 0);
   // Etapas dos itens no carrinho, sem repetir, na ordem em que aparecem.
-  const stepNames = [...(anyOwed ? [ORDER_STEP] : []), ...lines.flatMap((l) => l.product.steps)]
-    .filter((n, i, all) => all.findIndex((o) => o.toLowerCase() === n.toLowerCase()) === i);
+  // Entrega só existe quando a venda vai entregue; na retirada ela sai da lista.
+  const isDelivery = (n: string) => n.toLowerCase() === DELIVERY_STEP.toLowerCase();
+  const stepNames = [...(anyOwed ? [ORDER_STEP] : []), ...lines.flatMap((l) => l.product.steps), ...(way === "delivery" ? [DELIVERY_STEP] : [])]
+    .filter((n, i, all) => all.findIndex((o) => o.toLowerCase() === n.toLowerCase()) === i)
+    .filter((n) => way === "delivery" || !isDelivery(n));
   const defaultOf = (n: string) => stepDefaults.find((d) => d.name.toLowerCase() === n.toLowerCase());
   const hasAfter = canManageSteps && stepNames.length > 0;
-  const fee = hasAfter ? toNumber(after.fee) : 0;
+  const fee = hasAfter && way === "delivery" ? toNumber(after.fee) : 0;
   const total = Math.max(subtotal - toNumber(discount), 0) + fee;
   const tradeTotal = trades.reduce((a, t) => a + toNumber(t.value), 0);
   const toPay = total - tradeTotal;
@@ -120,11 +128,15 @@ export function SaleForm({
         }),
       )} />
       <input type="hidden" name="paymentMethod" value={payment} />
+      <input type="hidden" name="fulfillment" value={way} />
       {hasAfter && (
         <input
           type="hidden"
           name="followup"
-          value={JSON.stringify({ ...after, steps: stepNames.map((name) => ({ name, ...draftOf(name), cost: draftOf(name).cost || undefined })) })}
+          value={JSON.stringify({
+            ...(way === "delivery" ? after : {}),
+            steps: stepNames.map((name) => ({ name, ...draftOf(name), cost: draftOf(name).cost || undefined })),
+          })}
         />
       )}
       <input
@@ -233,15 +245,25 @@ export function SaleForm({
           </div>
         )}
 
+        {canManageSteps && lines.length > 0 && (
+          <div className="pay-options" role="radiogroup" aria-label="Retirada ou entrega">
+            {(["pickup", "delivery"] as const).map((w) => (
+              <button type="button" key={w} role="radio" aria-checked={way === w} className={way === w ? "active" : ""} onClick={() => setWay(w)}>
+                {FULFILLMENTS[w]}
+              </button>
+            ))}
+          </div>
+        )}
+
         {hasAfter && (
           <details className="after-sale" open>
-            <summary>Depois da venda <span className="muted">· {stepNames.join(", ")}</span></summary>
-            <div className="grid-2">
+            <summary>{way === "delivery" ? "Entrega e etapas" : "Depois da venda"} <span className="muted">· {stepNames.join(", ")}</span></summary>
+            {way === "delivery" && <div className="grid-2">
               <input aria-label="Endereço" placeholder="Endereço" value={after.address} onChange={(e) => setAfter({ ...after, address: e.target.value })} />
               <input aria-label="Quem recebe" placeholder="Quem recebe" value={after.recipient} onChange={(e) => setAfter({ ...after, recipient: e.target.value })} />
               <input aria-label="Telefone de contato" placeholder="Telefone" inputMode="tel" value={after.phone} onChange={(e) => setAfter({ ...after, phone: e.target.value })} />
-              <input aria-label="Taxa cobrada do cliente" placeholder="Taxa cobrada R$ (ex.: frete)" inputMode="decimal" value={after.fee} onChange={(e) => setAfter({ ...after, fee: e.target.value })} />
-            </div>
+              <input aria-label="Taxa cobrada do cliente" placeholder="Frete cobrado do cliente R$" inputMode="decimal" value={after.fee} onChange={(e) => setAfter({ ...after, fee: e.target.value })} />
+            </div>}
             {stepNames.map((n) => (
               <div className="after-step" key={n}>
                 <strong>{n}</strong>
@@ -253,8 +275,8 @@ export function SaleForm({
                   onChange={(e) => setDraft(n, { responsible: e.target.value })}
                 />
                 <input
-                  aria-label={`Custo de ${n}`}
-                  placeholder={defaultOf(n)?.cost ? money(defaultOf(n)!.cost!) : "Custo R$"}
+                  aria-label={isDelivery(n) ? "Custo do transporte" : `Custo de ${n}`}
+                  placeholder={defaultOf(n)?.cost ? money(defaultOf(n)!.cost!) : isDelivery(n) ? "Custo do transporte R$" : "Custo R$"}
                   inputMode="decimal"
                   value={draftOf(n).cost}
                   onChange={(e) => setDraft(n, { cost: e.target.value })}

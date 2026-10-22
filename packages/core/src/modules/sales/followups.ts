@@ -240,12 +240,18 @@ export async function insertFollowup(
   input: z.output<typeof followupInput>,
   // Etapas que a própria venda pede (ex.: Encomenda do que faltou no estoque).
   extra: z.output<typeof stepInput>[] = [],
+  // Etapas que não valem nesta venda (ex.: Entrega quando o cliente retira).
+  drop: string[] = [],
 ): Promise<string | null> {
-  const steps: z.output<typeof stepInput>[] = [...(input.steps ?? (await productSteps(tx, productIds)).map((name) => ({ name })))];
+  const dropped = new Set(drop.map((d) => d.toLowerCase()));
+  const steps: z.output<typeof stepInput>[] = [...(input.steps ?? (await productSteps(tx, productIds)).map((name) => ({ name })))]
+    .filter((s) => !dropped.has(s.name.toLowerCase()));
   for (const e of [...extra].reverse()) {
     const same = steps.find((s) => s.name.toLowerCase() === e.name.toLowerCase());
-    if (same) same.notes = same.notes ?? e.notes;
-    else steps.unshift(e);
+    if (same) {
+      same.notes = same.notes ?? e.notes;
+      same.cost = same.cost ?? e.cost;
+    } else steps.unshift(e);
   }
   if (steps.length === 0) return null;
   const { rows } = await tx.query<{ id: string }>(

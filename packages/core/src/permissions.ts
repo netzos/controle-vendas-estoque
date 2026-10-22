@@ -41,7 +41,7 @@ export const PERMISSIONS = [
   { key: "costs.view", module: "custos", description: "Ver custos, custo de obtenção e lucro real", risk: 1 },
   { key: "costs.manage", module: "custos", description: "Lançar e cancelar custos e mudar o custo de obtenção", risk: 3 },
   { key: "deliveries.view", module: "entregas", description: "Ver entregas e etapas depois da venda", risk: 1 },
-  { key: "nets.use", module: "assistente", description: "Conversar com a Nets, o agente do sistema (ela só faz o que a pessoa já pode fazer)", risk: 1 },
+  { key: "nets.use", module: "assistente", description: "Conversar com a Netz, o agente do sistema (ela só faz o que a pessoa já pode fazer)", risk: 1 },
   { key: "deliveries.manage", module: "entregas", description: "Gerir entregas e etapas depois da venda (prazo, responsável, situação, custo)", risk: 2 },
 ] as const satisfies readonly PermissionDef[];
 
@@ -60,7 +60,7 @@ export const MODULE_LABELS: Record<string, string> = {
   compras: "Compras",
   custos: "Custos",
   entregas: "Entregas",
-  assistente: "Assistente (Nets)",
+  assistente: "Assistente (Netz)",
   administracao: "Administração",
 };
 

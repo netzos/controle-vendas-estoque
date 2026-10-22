@@ -14,8 +14,8 @@ export default async function TelegramPage() {
   return (
     <>
       <div className="page-header">
-        <h1>Nets no Telegram</h1>
-        <p>Converse com a Nets pelo Telegram, com os mesmos dados e permissões do painel. Antes de mudar algo, ela pede confirmação com botões.</p>
+        <h1>Netz no Telegram</h1>
+        <p>Converse com a Netz pelo Telegram, com os mesmos dados e permissões do painel. Antes de mudar algo, ela pede confirmação com botões.</p>
       </div>
       <section className="card">
         {!status.configured ? (

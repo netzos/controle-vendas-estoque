@@ -3,7 +3,7 @@
 import { useActionState, useState } from "react";
 import type { Branch, Member, Role } from "@erp/core";
 import { Field, FormMessage, SubmitButton } from "@/components/form";
-import { addMemberAction, updateMemberAction } from "./actions";
+import { addMemberAction, passwordLinkAction, updateMemberAction } from "./actions";
 
 function BranchPicker({ branches, selected, prefix }: { branches: Branch[]; selected: string[] | null; prefix: string }) {
   const [all, setAll] = useState(selected === null);
@@ -75,6 +75,12 @@ export function EditMemberForm({ member, roles, branches }: { member: Member; ro
       <FormMessage state={state} />
       <input type="hidden" name="membershipId" value={member.membershipId} />
       <div className="grid-2">
+        <Field label="Nome" name="name" state={state} hint={member.lastLoginAt ? "Depois do primeiro acesso, só a própria pessoa muda." : undefined}>
+          <input id={`${p}-name`} name="name" defaultValue={member.name} required maxLength={120} disabled={!!member.lastLoginAt} />
+        </Field>
+        <Field label="E-mail" name="email" state={state}>
+          <input id={`${p}-email`} name="email" type="email" defaultValue={member.email} required disabled={!!member.lastLoginAt} />
+        </Field>
         <Field label="Perfil de acesso" name="roleId" state={state}>
           <RoleSelect roles={roles} defaultValue={member.roleId} id={`${p}-role`} />
         </Field>
@@ -86,7 +92,40 @@ export function EditMemberForm({ member, roles, branches }: { member: Member; ro
         </Field>
       </div>
       <BranchPicker branches={branches} selected={member.branchIds} prefix={p} />
-      <div className="actions"><SubmitButton>Salvar acesso</SubmitButton></div>
+      <div className="actions"><SubmitButton>Salvar</SubmitButton></div>
     </form>
+  );
+}
+
+/** Gera o link de senha para mandar à pessoa pelo WhatsApp (sem depender de e-mail). */
+export function PasswordLink({ member }: { member: Member }) {
+  const [state, action] = useActionState(passwordLinkAction, null);
+  const [copied, setCopied] = useState(false);
+  const whatsapp = state?.url
+    ? `https://wa.me/?text=${encodeURIComponent(`Olá, ${member.name}! Use este link para ${member.lastLoginAt ? "trocar" : "criar"} sua senha do netzsales: ${state.url}`)}`
+    : null;
+  return (
+    <div className="remove-record">
+      <h3>Senha</h3>
+      <p className="muted">
+        {member.lastLoginAt ? "Gere um link para a pessoa trocar a senha." : "A pessoa ainda não entrou. Gere um link para ela criar a senha."} Mande pelo WhatsApp.
+      </p>
+      {state?.message && <div className={`alert ${state.ok ? "success" : "error"}`}>{state.message}</div>}
+      {state?.url && (
+        <div className="link-box">
+          <input readOnly value={state.url} aria-label="Link de senha" onFocus={(e) => e.currentTarget.select()} />
+          <div className="actions">
+            <button type="button" className="secondary" onClick={() => navigator.clipboard.writeText(state.url!).then(() => setCopied(true))}>
+              {copied ? "Copiado" : "Copiar link"}
+            </button>
+            {whatsapp && <a className="button" href={whatsapp} target="_blank" rel="noreferrer">Mandar no WhatsApp</a>}
+          </div>
+        </div>
+      )}
+      <form action={action}>
+        <input type="hidden" name="membershipId" value={member.membershipId} />
+        <SubmitButton className="secondary" pendingText="Gerando...">{state?.url ? "Gerar outro link" : "Gerar link de senha"}</SubmitButton>
+      </form>
+    </div>
   );
 }
