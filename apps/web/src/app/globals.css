@@ -40,8 +40,7 @@ p { margin: 0 0 8px; }
 .rail { position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 18px 10px; background: var(--surface); border-right: 1px solid var(--border); overflow-y: auto; }
 .rail-logo { flex: none; display: block; }
 .rail-logo:hover { text-decoration: none; opacity: .9; }
-.logo-mark { position: relative; display: grid; place-items: center; border-radius: 30%; background: var(--accent); color: #fff; font-weight: 700; line-height: 1; letter-spacing: -.04em; box-shadow: 0 6px 16px rgba(15, 17, 21, .22); }
-.logo-mark i { position: absolute; right: 22%; bottom: 22%; width: 14%; height: 14%; border-radius: 50%; background: #8fb3ff; }
+.logo-mark { display: block; flex: none; border-radius: 30%; box-shadow: 0 6px 16px rgba(15, 17, 21, .22); }
 .brand-name { display: flex; align-items: baseline; gap: 12px; min-width: 0; }
 .brand-name strong { font-size: 24px; font-weight: 700; color: var(--text); letter-spacing: -.02em; }
 .brand-name span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
