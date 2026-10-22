@@ -3,6 +3,8 @@ import { db } from "@/lib/db";
 import { currentActor } from "@/lib/auth";
 import { CURRENT_PHASE, NAVIGATION } from "@/lib/navigation";
 import { OrganizationSwitcher, Shell } from "@/components/shell";
+import { NetsBubble } from "@/components/nets-bubble";
+import { Suspense } from "react";
 import { logoutAction } from "../login/actions";
 import { switchOrganizationAction } from "./actions";
 
@@ -25,6 +27,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       topbar={<OrganizationSwitcher organizations={organizations} activeId={actor.organizationId} action={switchOrganizationAction} />}
     >
       {children}
+      {can(actor, "nets.use") && (
+        <Suspense fallback={null}>
+          <NetsBubble />
+        </Suspense>
+      )}
     </Shell>
   );
 }

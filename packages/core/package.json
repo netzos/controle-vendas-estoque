@@ -15,6 +15,7 @@
     "migrate": "tsx src/cli.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.1.0",
     "@erp/db": "workspace:*",
     "zod": "^4.1.0"
   }

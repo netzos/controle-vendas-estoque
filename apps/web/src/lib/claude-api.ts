@@ -17,7 +17,7 @@ export function unauthorized() {
   return Response.json({ error: "Não autorizado." }, { status: 401 });
 }
 
-const STATUS: Record<string, number> = { not_found: 404, invalid_input: 400, conflict: 409, forbidden: 403 };
+const STATUS: Record<string, number> = { not_found: 404, invalid_input: 400, conflict: 409, forbidden: 403, rate_limited: 429 };
 
 export function apiError(err: unknown) {
   if (isAppError(err)) return Response.json({ error: err.message, code: err.code }, { status: STATUS[err.code] ?? 400 });
