@@ -223,9 +223,14 @@ async function systemPrompt(tx: Tx, actor: Actor): Promise<Anthropic.Beta.BetaTe
   const who = actor.isOwner ? "dona/dono da empresa" : `perfil ${actor.roleKey}`;
   return [
     { type: "text", text: NETS_INSTRUCTIONS, cache_control: { type: "ephemeral" } },
-    { type: "text", text: `Empresa: ${org.name}. Pessoa: ${actor.userName} (${who}). Hoje: ${org.today}, ${org.now} (${org.timezone}).` },
+    { type: "text", text: `Empresa: ${org.name}. Pessoa: ${actor.userName} (${who}). Hoje: ${org.today}, ${org.now} (${org.timezone}).${CHANNEL_NOTE[actor.channel] ?? ""}` },
   ];
 }
+
+const CHANNEL_NOTE: Partial<Record<Channel, string>> = {
+  telegram:
+    " Canal: Telegram. Escreva texto simples, sem tabelas nem markdown (asteriscos, # e | aparecem crus). Mensagens curtas. A confirmação aparece como botões Confirmar e Cancelar logo abaixo da sua resposta.",
+};
 
 type ToolOutcome = { content: string; isError?: boolean; action?: NetsAction };
 
@@ -233,7 +238,7 @@ async function runTool(db: Db, actor: Actor, tools: NetsTool[], block: Anthropic
   const input = (block.input ?? {}) as Record<string, unknown>;
   if (block.name === IMPROVEMENT_TOOL) {
     try {
-      const r = await agentCreateImprovement(db, actor, { ...(input as object), channel: "site" } as Parameters<typeof agentCreateImprovement>[2]);
+      const r = await agentCreateImprovement(db, actor, { ...(input as object), channel: actor.channel === "telegram" ? "telegram" : "site" } as Parameters<typeof agentCreateImprovement>[2]);
       return { content: r.existing ? `Já existia um pedido parecido (nº ${r.item.number}); a fala foi juntada a ele.` : `Melhoria registrada: pedido nº ${r.item.number}.` };
     } catch (err) {
       return { content: err instanceof AppError ? err.message : "Não foi possível registrar a melhoria.", isError: true };

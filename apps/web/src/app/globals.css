@@ -449,3 +449,4 @@ td .tag { margin-left: 8px; font-size: 12px; padding: 1px 8px; }
   .nets-panel { position: fixed; left: 8px; right: 8px; top: 64px; bottom: 150px; width: auto; height: auto; }
 }
 .step-type-desc { display: block; margin-top: 4px; font-weight: 400; }
+.steps-howto { margin: 0 0 14px; padding-left: 20px; display: grid; gap: 6px; }
