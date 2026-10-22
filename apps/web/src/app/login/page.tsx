@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { LogoMark } from "@/components/logo";
 import { BRAND_NAME } from "@/lib/brand";
 import { redirect } from "next/navigation";
@@ -20,6 +21,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
         <p className="muted">Entre com sua conta para continuar.</p>
         {(await searchParams).senha === "nova" && <div className="alert success" role="status">Senha salva. Entre com a senha nova.</div>}
         <LoginForm />
+        <p className="muted auth-footer">Ainda não tem conta? <Link href="/criar-conta">Criar conta</Link></p>
       </div>
     </main>
   );

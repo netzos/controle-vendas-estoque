@@ -461,3 +461,5 @@ summary .edit-hint { float: right; font-size: 13px; color: var(--muted); font-we
 .empty-hint { color: var(--muted); font-size: 13px; }
 .link-box { display: grid; gap: 8px; margin-bottom: 10px; }
 .link-box input { font-size: 13px; }
+.auth-footer { margin-top: 18px; }
+.request-card .actions { flex-wrap: wrap; }

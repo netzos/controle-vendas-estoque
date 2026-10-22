@@ -2,7 +2,7 @@ import "server-only";
 import { cache } from "react";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { can, getSession, resolveActor, SESSION_TTL_HOURS, type Actor, type Permission, type SessionInfo } from "@erp/core";
+import { can, getSession, isPlatformDeveloper, resolveActor, SESSION_TTL_HOURS, type Actor, type Permission, type SessionInfo } from "@erp/core";
 import { db } from "./db";
 
 export const SESSION_COOKIE = "erp_session";
@@ -65,4 +65,11 @@ export async function clientIp(): Promise<string | null> {
   const h = await headers();
   const ip = h.get("x-forwarded-for")?.split(",")[0]?.trim() ?? h.get("x-real-ip");
   return ip && /^[0-9a-fA-F:.]+$/.test(ip) ? ip : null;
+}
+
+/** Telas da plataforma: só quem está em platform_developers. */
+export async function requireDeveloper(): Promise<Actor> {
+  const actor = await currentActor();
+  if (!(await isPlatformDeveloper(db(), actor.userId))) redirect("/sem-permissao");
+  return actor;
 }

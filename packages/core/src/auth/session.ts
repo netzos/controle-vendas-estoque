@@ -58,6 +58,24 @@ export async function login(
     params.ip ?? null,
     allowed,
   ]);
+  if (!user) {
+    // Quem pediu conta pelo site e ainda não foi aprovado recebe a explicação,
+    // desde que a senha confira com a do pedido (não revela e-mails a terceiros).
+    const req = await db.query<{ status: string; password_hash: string }>(
+      `SELECT status, password_hash FROM controle_vendas_estoque.signup_requests
+        WHERE email = $1 AND status <> 'approved' ORDER BY created_at DESC LIMIT 1`,
+      [email],
+    );
+    const r = req.rows[0];
+    if (r && (await verifyPassword(params.password, r.password_hash))) {
+      throw new AppError(
+        "forbidden",
+        r.status === "pending"
+          ? "Seu cadastro está em análise. Avisaremos assim que for aprovado."
+          : "Seu cadastro não foi aprovado. Fale com a gente se achar que foi engano.",
+      );
+    }
+  }
   if (!allowed || !user) throw new AppError("unauthenticated", "E-mail ou senha incorretos.");
 
   const token = randomBytes(32).toString("base64url");
