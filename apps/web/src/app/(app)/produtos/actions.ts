@@ -3,6 +3,15 @@
 import { createProduct, updateProduct } from "@erp/core";
 import { optional, perform, str, type FormState } from "@/lib/actions";
 
+function jsonList(form: FormData, name: string): string[] {
+  try {
+    const v: unknown = JSON.parse(str(form, name) || "[]");
+    return Array.isArray(v) ? v.map(String) : [];
+  } catch {
+    return [];
+  }
+}
+
 function fields(form: FormData) {
   return {
     sku: str(form, "sku"),
@@ -17,6 +26,7 @@ function fields(form: FormData) {
     minStock: str(form, "minStock"),
     itemType: (["stock", "made_to_order", "service", "production"].find((t) => t === str(form, "itemType")) ?? "stock") as
       "stock" | "made_to_order" | "service" | "production",
+    afterSaleSteps: jsonList(form, "afterSaleSteps"),
     customValues: Object.fromEntries(
       [...form.keys()].filter((k) => k.startsWith("cf_")).map((k) => [k.slice(3), str(form, k)]),
     ),

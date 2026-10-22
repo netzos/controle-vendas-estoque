@@ -16,7 +16,10 @@ export interface PosProduct {
   trackStock: boolean;
   itemType: ItemType;
   imageId: string | null;
+  steps: string[];
 }
+
+type StepDraft = { scheduledFor: string; responsible: string; cost: string };
 
 const PAYMENTS = [
   { key: "pix", label: "Pix" },
@@ -34,11 +37,15 @@ export function SaleForm({
   customers,
   canChangePrice,
   canTradeIn,
+  canManageSteps,
+  today,
 }: {
   products: PosProduct[];
   customers: { id: string; name: string }[];
   canChangePrice: boolean;
   canTradeIn: boolean;
+  canManageSteps: boolean;
+  today: string;
 }) {
   const [state, action] = useActionState(createSaleAction, null);
   const [search, setSearch] = useState("");
@@ -49,6 +56,9 @@ export function SaleForm({
   const [prices, setPrices] = useState<Record<string, string>>({});
   // Itens que o cliente entrega como parte do pagamento.
   const [trades, setTrades] = useState<{ key: number; productId: string; name: string; value: string }[]>([]);
+  // Depois da venda: endereço, taxa cobrada e prazo/responsável/custo de cada etapa.
+  const [after, setAfter] = useState({ address: "", recipient: "", phone: "", fee: "" });
+  const [stepDrafts, setStepDrafts] = useState<Record<string, StepDraft>>({});
 
   // Venda registrada: limpa o carrinho para a próxima.
   useEffect(() => {
@@ -56,6 +66,8 @@ export function SaleForm({
       setCart({});
       setPrices({});
       setTrades([]);
+      setAfter({ address: "", recipient: "", phone: "", fee: "" });
+      setStepDrafts({});
       setDiscount("");
       setSearch("");
     }
@@ -68,10 +80,16 @@ export function SaleForm({
   const priceOf = (p: PosProduct) => (prices[p.id]?.trim() ? toNumber(prices[p.id]!) : Number(p.price));
   const lines = Object.entries(cart).map(([id, qty]) => ({ product: byId.get(id)!, qty }));
   const subtotal = lines.reduce((a, l) => a + Math.round(toNumber(l.qty) * priceOf(l.product) * 100) / 100, 0);
-  const total = Math.max(subtotal - toNumber(discount), 0);
+  // Etapas dos itens no carrinho, sem repetir, na ordem em que aparecem.
+  const stepNames = lines.flatMap((l) => l.product.steps).filter((n, i, all) => all.findIndex((o) => o.toLowerCase() === n.toLowerCase()) === i);
+  const hasAfter = canManageSteps && stepNames.length > 0;
+  const fee = hasAfter ? toNumber(after.fee) : 0;
+  const total = Math.max(subtotal - toNumber(discount), 0) + fee;
   const tradeTotal = trades.reduce((a, t) => a + toNumber(t.value), 0);
   const toPay = total - tradeTotal;
   const tracked = products.filter((p) => p.trackStock);
+  const draftOf = (n: string): StepDraft => stepDrafts[n] ?? { scheduledFor: "", responsible: "", cost: "" };
+  const setDraft = (n: string, patch: Partial<StepDraft>) => setStepDrafts((d) => ({ ...d, [n]: { ...draftOf(n), ...patch } }));
   const setTrade = (key: number, patch: Partial<(typeof trades)[number]>) => setTrades((ts) => ts.map((t) => (t.key === key ? { ...t, ...patch } : t)));
 
   const add = (id: string) => setCart((c) => ({ ...c, [id]: String(toNumber(c[id] ?? "0") + 1).replace(".", ",") }));
@@ -91,6 +109,13 @@ export function SaleForm({
         }),
       )} />
       <input type="hidden" name="paymentMethod" value={payment} />
+      {hasAfter && (
+        <input
+          type="hidden"
+          name="followup"
+          value={JSON.stringify({ ...after, steps: stepNames.map((name) => ({ name, ...draftOf(name), cost: draftOf(name).cost || undefined })) })}
+        />
+      )}
       <input
         type="hidden"
         name="tradeIns"
@@ -185,6 +210,27 @@ export function SaleForm({
           </div>
         )}
 
+        {hasAfter && (
+          <details className="after-sale" open>
+            <summary>Depois da venda <span className="muted">· {stepNames.join(", ")}</span></summary>
+            <div className="grid-2">
+              <input aria-label="Endereço" placeholder="Endereço" value={after.address} onChange={(e) => setAfter({ ...after, address: e.target.value })} />
+              <input aria-label="Quem recebe" placeholder="Quem recebe" value={after.recipient} onChange={(e) => setAfter({ ...after, recipient: e.target.value })} />
+              <input aria-label="Telefone de contato" placeholder="Telefone" inputMode="tel" value={after.phone} onChange={(e) => setAfter({ ...after, phone: e.target.value })} />
+              <input aria-label="Taxa cobrada do cliente" placeholder="Taxa cobrada R$ (ex.: frete)" inputMode="decimal" value={after.fee} onChange={(e) => setAfter({ ...after, fee: e.target.value })} />
+            </div>
+            {stepNames.map((n) => (
+              <div className="after-step" key={n}>
+                <strong>{n}</strong>
+                <input type="date" aria-label={`Prazo de ${n}`} min={today} value={draftOf(n).scheduledFor} onChange={(e) => setDraft(n, { scheduledFor: e.target.value })} />
+                <input aria-label={`Responsável por ${n}`} placeholder="Responsável" value={draftOf(n).responsible} onChange={(e) => setDraft(n, { responsible: e.target.value })} />
+                <input aria-label={`Custo de ${n}`} placeholder="Custo R$" inputMode="decimal" value={draftOf(n).cost} onChange={(e) => setDraft(n, { cost: e.target.value })} />
+              </div>
+            ))}
+            <p className="muted small-text">O custo de cada etapa (motoboy, instalador) entra em Custos e desconta do lucro real.</p>
+          </details>
+        )}
+
         <div className="pay-options" role="radiogroup" aria-label="Forma de pagamento">
           {PAYMENTS.map((p) => (
             <button type="button" key={p.key} role="radio" aria-checked={payment === p.key} className={payment === p.key ? "active" : ""} onClick={() => setPayment(p.key)}>
@@ -210,6 +256,7 @@ export function SaleForm({
         <div className="cart-sum">
           <span>
             Subtotal <b>{money(subtotal)}</b>
+            {fee > 0 && <> · Taxa <b>+{money(fee)}</b></>}
             {tradeTotal > 0 && <> · Troca <b>−{money(tradeTotal)}</b></>}
           </span>
           <span className="cart-grand">{money(tradeTotal > 0 ? Math.max(toPay, 0) : total)}</span>

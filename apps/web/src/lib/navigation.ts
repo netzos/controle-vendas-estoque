@@ -9,7 +9,7 @@ export interface NavItem {
   phase: number;
 }
 
-export type NavIcon = "home" | "cart" | "tag" | "box" | "truck" | "wallet" | "chart" | "bot" | "zap" | "bulb" | "sliders";
+export type NavIcon = "home" | "cart" | "tag" | "box" | "truck" | "wallet" | "coins" | "chart" | "bot" | "zap" | "bulb" | "sliders";
 
 export interface NavGroup {
   label: string;
@@ -41,6 +41,7 @@ export const NAVIGATION: NavGroup[] = [
     icon: "cart",
     items: [
       { label: "Vendas", href: "/vendas", permission: "sales.view", phase: 2 },
+      { label: "Entregas", href: "/entregas", permission: "deliveries.view", phase: 2 },
       { label: "Orçamentos", href: "/orcamentos", phase: 3 },
       { label: "Clientes", href: "/clientes", permission: "customers.view", phase: 2 },
       { label: "Vendedores", href: "/vendedores", phase: 3 },
@@ -86,6 +87,17 @@ export const NAVIGATION: NavGroup[] = [
       { label: "Pedidos de compra", href: "/compras/pedidos", phase: 4 },
       { label: "Recebimentos", href: "/compras/recebimentos", phase: 4 },
       { label: "Sugestões de compra", href: "/compras/sugestoes", phase: 4 },
+    ],
+  },
+  {
+    label: "Custos",
+    short: "Custos",
+    hint: "Quanto custa vender e o lucro de verdade",
+    icon: "coins",
+    items: [
+      { label: "Painel de custos", href: "/custos", permission: "costs.view", phase: 2 },
+      { label: "Custo de obtenção", href: "/custos/obtencao", permission: "costs.view", phase: 2 },
+      { label: "Tipos de custo", href: "/custos/tipos", permission: "costs.view", phase: 2 },
     ],
   },
   {

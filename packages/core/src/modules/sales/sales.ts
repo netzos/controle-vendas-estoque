@@ -4,6 +4,7 @@ import { AppError, notFound } from "../../errors.ts";
 import { defineService } from "../../service.ts";
 import { decimalField, optionalText, uuidOrNull } from "../catalog/fields.ts";
 import { applyMovement, averageCost } from "../stock/movements.ts";
+import { cancelFollowup, followupInput, insertFollowup } from "./followups.ts";
 
 export type PaymentMethod = "cash" | "pix" | "credit" | "debit" | "other";
 
@@ -48,6 +49,8 @@ export interface Sale {
   discount: string;
   total: string;
   tradeInTotal: string;
+  deliveryFee: string;
+  followupStatus: "open" | "done" | "cancelled" | null;
   costTotal: string;
   notes: string | null;
   soldAt: Date;
@@ -59,7 +62,8 @@ export interface Sale {
 
 const SALE_COLUMNS = `s.id, s.number, s.customer_id AS "customerId", c.name AS "customerName", s.status,
   s.payment_method AS "paymentMethod", s.subtotal::text AS subtotal, s.discount::text AS discount, s.total::text AS total,
-  s.trade_in_total::text AS "tradeInTotal", s.cost_total::text AS "costTotal", s.notes, s.sold_at AS "soldAt", u.name AS "userName",
+  s.trade_in_total::text AS "tradeInTotal", s.delivery_fee::text AS "deliveryFee",
+  (SELECT f.status FROM controle_vendas_estoque.sale_followups f WHERE f.sale_id = s.id) AS "followupStatus", s.cost_total::text AS "costTotal", s.notes, s.sold_at AS "soldAt", u.name AS "userName",
   (SELECT count(*) FROM controle_vendas_estoque.sale_items i WHERE i.sale_id = s.id)::int AS "itemCount",
   s.cancelled_at AS "cancelledAt", s.cancel_reason AS "cancelReason"`;
 const SALE_FROM = `controle_vendas_estoque.sales s
@@ -101,6 +105,9 @@ export const createSale = defineService({
       )
       .max(10)
       .default([]),
+    // Depois da venda: endereço e etapas (entrega, instalação...). Se omitido,
+    // a venda ganha as etapas cadastradas nos produtos, sem endereço.
+    followup: followupInput.extend({ fee: decimalField(2, "Taxa de entrega").default("0") }).optional(),
   }),
   async handler({ tx, actor, audit, emit }, input) {
     if (input.customerId) {
@@ -144,7 +151,11 @@ export const createSale = defineService({
       if (!t.productId && !t.name) throw new AppError("invalid_input", "Diga qual item foi recebido na troca.");
       if (Number(t.quantity) <= 0) throw new AppError("invalid_input", "Quantidade da troca deve ser maior que zero.");
     }
-    if (tradeTotal > Number(subtotal) - Number(input.discount)) {
+    const fee = input.followup?.fee ?? "0";
+    if (input.followup && !can(actor, "deliveries.manage")) {
+      throw new AppError("forbidden", "Você não tem permissão para registrar entregas e etapas depois da venda.");
+    }
+    if (tradeTotal > Number(subtotal) - Number(input.discount) + Number(fee)) {
       throw new AppError("invalid_input", "O valor da troca passa do valor da venda. Registre a diferença como compra.");
     }
 
@@ -152,12 +163,12 @@ export const createSale = defineService({
     await tx.query("SELECT pg_advisory_xact_lock(hashtext('sales:' || $1))", [actor.organizationId]);
     const { rows } = await tx.query<{ id: string; number: number; total: string }>(
       `INSERT INTO controle_vendas_estoque.sales
-         (organization_id, number, customer_id, payment_method, subtotal, discount, total, cost_total, notes, created_by, trade_in_total)
+         (organization_id, number, customer_id, payment_method, subtotal, discount, total, cost_total, notes, created_by, trade_in_total, delivery_fee)
        VALUES ($1, (SELECT coalesce(max(number), 0) + 1 FROM controle_vendas_estoque.sales WHERE organization_id = $1),
-               $2, $3, $4, $5, $4::numeric - $5::numeric, $6, $7, $8, $9)
+               $2, $3, $4, $5, $4::numeric - $5::numeric + $10::numeric, $6, $7, $8, $9, $10)
        RETURNING id, number, total::text AS total`,
       [actor.organizationId, input.customerId ?? null, input.paymentMethod, subtotal, input.discount, cost, input.notes ?? null, actor.userId,
-        tradeTotal.toFixed(2)],
+        tradeTotal.toFixed(2), fee],
     );
     const sale = rows[0]!;
 
@@ -206,6 +217,10 @@ export const createSale = defineService({
       await applyMovement(tx, actor, { productId, kind: "trade_in", quantity: t.quantity, unitCost, saleId: sale.id, notes: t.notes ?? null });
     }
 
+    // Produtos com etapas depois da venda (entrega, instalação...) abrem o
+    // acompanhamento mesmo que o caixa não tenha informado nada.
+    await insertFollowup(tx, actor, sale.id, ids, input.followup ?? {});
+
     await audit({
       action: "sale.create",
       entityType: "sale",
@@ -244,6 +259,7 @@ export const cancelSale = defineService({
     for (const m of moved.rows) {
       await applyMovement(tx, actor, { ...m, kind: "sale_cancel", saleId: input.id, notes: input.reason });
     }
+    await cancelFollowup(tx, input.id);
     await audit({ action: "sale.cancel", entityType: "sale", entityId: input.id, summary: `Venda nº ${sale.number} cancelada: ${input.reason}` });
     await emit("sale.cancelled", { saleId: input.id, number: sale.number }, { type: "sale", id: input.id });
     return { id: input.id, number: sale.number };
@@ -305,8 +321,9 @@ export type SalesPeriod = "today" | "7d" | "30d" | "month";
 
 export interface SalesDashboard {
   period: SalesPeriod;
-  current: { revenue: string; count: number; ticket: string; profit: string; margin: string | null; items: string };
-  previous: { revenue: string; count: number; ticket: string; profit: string };
+  // otherCosts: custos lançados no período; realProfit = profit − otherCosts.
+  current: { revenue: string; count: number; ticket: string; profit: string; margin: string | null; items: string; otherCosts: string; realProfit: string; realMargin: string | null };
+  previous: { revenue: string; count: number; ticket: string; profit: string; otherCosts: string; realProfit: string };
   series: { label: string; revenue: string; count: number }[];
   topProducts: { productId: string; name: string; unitCode: string; quantity: string; revenue: string; share: number }[];
   payments: { method: PaymentMethod | "trade_in"; revenue: string; count: number }[];
@@ -339,23 +356,30 @@ export const salesDashboard = defineService({
     const { start, end, prevStart, tz } = range.rows[0]!;
 
     const kpi = async (from: Date, to: Date) => {
-      const { rows } = await tx.query<{ revenue: string; count: number; cost: string; items: string }>(
+      const { rows } = await tx.query<{ revenue: string; count: number; cost: string; items: string; other: string }>(
         `SELECT coalesce(sum(total), 0)::text AS revenue, count(*)::int AS count, coalesce(sum(cost_total), 0)::text AS cost,
+                (SELECT coalesce(sum(k.amount), 0) FROM controle_vendas_estoque.costs k
+                  WHERE k.status = 'active' AND k.incurred_on >= ($1::timestamptz AT TIME ZONE $3)::date
+                    AND k.incurred_on < ($2::timestamptz AT TIME ZONE $3)::date)::text AS other,
                 coalesce((SELECT sum(i.quantity) FROM controle_vendas_estoque.sale_items i
                            JOIN controle_vendas_estoque.sales s2 ON s2.id = i.sale_id
                           WHERE s2.status = 'completed' AND s2.sold_at >= $1 AND s2.sold_at < $2), 0)::text AS items
            FROM controle_vendas_estoque.sales WHERE status = 'completed' AND sold_at >= $1 AND sold_at < $2`,
-        [from, to],
+        [from, to, tz],
       );
       const r = rows[0]!;
       const revenue = Number(r.revenue);
       const profit = revenue - Number(r.cost);
+      const real = profit - Number(r.other);
       return {
         revenue: r.revenue,
         count: r.count,
         ticket: r.count ? (revenue / r.count).toFixed(2) : "0",
         profit: profit.toFixed(2),
         margin: revenue > 0 ? ((profit / revenue) * 100).toFixed(1) : null,
+        otherCosts: Number(r.other).toFixed(2),
+        realProfit: real.toFixed(2),
+        realMargin: revenue > 0 ? ((real / revenue) * 100).toFixed(1) : null,
         items: r.items,
       };
     };

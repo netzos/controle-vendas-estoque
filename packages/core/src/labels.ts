@@ -20,3 +20,16 @@ export const CUSTOM_FIELD_TYPES: Record<CustomFieldType, string> = {
   select: "Lista de opções",
   boolean: "Sim ou não",
 };
+
+// Etapas depois da venda (entrega, instalação, montagem...).
+export type StepStatus = "pending" | "in_progress" | "done" | "cancelled";
+
+export const STEP_STATUS: Record<StepStatus, string> = {
+  pending: "A fazer",
+  in_progress: "Em andamento",
+  done: "Feito",
+  cancelled: "Cancelado",
+};
+
+// Sugestões no cadastro do produto; a empresa pode digitar outras.
+export const STEP_SUGGESTIONS = ["Entrega", "Instalação", "Montagem", "Retirada na loja", "Ajuste", "Personalização"];

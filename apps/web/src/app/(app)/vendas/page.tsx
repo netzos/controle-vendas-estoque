@@ -1,9 +1,10 @@
 import Link from "next/link";
-import { can, getOrganization, getSale, listSales, PAYMENT_LABELS } from "@erp/core";
+import { can, getOrganization, getSale, getSaleFollowup, listSales, orgDate, PAYMENT_LABELS } from "@erp/core";
 import { requirePermission } from "@/lib/auth";
 import { query } from "@/lib/actions";
 import { money, quantity } from "@/lib/format";
 import { CancelSaleForm } from "./cancel-form";
+import { AddStepsForm, StepRow } from "../entregas/steps";
 
 export const metadata = { title: "Vendas" };
 
@@ -15,6 +16,11 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
     query(listSales, { search: params.q || undefined }),
     params.id ? query(getSale, { id: params.id }).catch(() => null) : null,
   ]);
+  const seesSteps = can(actor, "deliveries.view");
+  const [followup, today] = selected && seesSteps
+    ? await Promise.all([query(getSaleFollowup, { saleId: selected.id }), query(orgDate, {})])
+    : [null, ""];
+  const canSteps = can(actor, "deliveries.manage");
   const fmt = new Intl.DateTimeFormat("pt-BR", { timeZone: org.timezone, dateStyle: "short", timeStyle: "short" });
 
   return (
@@ -70,10 +76,23 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
             <span>
               Subtotal {money(selected.subtotal)}
               {Number(selected.discount) > 0 && ` · desconto ${money(selected.discount)}`}
+              {Number(selected.deliveryFee) > 0 && ` · taxa ${money(selected.deliveryFee)}`}
               {Number(selected.tradeInTotal) > 0 && ` · troca ${money(selected.tradeInTotal)} · pago em ${PAYMENT_LABELS[selected.paymentMethod].toLowerCase()} ${money(Number(selected.total) - Number(selected.tradeInTotal))}`}
             </span>
             <span className="cart-grand">{money(selected.total)}</span>
           </div>
+          {followup && (
+            <>
+              <h3 className="form-section">Depois da venda</h3>
+              {(followup.address || followup.recipient || followup.phone) && (
+                <p className="muted">{[followup.address, followup.recipient, followup.phone].filter(Boolean).join(" · ")}</p>
+              )}
+              <ul className="step-list">
+                {followup.steps.map((s) => <StepRow key={s.id} step={s} today={today} canManage={canSteps} showSale={false} />)}
+              </ul>
+            </>
+          )}
+          {selected.status === "completed" && canSteps && <AddStepsForm saleId={selected.id} hasFollowup={!!followup} today={today} />}
           {selected.status === "cancelled" && <p className="muted">Cancelada: {selected.cancelReason}</p>}
           {selected.status === "completed" && can(actor, "sales.cancel") && <CancelSaleForm id={selected.id} />}
         </section>

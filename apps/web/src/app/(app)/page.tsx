@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { can, getOrganization, PAYMENT_LABELS, salesDashboard, stockOverview, type SalesPeriod } from "@erp/core";
+import { can, getOrganization, PAYMENT_LABELS, salesDashboard, stepCounts, stockOverview, type SalesPeriod } from "@erp/core";
 import { currentActor } from "@/lib/auth";
 import { query } from "@/lib/actions";
 import { money, quantity } from "@/lib/format";
@@ -20,10 +20,12 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const period = PERIODS.find((p) => p.key === params.periodo) ?? PERIODS[0]!;
   const canSales = can(actor, "sales.view");
   const canStock = can(actor, "stock.view");
-  const [org, dash, stock] = await Promise.all([
+  const canCosts = can(actor, "costs.view");
+  const [org, dash, stock, steps] = await Promise.all([
     query(getOrganization, {}),
     canSales ? query(salesDashboard, { period: period.key }) : null,
     canStock ? query(stockOverview, {}) : null,
+    can(actor, "deliveries.view") ? query(stepCounts, {}) : null,
   ]);
   const timeFmt = new Intl.DateTimeFormat("pt-BR", { timeZone: org.timezone, hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" });
   const alerts = stock?.rows.filter((r) => r.status === "out" || r.status === "low").sort((a, b) => Number(a.stockQty) - Number(b.stockQty)) ?? [];
@@ -49,19 +51,37 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
         </div>
       </div>
 
+      {steps && (steps.late > 0 || steps.today > 0) && (
+        <Link href={`/entregas?filtro=${steps.late > 0 ? "late" : "today"}`} className="card notice-link">
+          <strong>Depois da venda:</strong>{" "}
+          {[steps.late > 0 && `${steps.late} ${steps.late === 1 ? "etapa atrasada" : "etapas atrasadas"}`, steps.today > 0 && `${steps.today} para hoje`].filter(Boolean).join(" · ")}
+          <span className="muted"> · ver entregas e serviços →</span>
+        </Link>
+      )}
+
       {dash && (
         <>
           <div className="kpi-grid">
             <Kpi hero label="Faturamento" value={money(dash.current.revenue)} current={Number(dash.current.revenue)} previous={Number(dash.previous.revenue)} sub={`vs. ${period.previous}`} />
             <Kpi label="Vendas" value={String(dash.current.count)} current={dash.current.count} previous={dash.previous.count} sub={`${quantity(dash.current.items)} itens`} />
             <Kpi label="Ticket médio" value={money(dash.current.ticket)} current={Number(dash.current.ticket)} previous={Number(dash.previous.ticket)} />
-            <Kpi
-              label="Lucro bruto"
-              value={money(dash.current.profit)}
-              current={Number(dash.current.profit)}
-              previous={Number(dash.previous.profit)}
-              sub={dash.current.margin ? `margem ${dash.current.margin.replace(".", ",")}%` : undefined}
-            />
+            {canCosts ? (
+              <Kpi
+                label="Lucro real"
+                value={money(dash.current.realProfit)}
+                current={Number(dash.current.realProfit)}
+                previous={Number(dash.previous.realProfit)}
+                sub={`bruto ${money(dash.current.profit)} · outros custos ${money(dash.current.otherCosts)}`}
+              />
+            ) : (
+              <Kpi
+                label="Lucro bruto"
+                value={money(dash.current.profit)}
+                current={Number(dash.current.profit)}
+                previous={Number(dash.previous.profit)}
+                sub={dash.current.margin ? `margem ${dash.current.margin.replace(".", ",")}%` : undefined}
+              />
+            )}
           </div>
 
           <div className="dash-grid">

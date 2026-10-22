@@ -8,6 +8,11 @@ import { emitEvent } from "../../outbox.ts";
 import { PERMISSIONS, SYSTEM_ROLES } from "../../permissions.ts";
 
 // Unidades de medida com que toda empresa começa: código, nome, casas decimais.
+// Tipos de custo iniciais; a empresa renomeia, desativa ou cria outros.
+const DEFAULT_COST_TYPES = [
+  "Entrega", "Instalação", "Montagem", "Mão de obra", "Frete de compra", "Embalagem", "Taxa de cartão", "Comissão", "Combustível", "Outros",
+];
+
 const DEFAULT_UNITS: ReadonlyArray<readonly [string, string, number]> = [
   ["UN", "Unidade", 0], ["KG", "Quilograma", 3], ["G", "Grama", 0], ["L", "Litro", 3],
   ["ML", "Mililitro", 0], ["CX", "Caixa", 0], ["PCT", "Pacote", 0], ["M", "Metro", 2],
@@ -50,6 +55,11 @@ export async function createOrganizationTx(
     `INSERT INTO controle_vendas_estoque.units (organization_id, code, name, decimals)
      SELECT $1, code, name, decimals FROM unnest($2::text[], $3::text[], $4::smallint[]) AS u(code, name, decimals)`,
     [organizationId, DEFAULT_UNITS.map((u) => u[0]), DEFAULT_UNITS.map((u) => u[1]), DEFAULT_UNITS.map((u) => u[2])],
+  );
+
+  await tx.query(
+    `INSERT INTO controle_vendas_estoque.cost_types (organization_id, name) SELECT $1, unnest($2::text[])`,
+    [organizationId, DEFAULT_COST_TYPES],
   );
 
   let ownerRoleId = "";

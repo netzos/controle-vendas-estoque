@@ -2,7 +2,7 @@
 
 import { useActionState, useState } from "react";
 import type { Category, CustomField, Product, Supplier, Unit } from "@erp/core";
-import { ITEM_TYPES, type ItemType } from "@erp/core/labels";
+import { ITEM_TYPES, STEP_SUGGESTIONS, type ItemType } from "@erp/core/labels";
 import { Field, FormMessage, SubmitButton } from "@/components/form";
 import { decimalInput } from "@/lib/format";
 import { createProductAction, updateProductAction } from "./actions";
@@ -46,6 +46,62 @@ function CustomInput({ field, value, state }: { field: CustomField; value: unkno
         />
       )}
     </Field>
+  );
+}
+
+// Etapas depois da venda (entrega, instalação, montagem...). Vão para a action
+// como JSON no campo "afterSaleSteps".
+function StepsEditor({ initial }: { initial: string[] }) {
+  const [steps, setSteps] = useState(initial);
+  const [draft, setDraft] = useState("");
+  const has = (n: string) => steps.some((s) => s.toLowerCase() === n.toLowerCase());
+  const add = (n: string) => {
+    const name = n.trim();
+    if (name.length >= 2 && !has(name) && steps.length < 10) setSteps([...steps, name]);
+    setDraft("");
+  };
+  const move = (i: number, d: number) => {
+    const next = [...steps];
+    [next[i], next[i + d]] = [next[i + d]!, next[i]!];
+    setSteps(next);
+  };
+  return (
+    <div className="steps-editor">
+      <input type="hidden" name="afterSaleSteps" value={JSON.stringify(steps)} />
+      {steps.length === 0 ? (
+        <p className="muted">Nenhuma. A venda termina no pagamento.</p>
+      ) : (
+        <ol className="step-chips">
+          {steps.map((s, i) => (
+            <li key={s}>
+              <span className="step-num">{i + 1}</span>
+              {s}
+              {i > 0 && <button type="button" className="link" aria-label={`Subir ${s}`} onClick={() => move(i, -1)}>↑</button>}
+              <button type="button" className="link" aria-label={`Tirar ${s}`} onClick={() => setSteps(steps.filter((x) => x !== s))}>×</button>
+            </li>
+          ))}
+        </ol>
+      )}
+      <div className="step-add">
+        {STEP_SUGGESTIONS.filter((s) => !has(s)).map((s) => (
+          <button type="button" key={s} className="secondary small" onClick={() => add(s)}>+ {s}</button>
+        ))}
+        <input
+          aria-label="Outra etapa"
+          placeholder="Outra etapa"
+          value={draft}
+          maxLength={60}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              add(draft);
+            }
+          }}
+        />
+        {draft.trim().length >= 2 && <button type="button" className="secondary small" onClick={() => add(draft)}>Adicionar</button>}
+      </div>
+    </div>
   );
 }
 
@@ -130,6 +186,12 @@ export function ProductForm({ product, options }: { product?: Product; options: 
           {custom.filter((f) => f.fieldType === "boolean").map((f) => <CustomInput key={f.id} field={f} value={product?.customValues[f.key]} state={state} />)}
         </>
       )}
+      <h3 className="form-section">Depois da venda</h3>
+      <p className="muted small-text">
+        O que ainda acontece depois de vender este item, como entrega, instalação ou montagem. Cada venda dele já nasce com essas etapas
+        para acompanhar prazo, responsável e custo. Deixe vazio se a venda termina no pagamento.
+      </p>
+      <StepsEditor initial={product?.afterSaleSteps ?? []} />
       <Field label="Descrição" name="description" state={state}>
         <textarea id="description" name="description" defaultValue={product?.description ?? ""} maxLength={2000} rows={2} />
       </Field>
