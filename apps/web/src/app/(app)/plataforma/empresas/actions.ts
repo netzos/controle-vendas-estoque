@@ -1,8 +1,9 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createPlatformOrganization, platformOwnerPasswordLink, setOrganizationStatus } from "@erp/core";
-import { currentActor } from "@/lib/auth";
+import { createPlatformOrganization, joinOrganizationForSupport, platformOwnerPasswordLink, setOrganizationStatus, switchOrganization } from "@erp/core";
+import { redirect } from "next/navigation";
+import { currentActor, requireSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { str, toFormState, type FormState } from "@/lib/actions";
 
@@ -69,4 +70,14 @@ export async function organizationStatusAction(_: FormState, form: FormData): Pr
   } catch (err) {
     return toFormState(err);
   }
+}
+
+/** Abre a empresa (entrando para dar suporte se ainda não participa) e vai para a tela inicial dela. */
+export async function openOrganizationAction(form: FormData): Promise<void> {
+  const actor = await currentActor();
+  const id = str(form, "organizationId");
+  if (str(form, "join") === "1") await joinOrganizationForSupport(db(), actor, id);
+  await switchOrganization(db(), await requireSession(), id);
+  revalidatePath("/", "layout");
+  redirect("/");
 }

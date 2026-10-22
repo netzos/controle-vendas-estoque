@@ -4,6 +4,9 @@ import {
   AppError,
   createPlatformOrganization,
   inspectPasswordToken,
+  joinOrganizationForSupport,
+  login,
+  switchOrganization,
   listMembers,
   listPlatformOrganizations,
   listUserOrganizations,
@@ -98,5 +101,22 @@ describe("empresas da plataforma", () => {
       createPlatformOrganization(t.app, dev, { organizationName: "apple ends", ownerName: "Beto", ownerEmail: "b@teste.com" }),
       rejectsWith("conflict"),
     );
+  });
+
+  it("entrar para dar suporte fica registrado e o login abre a última empresa usada", async () => {
+    const pepe = (await listPlatformOrganizations(t.app, dev.userId)).find((o) => o.name === "Loja do Pepe")!;
+    await assert.rejects(joinOrganizationForSupport(t.app, other, pepe.id), rejectsWith("forbidden"));
+    await joinOrganizationForSupport(t.app, dev, pepe.id);
+    const inside = await actorFor(t.app, dev.userId, pepe.id);
+    assert.equal(inside.isOwner, false);
+    const members = await runService(t.app, listMembers, inside, {});
+    assert.equal(members.length, 2);
+
+    const first = await login(t.app, { email: "anne@appleends.com", password: "senha-da-anne-123" });
+    const orgs = await listUserOrganizations(t.app, first.session.userId);
+    const segunda = orgs.find((o) => o.name === "Segunda loja")!;
+    await switchOrganization(t.app, first.session, segunda.id);
+    const again = await login(t.app, { email: "anne@appleends.com", password: "senha-da-anne-123" });
+    assert.equal(again.session.activeOrganizationId, segunda.id);
   });
 });
