@@ -32,6 +32,8 @@ after(() => t.close());
 beforeEach(() => {
   process.env.ANTHROPIC_API_KEY = "teste";
   process.env.TELEGRAM_BOT_TOKEN = "123:teste";
+  delete process.env.OPENAI_API_KEY;
+  delete process.env.GROQ_API_KEY;
 });
 
 // Telegram falso: guarda o que o robô mandou.
@@ -46,7 +48,12 @@ function fakeApi() {
       if (method === "getWebhookInfo") return { url: webhook } as T;
       if (method === "setWebhook") webhook = String(params.url);
       if (method === "sendMessage") return { message_id: id++ } as T;
+      if (method === "getFile") return { file_path: `voice/${String(params.file_id)}.oga` } as T;
       return true as T;
+    },
+    async download(filePath: string) {
+      calls.push({ method: "download", params: { filePath } });
+      return new TextEncoder().encode("audio");
     },
   };
   const sent = () => calls.filter((c) => c.method === "sendMessage").map((c) => String(c.params.text));
@@ -149,6 +156,38 @@ describe("Netz no Telegram", () => {
     await handleTelegramUpdate(t.app, { update_id: nextUpdate++, message: { message_id: 1, chat: { id: -5, type: "group" }, from: tgUser, text: "oi" } }, { api: f.api });
     assert.match(f.sent()[0]!, /privado/);
     await handleTelegramUpdate(t.app, { update_id: nextUpdate++, message: { message_id: 2, chat: { id: 777, type: "private" }, from: tgUser } }, { api: f.api });
-    assert.match(f.sent()[1]!, /só mensagens de texto/);
+    assert.match(f.sent()[1]!, /texto e áudio/);
+  });
+
+  it("áudio é transcrito e vira mensagem para a Netz", async () => {
+    const f = fakeApi();
+    const { url } = await createTelegramLink(t.app, owner, { api: f.api });
+    await handleTelegramUpdate(t.app, text(`/start ${url.split("start=")[1]}`), { api: f.api });
+    const heard: string[] = [];
+    const transcribe = async (a: { fileName: string }) => {
+      heard.push(a.fileName);
+      return "quanto tenho de estoque do orient";
+    };
+    const model = script([{ type: "text", text: "Você tem 0 unidades." }]);
+    const voice = (extra: Partial<TelegramUpdate["message"] & object> = {}): TelegramUpdate => ({
+      update_id: nextUpdate++,
+      message: { message_id: nextUpdate, chat: { id: 777, type: "private" }, from: tgUser, voice: { file_id: "abc", duration: 4 }, ...extra },
+    });
+    await handleTelegramUpdate(t.app, voice(), { api: f.api, model, transcribe });
+    assert.deepEqual(heard, ["voz.ogg"]);
+    assert.ok(f.calls.some((c) => c.method === "download" && c.params.filePath === "voice/abc.oga"));
+    assert.equal(f.sent().at(-2), '🎤 Entendi: "quanto tenho de estoque do orient"');
+    assert.equal(f.sent().at(-1), "Você tem 0 unidades.");
+    const { messages } = await listNetsMessages(t.app, owner);
+    const asked = messages.filter((m) => m.role === "user").at(-1)!;
+    assert.equal(asked.body, "quanto tenho de estoque do orient");
+    assert.match(asked.context ?? "", /voz transcrita/);
+
+    // Longo demais: avisa sem baixar.
+    await handleTelegramUpdate(t.app, voice({ voice: { file_id: "longo", duration: 3600 } }), { api: f.api, transcribe });
+    assert.match(f.sent().at(-1)!, /longo demais/);
+    // Sem chave de transcrição: pede texto.
+    await handleTelegramUpdate(t.app, voice(), { api: f.api });
+    assert.match(f.sent().at(-1)!, /não consigo ouvir/);
   });
 });

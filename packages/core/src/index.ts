@@ -12,6 +12,7 @@ export * from "./auth/session.ts";
 export * from "./auth/account.ts";
 export * from "./auth/recovery.ts";
 export * from "./mail.ts";
+export * from "./transcribe.ts";
 export * from "./modules/organizations/bootstrap.ts";
 export * from "./modules/organizations/service.ts";
 export * from "./modules/access/members.ts";

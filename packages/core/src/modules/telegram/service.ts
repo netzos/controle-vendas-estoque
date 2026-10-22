@@ -4,6 +4,7 @@ import { withTenant, withTransaction } from "@erp/db";
 import { can, resolveActor, type Actor } from "../../context.ts";
 import { AppError, forbidden } from "../../errors.ts";
 import { appUrl } from "../../mail.ts";
+import { transcribeAudio, transcriptionConfigured, type Transcriber } from "../../transcribe.ts";
 import { decideNetsAction, postNetsMessage, processNetsTurn, type NetsModel } from "../nets/service.ts";
 import { telegramApi, telegramConfigured, telegramWebhookSecret, type TelegramApi } from "./api.ts";
 
@@ -13,10 +14,14 @@ import { telegramApi, telegramConfigured, telegramWebhookSecret, type TelegramAp
 
 const CODE_TTL_MINUTES = 15;
 const TEXT_LIMIT = 4000;
+// Limites do áudio: o getFile do Telegram só entrega até 20 MB.
+const AUDIO_MAX_SECONDS = 10 * 60;
+const AUDIO_MAX_BYTES = 20 * 1024 * 1024;
 
 export interface TelegramDeps {
   api?: TelegramApi;
   model?: NetsModel;
+  transcribe?: Transcriber;
 }
 
 export interface TelegramStatus {
@@ -111,6 +116,16 @@ interface TgMessage {
   from?: TgUser;
   text?: string;
   caption?: string;
+  voice?: TgMedia;
+  audio?: TgMedia & { file_name?: string };
+  video_note?: TgMedia;
+}
+
+interface TgMedia {
+  file_id: string;
+  duration?: number;
+  mime_type?: string;
+  file_size?: number;
 }
 
 export interface TelegramUpdate {
@@ -216,12 +231,39 @@ async function connect(db: Db, api: TelegramApi, msg: TgMessage, code: string) {
     api,
     msg.chat.id,
     `Pronto${from.first_name ? `, ${from.first_name}` : ""}! Sua conta está ligada à empresa ${org}.\n\n` +
-      "Pode me pedir em texto o que faria no painel: registrar venda, cadastrar produto, ver estoque, lançar custo... " +
+      "Pode me pedir em texto ou por áudio o que faria no painel: registrar venda, cadastrar produto, ver estoque, lançar custo... " +
       "Antes de mudar qualquer coisa eu mostro o que vou fazer e você confirma.\n\nPara desligar, envie /sair.",
   );
 }
 
-async function onMessage(db: Db, api: TelegramApi, update: TelegramUpdate, model?: NetsModel) {
+/** Baixa o áudio, transcreve e mostra o que entendeu. Devolve null quando já avisou a pessoa. */
+async function hear(api: TelegramApi, msg: TgMessage, transcribe?: Transcriber): Promise<string | null> {
+  const voice = msg.voice ?? msg.video_note;
+  const media = (voice ?? msg.audio)!;
+  if (!transcribe && !transcriptionConfigured()) {
+    await send(api, msg.chat.id, "Ainda não consigo ouvir áudios por aqui. Por enquanto, mande em texto.");
+    return null;
+  }
+  if ((media.duration ?? 0) > AUDIO_MAX_SECONDS || (media.file_size ?? 0) > AUDIO_MAX_BYTES) {
+    await send(api, msg.chat.id, "Esse áudio é longo demais para mim (até 10 minutos). Pode mandar em partes?");
+    return null;
+  }
+  await api.call("sendChatAction", { chat_id: msg.chat.id, action: "typing" }).catch(() => {});
+  const file = await api.call<{ file_path?: string }>("getFile", { file_id: media.file_id });
+  if (!file.file_path) throw new Error("Telegram getFile sem file_path");
+  const data = await api.download(file.file_path);
+  // A voz do Telegram vem como .oga, extensão que a API de transcrição não reconhece.
+  const fileName = msg.voice ? "voz.ogg" : msg.video_note ? "video.mp4" : (msg.audio?.file_name ?? file.file_path.split("/").pop() ?? "audio.mp3");
+  const heard = (await (transcribe ?? transcribeAudio)({ data, fileName, mimeType: msg.voice ? "audio/ogg" : media.mime_type })).trim();
+  if (!heard) {
+    await send(api, msg.chat.id, "Não consegui entender o áudio. Pode repetir ou mandar em texto?");
+    return null;
+  }
+  await send(api, msg.chat.id, `🎤 Entendi: "${heard}"`);
+  return heard;
+}
+
+async function onMessage(db: Db, api: TelegramApi, update: TelegramUpdate, deps: TelegramDeps) {
   const msg = update.message!;
   if (!msg.from) return;
   if (msg.chat.type !== "private") {
@@ -251,21 +293,33 @@ async function onMessage(db: Db, api: TelegramApi, update: TelegramUpdate, model
     await send(api, msg.chat.id, `Oi${link.firstName ? `, ${link.firstName}` : ""}! Sua conta já está ligada. É só me dizer o que precisa.`);
     return;
   }
-  if (!text) {
-    await send(api, msg.chat.id, "Por enquanto eu entendo só mensagens de texto. Áudio e foto chegam em breve.");
+  let said = text;
+  const spoken = !!(msg.voice ?? msg.audio ?? msg.video_note);
+  if (spoken) {
+    const heard = await hear(api, msg, deps.transcribe);
+    if (heard === null) return;
+    // A legenda do áudio, se houver, vai junto.
+    said = text ? `${heard}\n\n${text}` : heard;
+  }
+  if (!said) {
+    await send(api, msg.chat.id, "Por enquanto eu entendo texto e áudio. Foto chega em breve.");
     return;
   }
 
   let posted: { id: string; queued: boolean };
   try {
-    posted = await postNetsMessage(db, actor, { requestId: stableUuid(`tg:${update.update_id}`), text: text.slice(0, 12000), context: "Telegram" });
+    posted = await postNetsMessage(db, actor, {
+      requestId: stableUuid(`tg:${update.update_id}`),
+      text: said.slice(0, 12000),
+      context: spoken ? "Telegram (mensagem de voz transcrita automaticamente; pode ter erros de transcrição)" : "Telegram",
+    });
   } catch (err) {
     await send(api, msg.chat.id, err instanceof AppError ? err.message : "Não consegui receber a mensagem. Tente de novo.");
     return;
   }
   if (posted.queued) {
     await api.call("sendChatAction", { chat_id: msg.chat.id, action: "typing" }).catch(() => {});
-    await processNetsTurn(db, { organizationId: actor.organizationId, userId: actor.userId, messageId: posted.id, channel: "telegram" }, { model });
+    await processNetsTurn(db, { organizationId: actor.organizationId, userId: actor.userId, messageId: posted.id, channel: "telegram" }, { model: deps.model });
   }
   await deliver(db, api, actor, link.chatId, posted.id);
 }
@@ -316,7 +370,7 @@ export async function handleTelegramUpdate(db: Db, update: TelegramUpdate, deps:
   if (!fresh.rowCount) return;
   const api = deps.api ?? telegramApi;
   try {
-    if (update.message) await onMessage(db, api, update, deps.model);
+    if (update.message) await onMessage(db, api, update, deps);
     else if (update.callback_query) await onCallback(db, api, update, deps.model);
   } catch (err) {
     console.error("telegram update failed", err instanceof Error ? err.message : err);
