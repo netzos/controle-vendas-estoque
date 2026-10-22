@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { can, ITEM_TYPES, listCategories, listCustomFields, listProductImages, listProducts, listSupplierProducts, listSuppliers, listUnits } from "@erp/core";
+import { can, ITEM_TYPES, listCategories, ORDER_STEP, listStepTypes, listCustomFields, listProductImages, listProducts, listSupplierProducts, listSuppliers, listUnits } from "@erp/core";
 import { requirePermission } from "@/lib/auth";
 import { query } from "@/lib/actions";
 import { money, quantity } from "@/lib/format";
@@ -33,15 +33,15 @@ export default async function ProductsPage({
   ]);
   let options: ProductFormOptions | null = null;
   if (canManage && (params.novo === "1" || selected)) {
-    const [units, customFields] = await Promise.all([query(listUnits, {}), query(listCustomFields, {})]);
-    options = { categories, units, suppliers, customFields, canEditPrice: can(actor, "products.update_price") };
+    const [units, customFields, stepTypes] = await Promise.all([query(listUnits, {}), query(listCustomFields, {}), query(listStepTypes, {})]);
+    options = { categories, units, suppliers, customFields, stepNames: stepTypes.map((t) => t.name).filter((n) => n !== ORDER_STEP), canEditPrice: can(actor, "products.update_price") };
   }
 
   return (
     <>
       <div className="page-header">
         <h1>Produtos</h1>
-        <p>Tudo o que você vende: produtos em estoque, sob encomenda, serviços e produção própria.</p>
+        <p>Tudo o que você vende: produtos em estoque, só por encomenda, serviços e produção própria.</p>
       </div>
 
       {options && params.novo === "1" && (

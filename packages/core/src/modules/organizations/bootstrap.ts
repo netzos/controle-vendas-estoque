@@ -13,6 +13,17 @@ const DEFAULT_COST_TYPES = [
   "Entrega", "Instalação", "Montagem", "Mão de obra", "Frete de compra", "Embalagem", "Taxa de cartão", "Comissão", "Combustível", "Outros",
 ];
 
+// Etapas depois da venda com que toda empresa começa: nome e para que serve.
+export const DEFAULT_STEP_TYPES: ReadonlyArray<readonly [string, string]> = [
+  ["Encomenda", "Pedir ao fornecedor ou produzir o que foi vendido sem estoque."],
+  ["Entrega", "Levar até o cliente."],
+  ["Instalação", "Instalar no local do cliente."],
+  ["Montagem", "Montar no local do cliente."],
+  ["Retirada na loja", "O cliente busca na loja."],
+  ["Ajuste", "Ajuste ou acerto depois da venda."],
+  ["Personalização", "Gravação, pintura ou outro acabamento sob pedido."],
+];
+
 const DEFAULT_UNITS: ReadonlyArray<readonly [string, string, number]> = [
   ["UN", "Unidade", 0], ["KG", "Quilograma", 3], ["G", "Grama", 0], ["L", "Litro", 3],
   ["ML", "Mililitro", 0], ["CX", "Caixa", 0], ["PCT", "Pacote", 0], ["M", "Metro", 2],
@@ -60,6 +71,11 @@ export async function createOrganizationTx(
   await tx.query(
     `INSERT INTO controle_vendas_estoque.cost_types (organization_id, name) SELECT $1, unnest($2::text[])`,
     [organizationId, DEFAULT_COST_TYPES],
+  );
+  await tx.query(
+    `INSERT INTO controle_vendas_estoque.step_types (organization_id, name, description, position)
+     SELECT $1, t.name, t.description, t.ord - 1 FROM unnest($2::text[], $3::text[]) WITH ORDINALITY AS t(name, description, ord)`,
+    [organizationId, DEFAULT_STEP_TYPES.map((t) => t[0]), DEFAULT_STEP_TYPES.map((t) => t[1])],
   );
 
   let ownerRoleId = "";

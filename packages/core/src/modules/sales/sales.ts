@@ -4,6 +4,7 @@ import { AppError, notFound } from "../../errors.ts";
 import { defineService } from "../../service.ts";
 import { decimalField, optionalText, uuidOrNull } from "../catalog/fields.ts";
 import { applyMovement, averageCost } from "../stock/movements.ts";
+import { ORDER_STEP } from "../../labels.ts";
 import { cancelFollowup, followupInput, insertFollowup } from "./followups.ts";
 
 export type PaymentMethod = "cash" | "pix" | "credit" | "debit" | "other";
@@ -36,6 +37,8 @@ export interface SaleItem {
   quantity: string;
   unitPrice: string;
   total: string;
+  /** Quanto foi vendido sem ter em estoque (por encomenda). */
+  backorderQty: string;
 }
 
 export interface Sale {
@@ -116,9 +119,12 @@ export const createSale = defineService({
     }
 
     const ids = [...new Set(input.items.map((i) => i.productId))];
-    const products = await tx.query<{ id: string; name: string; price: string; cost: string; track: boolean; status: string }>(
-      `SELECT id, name, sale_price::text AS price, cost_price::text AS cost, track_stock AS track, status
-         FROM controle_vendas_estoque.products WHERE id = ANY($1::uuid[])`,
+    const products = await tx.query<{
+      id: string; name: string; price: string; cost: string; track: boolean; status: string; stock: string; backorder: boolean; type: string;
+    }>(
+      `SELECT id, name, sale_price::text AS price, cost_price::text AS cost, track_stock AS track, status,
+              stock_qty::text AS stock, backorder, item_type AS type
+         FROM controle_vendas_estoque.products WHERE id = ANY($1::uuid[]) ORDER BY id FOR UPDATE`,
       [ids],
     );
     const byId = new Map(products.rows.map((p) => [p.id, p]));
@@ -131,8 +137,28 @@ export const createSale = defineService({
       if (item.unitPrice !== undefined && Number(item.unitPrice) !== Number(p.price) && !can(actor, "sales.change_price")) {
         throw new AppError("forbidden", `Você não tem permissão para mudar o preço de ${p.name}.`);
       }
-      return { ...item, product: p, unitPrice: item.unitPrice ?? p.price };
+      return { ...item, product: p, unitPrice: item.unitPrice ?? p.price, backorder: 0 };
     });
+
+    // O que passa do estoque vira encomenda (o saldo fica negativo) ou é
+    // barrado, conforme o produto. "Só por encomenda" é sempre encomenda.
+    // Quantidades em milésimos para não somar com erro de ponto flutuante.
+    const used = new Map<string, number>();
+    for (const l of lines) {
+      const qty = Math.round(Number(l.quantity) * 1000);
+      if (l.product.type === "made_to_order") {
+        l.backorder = qty;
+        continue;
+      }
+      if (!l.product.track) continue;
+      const free = Math.max(Math.round(Number(l.product.stock) * 1000) - (used.get(l.productId) ?? 0), 0);
+      used.set(l.productId, (used.get(l.productId) ?? 0) + qty);
+      if (qty <= free) continue;
+      if (!l.product.backorder) {
+        throw new AppError("invalid_input", `${l.product.name}: só tem ${fmtQty(free)} em estoque e este produto não vende por encomenda.`);
+      }
+      l.backorder = qty - free;
+    }
 
     // Totais calculados no banco, em numeric.
     const totals = await tx.query<{ subtotal: string; cost: string }>(
@@ -174,9 +200,9 @@ export const createSale = defineService({
 
     for (const l of lines) {
       await tx.query(
-        `INSERT INTO controle_vendas_estoque.sale_items (organization_id, sale_id, product_id, quantity, unit_price, unit_cost, total)
-         VALUES ($1, $2, $3, $4, $5, $6, round($4::numeric * $5::numeric, 2))`,
-        [actor.organizationId, sale.id, l.productId, l.quantity, l.unitPrice, l.product.cost],
+        `INSERT INTO controle_vendas_estoque.sale_items (organization_id, sale_id, product_id, quantity, unit_price, unit_cost, total, backorder_qty)
+         VALUES ($1, $2, $3, $4, $5, $6, round($4::numeric * $5::numeric, 2), $7)`,
+        [actor.organizationId, sale.id, l.productId, l.quantity, l.unitPrice, l.product.cost, (l.backorder / 1000).toFixed(3)],
       );
       if (l.product.track) {
         await applyMovement(tx, actor, { productId: l.productId, kind: "sale", quantity: `-${l.quantity}`, unitCost: l.product.cost, saleId: sale.id });
@@ -219,7 +245,9 @@ export const createSale = defineService({
 
     // Produtos com etapas depois da venda (entrega, instalação...) abrem o
     // acompanhamento mesmo que o caixa não tenha informado nada.
-    await insertFollowup(tx, actor, sale.id, ids, input.followup ?? {});
+    // O que foi vendido sem estoque entra como a etapa Encomenda, com o que pedir.
+    const owed = lines.filter((l) => l.backorder > 0).map((l) => `${fmtQty(l.backorder)} × ${l.product.name}`);
+    await insertFollowup(tx, actor, sale.id, ids, input.followup ?? {}, owed.length > 0 ? [{ name: ORDER_STEP, notes: `Pedir: ${owed.join("; ")}` }] : []);
 
     await audit({
       action: "sale.create",
@@ -295,7 +323,8 @@ export const getSale = defineService({
     if (!rows[0]) throw notFound("Venda");
     const items = await tx.query<SaleItem>(
       `SELECT i.id, i.product_id AS "productId", p.name AS "productName", p.sku AS "productSku", u.code AS "unitCode",
-              i.quantity::text AS quantity, i.unit_price::text AS "unitPrice", i.total::text AS total
+              i.quantity::text AS quantity, i.unit_price::text AS "unitPrice", i.total::text AS total,
+              i.backorder_qty::text AS "backorderQty"
          FROM controle_vendas_estoque.sale_items i
          JOIN controle_vendas_estoque.products p ON p.id = i.product_id
          JOIN controle_vendas_estoque.units u ON u.id = p.unit_id
@@ -449,3 +478,8 @@ export const salesDashboard = defineService({
     } satisfies SalesDashboard;
   },
 });
+
+// Milésimos → "2" ou "1,5".
+function fmtQty(thousandths: number) {
+  return String(thousandths / 1000).replace(".", ",");
+}

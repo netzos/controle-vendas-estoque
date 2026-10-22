@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useActionState, useState } from "react";
 import type { SaleStep } from "@erp/core";
-import { STEP_STATUS, STEP_SUGGESTIONS, type StepStatus } from "@erp/core/labels";
+import { STEP_STATUS, type StepStatus } from "@erp/core/labels";
 import { Field, FormMessage, SubmitButton } from "@/components/form";
 import { money } from "@/lib/format";
 import { createFollowupAction, updateStepAction } from "./actions";
@@ -104,7 +104,7 @@ export function StepRow({ step, today, canManage, showSale = true }: { step: Sal
   );
 }
 
-export function AddStepsForm({ saleId, hasFollowup, today }: { saleId: string; hasFollowup: boolean; today: string }) {
+export function AddStepsForm({ saleId, hasFollowup, today, stepNames }: { saleId: string; hasFollowup: boolean; today: string; stepNames: string[] }) {
   const [state, action] = useActionState(createFollowupAction, null);
   return (
     <details className="imp-correct">
@@ -113,7 +113,7 @@ export function AddStepsForm({ saleId, hasFollowup, today }: { saleId: string; h
         <FormMessage state={state} />
         <input type="hidden" name="saleId" value={saleId} />
         <div className="check-row">
-          {STEP_SUGGESTIONS.map((s) => (
+          {stepNames.map((s) => (
             <label className="check" key={s}><input type="checkbox" name="step" value={s} /> {s}</label>
           ))}
         </div>
@@ -121,7 +121,7 @@ export function AddStepsForm({ saleId, hasFollowup, today }: { saleId: string; h
           <Field label="Outra etapa" name="otherStep" state={state}>
             <input id={`os-${saleId}`} name="otherStep" maxLength={60} placeholder="Ex.: Pintura" />
           </Field>
-          <Field label="Prazo" name="scheduledFor" state={state}>
+          <Field label="Prazo" name="scheduledFor" state={state} hint="Vazio usa o prazo padrão da etapa">
             <input id={`sf-${saleId}`} name="scheduledFor" type="date" min={today} />
           </Field>
           {!hasFollowup && (

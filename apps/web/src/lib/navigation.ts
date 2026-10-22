@@ -42,6 +42,7 @@ export const NAVIGATION: NavGroup[] = [
     items: [
       { label: "Vendas", href: "/vendas", permission: "sales.view", phase: 2 },
       { label: "Entregas", href: "/entregas", permission: "deliveries.view", phase: 2 },
+      { label: "Etapas depois da venda", href: "/etapas", permission: "deliveries.view", phase: 2 },
       { label: "Orçamentos", href: "/orcamentos", phase: 3 },
       { label: "Clientes", href: "/clientes", permission: "customers.view", phase: 2 },
       { label: "Vendedores", href: "/vendedores", phase: 3 },

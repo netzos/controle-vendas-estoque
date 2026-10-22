@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { can, getOrganization, getSale, getSaleFollowup, listSales, orgDate, PAYMENT_LABELS } from "@erp/core";
+import { can, getOrganization, getSale, getSaleFollowup, listSales, listStepTypes, orgDate, PAYMENT_LABELS } from "@erp/core";
 import { requirePermission } from "@/lib/auth";
 import { query } from "@/lib/actions";
 import { money, quantity } from "@/lib/format";
@@ -17,9 +17,9 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
     params.id ? query(getSale, { id: params.id }).catch(() => null) : null,
   ]);
   const seesSteps = can(actor, "deliveries.view");
-  const [followup, today] = selected && seesSteps
-    ? await Promise.all([query(getSaleFollowup, { saleId: selected.id }), query(orgDate, {})])
-    : [null, ""];
+  const [followup, today, stepTypes] = selected && seesSteps
+    ? await Promise.all([query(getSaleFollowup, { saleId: selected.id }), query(orgDate, {}), query(listStepTypes, {})])
+    : [null, "", []];
   const canSteps = can(actor, "deliveries.manage");
   const fmt = new Intl.DateTimeFormat("pt-BR", { timeZone: org.timezone, dateStyle: "short", timeStyle: "short" });
 
@@ -45,7 +45,10 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
               <tbody>
                 {selected.items.map((i) => (
                   <tr key={i.id}>
-                    <td>{i.productName}</td>
+                    <td>
+                      {i.productName}
+                      {Number(i.backorderQty) > 0 && <small className="muted">{quantity(i.backorderQty)} por encomenda</small>}
+                    </td>
                     <td className="num">{quantity(i.quantity)} {i.unitCode}</td>
                     <td className="num">{money(i.unitPrice)}</td>
                     <td className="num">{money(i.total)}</td>
@@ -92,7 +95,7 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
               </ul>
             </>
           )}
-          {selected.status === "completed" && canSteps && <AddStepsForm saleId={selected.id} hasFollowup={!!followup} today={today} />}
+          {selected.status === "completed" && canSteps && <AddStepsForm saleId={selected.id} hasFollowup={!!followup} today={today} stepNames={stepTypes.map((t) => t.name)} />}
           {selected.status === "cancelled" && <p className="muted">Cancelada: {selected.cancelReason}</p>}
           {selected.status === "completed" && can(actor, "sales.cancel") && <CancelSaleForm id={selected.id} />}
         </section>

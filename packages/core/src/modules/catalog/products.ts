@@ -2,6 +2,7 @@ import { z } from "zod";
 import { can } from "../../context.ts";
 import { AppError, forbidden, notFound } from "../../errors.ts";
 import { defineService } from "../../service.ts";
+import { ensureStepTypes } from "../sales/followups.ts";
 import { applyMovement } from "../stock/movements.ts";
 import { ITEM_TYPES, type ItemType } from "../../labels.ts";
 import { cleanCustomValues, type CustomValues } from "./custom-fields.ts";
@@ -42,6 +43,8 @@ export interface Product {
   /** Falso para serviços e itens sem estoque. */
   trackStock: boolean;
   itemType: ItemType;
+  /** Produto com estoque: quando acaba, segue vendendo por encomenda. */
+  backorder: boolean;
   customValues: CustomValues;
   /** Etapas depois da venda (ex.: Entrega, Instalação). */
   afterSaleSteps: string[];
@@ -204,7 +207,7 @@ export const updateUnit = defineService({
 const PRODUCT_COLUMNS = `p.id, p.sku, p.barcode, p.name, p.description, p.category_id AS "categoryId", c.name AS "categoryName",
   p.unit_id AS "unitId", u.code AS "unitCode", p.supplier_id AS "supplierId", s.name AS "supplierName",
   p.sale_price::text AS "salePrice", p.cost_price::text AS "costPrice", p.min_stock::text AS "minStock",
-  p.stock_qty::text AS "stockQty", p.track_stock AS "trackStock", p.item_type AS "itemType",
+  p.stock_qty::text AS "stockQty", p.track_stock AS "trackStock", p.item_type AS "itemType", p.backorder,
   p.custom_values AS "customValues", p.after_sale_steps AS "afterSaleSteps",
   (SELECT i.id FROM controle_vendas_estoque.product_images i WHERE i.product_id = p.id ORDER BY i.position, i.created_at LIMIT 1) AS "coverImageId",
   p.status, p.created_at AS "createdAt"`;
@@ -234,6 +237,7 @@ const productFields = z.object({
   costPrice: decimalField(4, "Custo"),
   minStock: decimalField(3, "Estoque mínimo"),
   itemType: z.enum(["stock", "made_to_order", "service", "production"]).default("stock"),
+  backorder: z.boolean().default(true),
   customValues: z.record(z.string(), z.unknown()).default({}),
   afterSaleSteps: z.array(z.string().trim().min(2, "Nome da etapa: ao menos 2 letras.").max(60))
     .max(10, "Até 10 etapas.")
@@ -314,12 +318,13 @@ export const createProduct = defineService({
     const { rows } = await tx.query<{ id: string }>(
       `INSERT INTO controle_vendas_estoque.products
          (organization_id, sku, barcode, name, description, category_id, unit_id, supplier_id, sale_price, cost_price, min_stock,
-          track_stock, item_type, custom_values, after_sale_steps)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING id`,
+          track_stock, item_type, custom_values, after_sale_steps, backorder)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) RETURNING id`,
       [actor.organizationId, input.sku, input.barcode ?? null, input.name, input.description ?? null, input.categoryId ?? null,
         input.unitId, input.supplierId ?? null, input.salePrice, input.costPrice, input.minStock, trackStock, input.itemType, JSON.stringify(custom),
-        input.afterSaleSteps],
+        input.afterSaleSteps, input.backorder],
     );
+    await ensureStepTypes(tx, actor.organizationId, input.afterSaleSteps);
     if (trackStock && Number(input.initialStock) > 0) {
       if (!can(actor, "stock.manage")) throw forbidden("Você não tem permissão para lançar estoque. Cadastre sem estoque inicial.");
       await applyMovement(tx, actor, { productId: rows[0]!.id, kind: "in", quantity: input.initialStock, unitCost: input.costPrice, notes: "Estoque inicial" });
@@ -349,14 +354,15 @@ export const updateProduct = defineService({
     await tx.query(
       `UPDATE controle_vendas_estoque.products SET sku = $2, barcode = $3, name = $4, description = $5, category_id = $6,
               unit_id = $7, supplier_id = $8, sale_price = $9, cost_price = $10, min_stock = $11, status = $12, track_stock = $13,
-              item_type = $14, custom_values = $15, after_sale_steps = $16
+              item_type = $14, custom_values = $15, after_sale_steps = $16, backorder = $17
         WHERE id = $1`,
       [input.id, input.sku, input.barcode ?? null, input.name, input.description ?? null, input.categoryId ?? null, input.unitId,
         input.supplierId ?? null, input.salePrice, input.costPrice, input.minStock, input.status, ITEM_TYPES[input.itemType].tracksStock,
-        input.itemType, JSON.stringify(custom), input.afterSaleSteps],
+        input.itemType, JSON.stringify(custom), input.afterSaleSteps, input.backorder],
     );
+    await ensureStepTypes(tx, actor.organizationId, input.afterSaleSteps);
     const after = (await getProduct(tx, input.id))!;
-    const fields: string[] = (["sku", "barcode", "name", "description", "categoryId", "unitId", "supplierId", "salePrice", "costPrice", "minStock", "trackStock", "itemType", "status"] as const)
+    const fields: string[] = (["sku", "barcode", "name", "description", "categoryId", "unitId", "supplierId", "salePrice", "costPrice", "minStock", "trackStock", "itemType", "backorder", "status"] as const)
       .filter((f) => current[f] !== after[f]);
     if (JSON.stringify(current.customValues) !== JSON.stringify(after.customValues)) fields.push("customValues");
     if (current.afterSaleSteps.join("|") !== after.afterSaleSteps.join("|")) fields.push("afterSaleSteps");

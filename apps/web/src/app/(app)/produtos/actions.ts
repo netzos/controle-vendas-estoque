@@ -26,6 +26,7 @@ function fields(form: FormData) {
     minStock: str(form, "minStock"),
     itemType: (["stock", "made_to_order", "service", "production"].find((t) => t === str(form, "itemType")) ?? "stock") as
       "stock" | "made_to_order" | "service" | "production",
+    backorder: str(form, "backorder") !== "no",
     afterSaleSteps: jsonList(form, "afterSaleSteps"),
     customValues: Object.fromEntries(
       [...form.keys()].filter((k) => k.startsWith("cf_")).map((k) => [k.slice(3), str(form, k)]),

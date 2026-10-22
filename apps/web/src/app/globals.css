@@ -298,6 +298,9 @@ td small { display: block; font-size: 12.5px; }
 .cart-lines li { display: grid; grid-template-columns: 1fr auto auto; gap: 10px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--border); }
 .cart-name { display: flex; flex-direction: column; min-width: 0; }
 .cart-name small { color: var(--faint); }
+.cart-name small.cart-owed { color: var(--text); font-weight: 500; }
+.cart-name small.cart-owed.warn { color: var(--danger); }
+.pos-item:disabled { opacity: 0.45; cursor: not-allowed; }
 .cart-total { min-width: 82px; text-align: right; font-variant-numeric: tabular-nums; }
 .stepper { display: flex; align-items: center; gap: 4px; }
 .stepper button { width: 32px; height: 32px; padding: 0; justify-content: center; border-radius: 10px; }
@@ -445,3 +448,4 @@ td .tag { margin-left: 8px; font-size: 12px; padding: 1px 8px; }
   .nets-root { margin-bottom: 70px; }
   .nets-panel { position: fixed; left: 8px; right: 8px; top: 64px; bottom: 150px; width: auto; height: auto; }
 }
+.step-type-desc { display: block; margin-top: 4px; font-weight: 400; }

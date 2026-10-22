@@ -10,12 +10,14 @@ import {
   createProduct,
   createSale,
   createSaleFollowup,
+  createStepType,
   getSale,
   getSaleFollowup,
   listCosts,
   listCostTypes,
   listObtainingCosts,
   listSaleSteps,
+  listStepTypes,
   listProducts,
   listUnits,
   runService,
@@ -24,6 +26,7 @@ import {
   updateCostType,
   updateProduct,
   updateSaleStep,
+  updateStepType,
   type Actor,
 } from "../src/index.ts";
 import { actorFor, addUserWithRole, seedCompany, setupTestDb, type TestDb } from "./helpers.ts";
@@ -108,7 +111,9 @@ describe("depois da venda", () => {
       items: [{ productId: ar, quantity: "1" }, { productId: guarda, quantity: "1" }],
     });
     const f = await runService(t.app, getSaleFollowup, owner, { saleId: sale.id });
-    assert.deepEqual(f!.steps.map((x) => [x.name, x.status]), [["Entrega", "pending"], ["Instalação", "pending"], ["Montagem", "pending"]]);
+    // Guarda-roupa é só por encomenda: a venda já nasce com a etapa Encomenda.
+    assert.deepEqual(f!.steps.map((x) => [x.name, x.status]), [["Encomenda", "pending"], ["Entrega", "pending"], ["Instalação", "pending"], ["Montagem", "pending"]]);
+    assert.equal(f!.steps[0]!.notes, "Pedir: 1 × Guarda-roupa");
     // Produto sem etapas: venda sem acompanhamento.
     const plain = await runService(t.app, createSale, owner, { paymentMethod: "pix", items: [{ productId: lata, quantity: "1" }] });
     assert.equal(await runService(t.app, getSaleFollowup, owner, { saleId: plain.id }), null);
@@ -151,6 +156,9 @@ describe("depois da venda", () => {
     await runService(t.app, updateSaleStep, owner, { id: entrega.id, status: "done" });
     const montagem = (await runService(t.app, listSaleSteps, owner, { saleId: sale.id })).find((x) => x.name === "Montagem")!;
     await runService(t.app, updateSaleStep, owner, { id: montagem.id, status: "done", cost: "120" });
+    assert.equal((await runService(t.app, getSale, owner, { id: sale.id })).followupStatus, "open");
+    const encomenda = (await runService(t.app, listSaleSteps, owner, { saleId: sale.id })).find((x) => x.name === "Encomenda")!;
+    await runService(t.app, updateSaleStep, owner, { id: encomenda.id, status: "done" });
     // Tipo que não existia é criado na hora.
     costs = await runService(t.app, listCosts, owner, { saleId: sale.id });
     assert.deepEqual(costs.map((c) => c.amount).sort(), ["120.00", "65.00"]);
@@ -205,5 +213,68 @@ describe("custos e lucro real", () => {
     assert.equal(Number((await runService(t.app, costsOverview, owner, { period: "30d" })).costs), 185);
     const seller = await addUserWithRole(t.app, owner, "sales", "Vendedor");
     await assert.rejects(runService(t.app, createCost, seller.actor, { costTypeId: outros.id, amount: "5" }), rejectsWith("forbidden"));
+  });
+});
+
+describe("encomenda quando acaba e lista de etapas", () => {
+  it("produto de estoque vende por encomenda o que faltar; quem não aceita é barrado", async () => {
+    const un = (await runService(t.app, listUnits, owner, {})).find((u) => u.code === "UN")!.id;
+    const relogio = await runService(t.app, createProduct, owner, { sku: "REL", name: "Relógio", unitId: un, salePrice: "500", costPrice: "200", minStock: "0", initialStock: "2" });
+    assert.equal(relogio.backorder, true);
+    const sale = await runService(t.app, createSale, owner, { paymentMethod: "pix", items: [{ productId: relogio.id, quantity: "3" }, { productId: lata, quantity: "1" }] });
+    const full = await runService(t.app, getSale, owner, { id: sale.id });
+    assert.deepEqual(full.items.map((i) => [i.productName, i.backorderQty]), [["Lata de açaí", "0.000"], ["Relógio", "1.000"]]);
+    // O saldo fica negativo: 1 vendido que ainda precisa chegar.
+    assert.equal((await runService(t.app, listProducts, owner, { search: "Relógio" }))[0]!.stockQty, "-1.000");
+    const f = await runService(t.app, getSaleFollowup, owner, { saleId: sale.id });
+    assert.deepEqual(f!.steps.map((x) => [x.name, x.notes]), [["Encomenda", "Pedir: 1 × Relógio"]]);
+
+    // Com estoque suficiente, nada de encomenda.
+    const raro = await runService(t.app, createProduct, owner, { sku: "RARO", name: "Peça rara", unitId: un, salePrice: "900", costPrice: "0", minStock: "0", initialStock: "1", backorder: false });
+    const ok = await runService(t.app, createSale, owner, { paymentMethod: "pix", items: [{ productId: raro.id, quantity: "1" }] });
+    assert.equal(await runService(t.app, getSaleFollowup, owner, { saleId: ok.id }), null);
+    // Acabou e não vende por encomenda: barrado, conta também a mesma peça repetida no carrinho.
+    await assert.rejects(
+      runService(t.app, createSale, owner, { paymentMethod: "pix", items: [{ productId: raro.id, quantity: "1" }] }),
+      rejectsWith("invalid_input"),
+    );
+    await runService(t.app, updateProduct, owner, { ...raro, backorder: true, status: "active" });
+    const later = await runService(t.app, createSale, owner, { paymentMethod: "pix", items: [{ productId: raro.id, quantity: "1" }] });
+    assert.ok((await runService(t.app, getSaleFollowup, owner, { saleId: later.id }))!.steps.some((x) => x.name === "Encomenda"));
+  });
+
+  it("etapas da empresa: padrões aplicados na venda, renomear chega nos produtos", async () => {
+    const names = (await runService(t.app, listStepTypes, owner, {})).map((x) => x.name);
+    assert.ok(["Encomenda", "Entrega", "Instalação", "Montagem", "Retirada na loja"].every((n) => names.includes(n)));
+    assert.ok(!names.includes("Pintura"));
+    await assert.rejects(runService(t.app, createStepType, owner, { name: "entrega" }), rejectsWith("conflict"));
+    await runService(t.app, createStepType, owner, { name: "Pintura", defaultDays: 3, defaultResponsible: "Carlos", defaultCost: "40" });
+    const un = (await runService(t.app, listUnits, owner, {})).find((u) => u.code === "UN")!.id;
+    const portao = await runService(t.app, createProduct, owner, { sku: "PORT", name: "Portão", unitId: un, salePrice: "1500", costPrice: "0", minStock: "0", itemType: "service", afterSaleSteps: ["pintura", "Solda"] });
+    // Etapa nova usada num produto entra na lista sozinha.
+    const types = await runService(t.app, listStepTypes, owner, {});
+    assert.ok(types.some((x) => x.name === "Solda"));
+    assert.equal(types.find((x) => x.name === "Pintura")!.products, 1);
+
+    const sale = await runService(t.app, createSale, owner, { paymentMethod: "pix", items: [{ productId: portao.id, quantity: "1" }] });
+    const pintura = (await runService(t.app, getSaleFollowup, owner, { saleId: sale.id }))!.steps[0]!;
+    assert.equal(pintura.responsible, "Carlos");
+    assert.equal(pintura.cost, "40.00");
+    assert.ok(pintura.scheduledFor! > today);
+    // O que a venda informa vence o padrão.
+    const own = await runService(t.app, createSale, owner, {
+      paymentMethod: "pix",
+      items: [{ productId: portao.id, quantity: "1" }],
+      followup: { steps: [{ name: "Pintura", responsible: "Ana", cost: "0" }] },
+    });
+    const p2 = (await runService(t.app, getSaleFollowup, owner, { saleId: own.id }))!.steps[0]!;
+    assert.deepEqual([p2.responsible, p2.cost], ["Ana", "0"]);
+
+    const id = types.find((x) => x.name === "Pintura")!.id;
+    await runService(t.app, updateStepType, owner, { id, name: "Pintura eletrostática", defaultDays: null, status: "active" });
+    assert.deepEqual((await runService(t.app, listProducts, owner, { search: "Portão" }))[0]!.afterSaleSteps, ["Pintura eletrostática", "Solda"]);
+    assert.equal((await runService(t.app, listStepTypes, other, {})).some((x) => x.name === "Pintura eletrostática"), false);
+    const fin = await addUserWithRole(t.app, owner, "finance", "Financeiro 2");
+    await assert.rejects(runService(t.app, createStepType, fin.actor, { name: "Frete" }), rejectsWith("forbidden"));
   });
 });

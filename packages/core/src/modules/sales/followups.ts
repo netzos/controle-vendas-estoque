@@ -60,6 +60,7 @@ export const stepInput = z.object({
   responsible: optionalText(120),
   // Quanto a etapa custou para a empresa (motoboy, instalador). Vira um custo.
   cost: decimalField(2, "Custo da etapa").optional(),
+  notes: optionalText(500),
 });
 
 export const followupInput = z.object({
@@ -104,18 +105,131 @@ export async function productSteps(tx: Tx, productIds: string[]): Promise<string
   return [...seen.values()];
 }
 
+// Etapa sem prazo, responsável ou custo informado usa o padrão da lista da empresa.
 async function addSteps(tx: Tx, actor: Actor, followupId: string, saleId: string, steps: z.output<typeof stepInput>[], startAt = 0) {
+  await ensureStepTypes(tx, actor.organizationId, steps.map((s) => s.name));
   for (const [i, st] of steps.entries()) {
     const dup = await tx.query("SELECT 1 FROM controle_vendas_estoque.sale_steps WHERE followup_id = $1 AND lower(name) = lower($2)", [followupId, st.name]);
     if (dup.rowCount) throw new AppError("conflict", `A etapa ${st.name} já existe nesta venda.`);
-    const { rows } = await tx.query<{ id: string }>(
-      `INSERT INTO controle_vendas_estoque.sale_steps (organization_id, followup_id, sale_id, name, position, scheduled_for, responsible)
-       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
-      [actor.organizationId, followupId, saleId, st.name, startAt + i, st.scheduledFor ?? null, st.responsible ?? null],
+    const def = await tx.query<{ due: string | null; responsible: string | null; cost: string | null }>(
+      `SELECT CASE WHEN default_days IS NULL THEN NULL ELSE ($2::date + default_days)::text END AS due,
+              default_responsible AS responsible, default_cost::text AS cost
+         FROM controle_vendas_estoque.step_types WHERE lower(name) = lower($1)`,
+      [st.name, await orgToday(tx)],
     );
-    await setStepCost(tx, actor, { id: rows[0]!.id, name: st.name, saleId }, st.cost);
+    const d = def.rows[0];
+    const { rows } = await tx.query<{ id: string }>(
+      `INSERT INTO controle_vendas_estoque.sale_steps (organization_id, followup_id, sale_id, name, position, scheduled_for, responsible, notes)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+      [actor.organizationId, followupId, saleId, st.name, startAt + i, st.scheduledFor ?? d?.due ?? null, st.responsible ?? d?.responsible ?? null, st.notes ?? null],
+    );
+    await setStepCost(tx, actor, { id: rows[0]!.id, name: st.name, saleId }, st.cost ?? d?.cost ?? undefined);
   }
 }
+
+// Lista de etapas da empresa ------------------------------------------------------
+
+export interface StepType {
+  id: string;
+  name: string;
+  description: string | null;
+  defaultDays: number | null;
+  defaultResponsible: string | null;
+  defaultCost: string | null;
+  position: number;
+  status: "active" | "inactive";
+  products: number;
+}
+
+/** Nomes novos usados num produto ou numa venda entram na lista da empresa. */
+export async function ensureStepTypes(tx: Tx, organizationId: string, names: string[]) {
+  if (names.length === 0) return;
+  await tx.query(
+    `INSERT INTO controle_vendas_estoque.step_types (organization_id, name, position)
+     SELECT $1, n, 100 FROM unnest($2::text[]) AS n ON CONFLICT DO NOTHING`,
+    [organizationId, names],
+  );
+}
+
+export const listStepTypes = defineService({
+  name: "followups.step_types.list",
+  description: "Lista as etapas depois da venda que a empresa usa (entrega, instalação...), com prazo, responsável e custo padrão",
+  permission: null,
+  risk: 1,
+  input: z.object({ includeInactive: z.boolean().default(false) }),
+  async handler({ tx }, input): Promise<StepType[]> {
+    const { rows } = await tx.query<StepType>(
+      `SELECT t.id, t.name, t.description, t.default_days AS "defaultDays", t.default_responsible AS "defaultResponsible",
+              t.default_cost::text AS "defaultCost", t.position, t.status,
+              (SELECT count(*)::int FROM controle_vendas_estoque.products p WHERE lower(t.name) = ANY(SELECT lower(x) FROM unnest(p.after_sale_steps) x)) AS products
+         FROM controle_vendas_estoque.step_types t
+        WHERE $1 OR t.status = 'active' ORDER BY t.position, lower(t.name)`,
+      [input.includeInactive],
+    );
+    return rows;
+  },
+});
+
+const stepTypeFields = z.object({
+  name: stepName,
+  description: optionalText(300),
+  defaultDays: z.preprocess((v) => (v === "" || v === null ? null : Number(v)), z.number().int("Prazo em dias inteiros.").min(0).max(365, "Prazo de até 365 dias.").nullable().optional()),
+  defaultResponsible: optionalText(120),
+  defaultCost: z.preprocess((v) => (v === "" ? null : v), decimalField(2, "Custo padrão").nullable().optional()),
+});
+
+async function assertStepName(tx: Tx, name: string, id?: string) {
+  const dup = await tx.query("SELECT 1 FROM controle_vendas_estoque.step_types WHERE lower(name) = lower($1) AND ($2::uuid IS NULL OR id <> $2)", [name, id ?? null]);
+  if (dup.rowCount) throw new AppError("conflict", `A etapa ${name} já existe.`);
+}
+
+export const createStepType = defineService({
+  name: "followups.step_types.create",
+  description: "Cria uma etapa depois da venda na lista da empresa (ex.: Pintura), com prazo, responsável e custo padrão",
+  permission: "deliveries.manage",
+  risk: 2,
+  input: stepTypeFields,
+  async handler({ tx, actor, audit }, input) {
+    await assertStepName(tx, input.name);
+    const { rows } = await tx.query<{ id: string }>(
+      `INSERT INTO controle_vendas_estoque.step_types (organization_id, name, description, default_days, default_responsible, default_cost, position)
+       VALUES ($1, $2, $3, $4, $5, $6, (SELECT coalesce(max(position), 0) + 1 FROM controle_vendas_estoque.step_types)) RETURNING id`,
+      [actor.organizationId, input.name, input.description ?? null, input.defaultDays ?? null, input.defaultResponsible ?? null, input.defaultCost ?? null],
+    );
+    await audit({ action: "step_type.create", entityType: "step_type", entityId: rows[0]!.id, summary: `Etapa ${input.name} criada` });
+    return { id: rows[0]!.id };
+  },
+});
+
+export const updateStepType = defineService({
+  name: "followups.step_types.update",
+  description: "Muda uma etapa da lista da empresa: nome, prazo, responsável e custo padrão, ou desativa. Renomear atualiza os produtos que usam a etapa.",
+  permission: "deliveries.manage",
+  risk: 2,
+  input: stepTypeFields.extend({ id: z.string().uuid(), status: z.enum(["active", "inactive"]).default("active") }),
+  async handler({ tx, audit }, input) {
+    const cur = await tx.query<{ name: string }>("SELECT name FROM controle_vendas_estoque.step_types WHERE id = $1 FOR UPDATE", [input.id]);
+    if (!cur.rows[0]) throw notFound("Etapa");
+    await assertStepName(tx, input.name, input.id);
+    await tx.query(
+      `UPDATE controle_vendas_estoque.step_types SET name = $2, description = $3, default_days = $4, default_responsible = $5, default_cost = $6, status = $7
+        WHERE id = $1`,
+      [input.id, input.name, input.description ?? null, input.defaultDays ?? null, input.defaultResponsible ?? null, input.defaultCost ?? null, input.status],
+    );
+    const old = cur.rows[0].name;
+    if (old !== input.name) {
+      // Produtos passam a usar o nome novo; vendas antigas guardam o nome que tinham.
+      await tx.query(
+        `UPDATE controle_vendas_estoque.products
+            SET after_sale_steps = array(SELECT CASE WHEN lower(x) = lower($1) THEN $2 ELSE x END FROM unnest(after_sale_steps) x)
+          WHERE lower($1) = ANY(SELECT lower(x) FROM unnest(after_sale_steps) x)`,
+        [old, input.name],
+      );
+    }
+    await audit({ action: "step_type.update", entityType: "step_type", entityId: input.id, summary: old !== input.name ? `Etapa ${old} → ${input.name}` : `Etapa ${input.name} alterada` });
+    return { id: input.id };
+  },
+});
 
 /** Cria o acompanhamento de uma venda com as etapas dadas ou as dos produtos. */
 export async function insertFollowup(
@@ -124,8 +238,15 @@ export async function insertFollowup(
   saleId: string,
   productIds: string[],
   input: z.output<typeof followupInput>,
+  // Etapas que a própria venda pede (ex.: Encomenda do que faltou no estoque).
+  extra: z.output<typeof stepInput>[] = [],
 ): Promise<string | null> {
-  const steps = input.steps ?? (await productSteps(tx, productIds)).map((name) => ({ name }));
+  const steps: z.output<typeof stepInput>[] = [...(input.steps ?? (await productSteps(tx, productIds)).map((name) => ({ name })))];
+  for (const e of [...extra].reverse()) {
+    const same = steps.find((s) => s.name.toLowerCase() === e.name.toLowerCase());
+    if (same) same.notes = same.notes ?? e.notes;
+    else steps.unshift(e);
+  }
   if (steps.length === 0) return null;
   const { rows } = await tx.query<{ id: string }>(
     `INSERT INTO controle_vendas_estoque.sale_followups (organization_id, sale_id, address, recipient, phone, notes, created_by)

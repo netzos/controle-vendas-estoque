@@ -32,7 +32,7 @@ export default async function FollowupsPage({ searchParams }: { searchParams: Pr
     <>
       <div className="page-header">
         <h1>Entregas e serviços</h1>
-        <p>O que ainda falta depois da venda: entregar, instalar, montar. Cada produto diz quais etapas tem, no cadastro dele.</p>
+        <p>O que ainda falta depois da venda: encomendar, entregar, instalar, montar. Cada produto diz quais etapas tem; a lista e os padrões ficam em <Link href="/etapas">Etapas depois da venda</Link>.</p>
       </div>
 
       <div className="kpi-grid">

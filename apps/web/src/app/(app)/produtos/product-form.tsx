@@ -2,7 +2,7 @@
 
 import { useActionState, useState } from "react";
 import type { Category, CustomField, Product, Supplier, Unit } from "@erp/core";
-import { ITEM_TYPES, STEP_SUGGESTIONS, type ItemType } from "@erp/core/labels";
+import { ITEM_TYPES, type ItemType } from "@erp/core/labels";
 import { Field, FormMessage, SubmitButton } from "@/components/form";
 import { decimalInput } from "@/lib/format";
 import { createProductAction, updateProductAction } from "./actions";
@@ -12,6 +12,8 @@ export interface ProductFormOptions {
   units: Pick<Unit, "id" | "code" | "name">[];
   suppliers: Pick<Supplier, "id" | "name">[];
   customFields: CustomField[];
+  /** Etapas da lista da empresa (Etapas depois da venda). */
+  stepNames: string[];
   canEditPrice: boolean;
 }
 
@@ -51,7 +53,7 @@ function CustomInput({ field, value, state }: { field: CustomField; value: unkno
 
 // Etapas depois da venda (entrega, instalação, montagem...). Vão para a action
 // como JSON no campo "afterSaleSteps".
-function StepsEditor({ initial }: { initial: string[] }) {
+function StepsEditor({ initial, suggestions }: { initial: string[]; suggestions: string[] }) {
   const [steps, setSteps] = useState(initial);
   const [draft, setDraft] = useState("");
   const has = (n: string) => steps.some((s) => s.toLowerCase() === n.toLowerCase());
@@ -83,7 +85,7 @@ function StepsEditor({ initial }: { initial: string[] }) {
         </ol>
       )}
       <div className="step-add">
-        {STEP_SUGGESTIONS.filter((s) => !has(s)).map((s) => (
+        {suggestions.filter((s) => !has(s)).map((s) => (
           <button type="button" key={s} className="secondary small" onClick={() => add(s)}>+ {s}</button>
         ))}
         <input
@@ -168,6 +170,14 @@ export function ProductForm({ product, options }: { product?: Product; options: 
             <input id="initialStock" name="initialStock" inputMode="decimal" placeholder="0" />
           </Field>
         )}
+        {tracks && (
+          <Field label="Quando acabar o estoque" name="backorder" state={state} hint="Vendido sem ter, a venda ganha a etapa Encomenda">
+            <select id="backorder" name="backorder" defaultValue={product?.backorder === false ? "no" : "yes"}>
+              <option value="yes">Continua vendendo por encomenda</option>
+              <option value="no">Não deixa vender</option>
+            </select>
+          </Field>
+        )}
         {product && (
           <Field label="Situação" name="status" state={state}>
             <select id="status" name="status" defaultValue={product.status}>
@@ -191,7 +201,10 @@ export function ProductForm({ product, options }: { product?: Product; options: 
         O que ainda acontece depois de vender este item, como entrega, instalação ou montagem. Cada venda dele já nasce com essas etapas
         para acompanhar prazo, responsável e custo. Deixe vazio se a venda termina no pagamento.
       </p>
-      <StepsEditor initial={product?.afterSaleSteps ?? []} />
+      <StepsEditor initial={product?.afterSaleSteps ?? []} suggestions={options.stepNames} />
+      <p className="muted small-text">
+        Falta uma etapa? Crie e ajuste prazo, responsável e custo padrão em <a href="/etapas">Etapas depois da venda</a>.
+      </p>
       <Field label="Descrição" name="description" state={state}>
         <textarea id="description" name="description" defaultValue={product?.description ?? ""} maxLength={2000} rows={2} />
       </Field>

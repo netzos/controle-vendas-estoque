@@ -3,7 +3,7 @@
 import { useActionState, useEffect, useMemo, useState } from "react";
 import { FormMessage, SubmitButton } from "@/components/form";
 import { money, quantity } from "@/lib/format";
-import { ITEM_TYPES, type ItemType } from "@erp/core/labels";
+import { ITEM_TYPES, ORDER_STEP, type ItemType } from "@erp/core/labels";
 import { createSaleAction } from "../actions";
 
 export interface PosProduct {
@@ -14,12 +14,15 @@ export interface PosProduct {
   stock: string;
   unitCode: string;
   trackStock: boolean;
+  /** Sem estoque, segue vendendo por encomenda. */
+  backorder: boolean;
   itemType: ItemType;
   imageId: string | null;
   steps: string[];
 }
 
 type StepDraft = { scheduledFor: string; responsible: string; cost: string };
+export type StepDefault = { name: string; days: number | null; responsible: string | null; cost: string | null };
 
 const PAYMENTS = [
   { key: "pix", label: "Pix" },
@@ -39,6 +42,7 @@ export function SaleForm({
   canTradeIn,
   canManageSteps,
   today,
+  stepDefaults,
 }: {
   products: PosProduct[];
   customers: { id: string; name: string }[];
@@ -46,6 +50,7 @@ export function SaleForm({
   canTradeIn: boolean;
   canManageSteps: boolean;
   today: string;
+  stepDefaults: StepDefault[];
 }) {
   const [state, action] = useActionState(createSaleAction, null);
   const [search, setSearch] = useState("");
@@ -80,8 +85,14 @@ export function SaleForm({
   const priceOf = (p: PosProduct) => (prices[p.id]?.trim() ? toNumber(prices[p.id]!) : Number(p.price));
   const lines = Object.entries(cart).map(([id, qty]) => ({ product: byId.get(id)!, qty }));
   const subtotal = lines.reduce((a, l) => a + Math.round(toNumber(l.qty) * priceOf(l.product) * 100) / 100, 0);
+  // Quanto de cada linha passa do estoque (vai por encomenda).
+  const owed = (p: PosProduct, qty: string) =>
+    p.itemType === "made_to_order" ? toNumber(qty) : p.trackStock ? Math.max(toNumber(qty) - Math.max(Number(p.stock), 0), 0) : 0;
+  const anyOwed = lines.some((l) => owed(l.product, l.qty) > 0);
   // Etapas dos itens no carrinho, sem repetir, na ordem em que aparecem.
-  const stepNames = lines.flatMap((l) => l.product.steps).filter((n, i, all) => all.findIndex((o) => o.toLowerCase() === n.toLowerCase()) === i);
+  const stepNames = [...(anyOwed ? [ORDER_STEP] : []), ...lines.flatMap((l) => l.product.steps)]
+    .filter((n, i, all) => all.findIndex((o) => o.toLowerCase() === n.toLowerCase()) === i);
+  const defaultOf = (n: string) => stepDefaults.find((d) => d.name.toLowerCase() === n.toLowerCase());
   const hasAfter = canManageSteps && stepNames.length > 0;
   const fee = hasAfter ? toNumber(after.fee) : 0;
   const total = Math.max(subtotal - toNumber(discount), 0) + fee;
@@ -131,14 +142,19 @@ export function SaleForm({
             {shown.map((p) => {
               const inCart = cart[p.id];
               const stock = Number(p.stock);
+              const soldOut = p.trackStock && stock <= 0 && !p.backorder;
               return (
-                <button type="button" key={p.id} className={`pos-item${inCart ? " selected" : ""}`} onClick={() => add(p.id)}>
+                <button type="button" key={p.id} className={`pos-item${inCart ? " selected" : ""}`} onClick={() => add(p.id)} disabled={soldOut}>
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   {p.imageId && <img className="pos-thumb" src={`/imagens/${p.imageId}`} alt="" loading="lazy" />}
                   <span className="pos-name">{p.name}</span>
                   <span className="pos-price">{money(p.price)}</span>
                   <span className={`pos-stock${p.trackStock && stock <= 0 ? " out" : ""}`}>
-                    {p.trackStock ? `${quantity(p.stock)} ${p.unitCode} em estoque` : ITEM_TYPES[p.itemType].label}
+                    {!p.trackStock
+                      ? ITEM_TYPES[p.itemType].label
+                      : stock > 0
+                        ? `${quantity(p.stock)} ${p.unitCode} em estoque`
+                        : p.backorder ? "Sem estoque · vende por encomenda" : "Esgotado"}
                   </span>
                   {inCart && <span className="pos-badge">{inCart}</span>}
                 </button>
@@ -159,6 +175,13 @@ export function SaleForm({
               <li key={p.id}>
                 <div className="cart-name">
                   <span>{p.name}</span>
+                  {owed(p, qty) > 0 && (
+                    <small className={p.backorder || p.itemType === "made_to_order" ? "cart-owed" : "cart-owed warn"}>
+                      {p.backorder || p.itemType === "made_to_order"
+                        ? `${quantity(String(owed(p, qty)))} por encomenda`
+                        : `Só tem ${quantity(String(Math.max(Number(p.stock), 0)))} em estoque`}
+                    </small>
+                  )}
                   {canChangePrice ? (
                     <label className="line-price">
                       <span>R$</span>
@@ -223,11 +246,24 @@ export function SaleForm({
               <div className="after-step" key={n}>
                 <strong>{n}</strong>
                 <input type="date" aria-label={`Prazo de ${n}`} min={today} value={draftOf(n).scheduledFor} onChange={(e) => setDraft(n, { scheduledFor: e.target.value })} />
-                <input aria-label={`Responsável por ${n}`} placeholder="Responsável" value={draftOf(n).responsible} onChange={(e) => setDraft(n, { responsible: e.target.value })} />
-                <input aria-label={`Custo de ${n}`} placeholder="Custo R$" inputMode="decimal" value={draftOf(n).cost} onChange={(e) => setDraft(n, { cost: e.target.value })} />
+                <input
+                  aria-label={`Responsável por ${n}`}
+                  placeholder={defaultOf(n)?.responsible ?? "Responsável"}
+                  value={draftOf(n).responsible}
+                  onChange={(e) => setDraft(n, { responsible: e.target.value })}
+                />
+                <input
+                  aria-label={`Custo de ${n}`}
+                  placeholder={defaultOf(n)?.cost ? money(defaultOf(n)!.cost!) : "Custo R$"}
+                  inputMode="decimal"
+                  value={draftOf(n).cost}
+                  onChange={(e) => setDraft(n, { cost: e.target.value })}
+                />
               </div>
             ))}
-            <p className="muted small-text">O custo de cada etapa (motoboy, instalador) entra em Custos e desconta do lucro real.</p>
+            <p className="muted small-text">
+              Em branco usa o padrão de cada etapa (prazo, responsável e custo). O custo (motoboy, instalador) entra em Custos e desconta do lucro real.
+            </p>
           </details>
         )}
 
