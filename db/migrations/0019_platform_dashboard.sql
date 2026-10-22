@@ -2,6 +2,8 @@
 -- clientes, liberações com padrão por parte do sistema (para escalar a milhares
 -- de empresas), custo de uso por empresa (IA, áudio), mensalidade de cada
 -- empresa, custos fixos da plataforma e os indicadores do dashboard.
+-- As versões antigas das funções que mudaram de formato ficam renomeadas com
+-- o sufixo _0018, sem acesso pelo app.
 
 -- Tipo da empresa: cliente ou interna da equipe (casa da equipe, testes).
 -- Internas ficam fora das listas, dos números e dos usuários da Plataforma.
@@ -9,7 +11,8 @@ ALTER TABLE controle_vendas_estoque.organizations
   ADD COLUMN kind text NOT NULL DEFAULT 'customer' CHECK (kind IN ('customer', 'internal'));
 UPDATE controle_vendas_estoque.organizations SET kind = 'internal' WHERE name IN ('netzsales', 'Demonstração (dados fictícios)');
 
-DROP FUNCTION controle_vendas_estoque.platform_organizations(uuid);
+ALTER FUNCTION controle_vendas_estoque.platform_organizations(uuid) RENAME TO platform_organizations_0018;
+REVOKE ALL ON FUNCTION controle_vendas_estoque.platform_organizations_0018(uuid) FROM controle_vendas_estoque_app;
 CREATE FUNCTION controle_vendas_estoque.platform_organizations(p_user uuid)
 RETURNS TABLE (
   id uuid, name text, status text, created_at timestamptz,
@@ -40,7 +43,8 @@ REVOKE ALL ON FUNCTION controle_vendas_estoque.platform_organizations(uuid) FROM
 GRANT EXECUTE ON FUNCTION controle_vendas_estoque.platform_organizations(uuid) TO controle_vendas_estoque_app;
 
 -- Usuários: empresas de cliente separadas das internas.
-DROP FUNCTION controle_vendas_estoque.platform_users(uuid);
+ALTER FUNCTION controle_vendas_estoque.platform_users(uuid) RENAME TO platform_users_0018;
+REVOKE ALL ON FUNCTION controle_vendas_estoque.platform_users_0018(uuid) FROM controle_vendas_estoque_app;
 CREATE FUNCTION controle_vendas_estoque.platform_users(p_user uuid)
 RETURNS TABLE (
   id uuid, name text, email text, status text, last_login_at timestamptz, created_at timestamptz,
@@ -160,30 +164,9 @@ $$;
 REVOKE ALL ON FUNCTION controle_vendas_estoque.platform_set_feature_default(uuid, text, boolean) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION controle_vendas_estoque.platform_set_feature_default(uuid, text, boolean) TO controle_vendas_estoque_app;
 
--- Exclui de vez uma empresa interna ou suspensa, com todos os dados dela.
--- Empresa de cliente ativa precisa ser suspensa antes (proteção contra engano).
-CREATE FUNCTION controle_vendas_estoque.platform_delete_organization(p_user uuid, p_org uuid)
-RETURNS text
-LANGUAGE plpgsql SECURITY DEFINER SET search_path = controle_vendas_estoque, pg_temp AS $$
-DECLARE
-  v_name text;
-BEGIN
-  IF NOT is_platform_developer(p_user) THEN
-    RAISE EXCEPTION 'só o administrador da plataforma' USING ERRCODE = '42501';
-  END IF;
-  SELECT name INTO v_name FROM organizations WHERE id = p_org AND (kind = 'internal' OR status = 'suspended');
-  IF v_name IS NULL THEN
-    RETURN NULL;
-  END IF;
-  DELETE FROM organizations WHERE id = p_org;
-  RETURN v_name;
-END
-$$;
-REVOKE ALL ON FUNCTION controle_vendas_estoque.platform_delete_organization(uuid, uuid) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION controle_vendas_estoque.platform_delete_organization(uuid, uuid) TO controle_vendas_estoque_app;
-
 -- Números de cada empresa: os de antes mais mensalidade e custo de uso.
-DROP FUNCTION controle_vendas_estoque.platform_organization_stats(uuid);
+ALTER FUNCTION controle_vendas_estoque.platform_organization_stats(uuid) RENAME TO platform_organization_stats_0018;
+REVOKE ALL ON FUNCTION controle_vendas_estoque.platform_organization_stats_0018(uuid) FROM controle_vendas_estoque_app;
 CREATE FUNCTION controle_vendas_estoque.platform_organization_stats(p_user uuid)
 RETURNS TABLE (
   organization_id uuid, sales_30d integer, revenue_30d numeric, sales_prev_30d integer, revenue_prev_30d numeric,
@@ -230,7 +213,8 @@ GRANT EXECUTE ON FUNCTION controle_vendas_estoque.platform_organization_stats(uu
 -- Indicadores do dashboard da plataforma, só de empresas de cliente e de
 -- pessoas de fora da equipe. Séries mensais dos últimos 12 meses e semanais
 -- das últimas 12 semanas (fuso de São Paulo).
-DROP FUNCTION controle_vendas_estoque.platform_overview(uuid);
+ALTER FUNCTION controle_vendas_estoque.platform_overview(uuid) RENAME TO platform_overview_0018;
+REVOKE ALL ON FUNCTION controle_vendas_estoque.platform_overview_0018(uuid) FROM controle_vendas_estoque_app;
 CREATE FUNCTION controle_vendas_estoque.platform_dashboard(p_user uuid)
 RETURNS jsonb
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path = controle_vendas_estoque, pg_temp AS $$
