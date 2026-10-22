@@ -58,7 +58,7 @@ export function transcriptionCostUsd(model: string, seconds: number): number {
   return ((TRANSCRIPTION_PER_MINUTE[model] ?? 0) * seconds) / 60;
 }
 
-export type UsageFeature = "netz" | "improvements_analysis" | "telegram_audio" | "panel_audio";
+export type UsageFeature = "netz" | "improvements_analysis" | "nets_guidance" | "telegram_audio" | "panel_audio";
 
 /** Grava o uso de IA de uma empresa. Nunca derruba quem chamou. */
 export async function recordAiUsage(

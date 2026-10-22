@@ -8,7 +8,8 @@ import { AppError, forbidden, parseInput } from "../../errors.ts";
 import { runService } from "../../service.ts";
 import { agentComplementImprovement, agentCreateImprovement, agentListImprovements } from "../improvements/service.ts";
 import { cleanReply } from "./clean.ts";
-import { NETS_INSTRUCTIONS } from "./instructions.ts";
+import { currentNetsManual } from "./guidance.ts";
+import { NETS_RULES } from "./instructions.ts";
 import { listNetsDeliveries } from "./deliveries.ts";
 import { DELIVERIES_TOOL, IMPROVEMENT_COMPLEMENT_TOOL, IMPROVEMENT_LIST_TOOL, IMPROVEMENT_TOOL, netsTools, type NetsTool } from "./tools.ts";
 
@@ -224,8 +225,10 @@ async function systemPrompt(tx: Tx, actor: Actor): Promise<Anthropic.Beta.BetaTe
   );
   const org = rows[0]!;
   const who = actor.isOwner ? "dona/dono da empresa" : `perfil ${actor.roleKey}`;
+  // O manual de comunicação muda pela Plataforma; a versão mais nova vale já na próxima mensagem.
+  const manual = await currentNetsManual(tx);
   return [
-    { type: "text", text: NETS_INSTRUCTIONS, cache_control: { type: "ephemeral" } },
+    { type: "text", text: `${NETS_RULES}\n\n# Manual de comunicação\n\n${manual.body}`, cache_control: { type: "ephemeral" } },
     { type: "text", text: `Empresa: ${org.name}. Pessoa: ${actor.userName} (${who}). Hoje: ${org.today}, ${org.now} (${org.timezone}).${CHANNEL_NOTE[actor.channel] ?? ""}` },
   ];
 }
