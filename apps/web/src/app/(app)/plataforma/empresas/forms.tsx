@@ -1,8 +1,8 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { Field, SubmitButton } from "@/components/form";
-import { createOrganizationAction, ownerLinkAction } from "./actions";
+import { Field, FormMessage, SubmitButton } from "@/components/form";
+import { createOrganizationAction, organizationStatusAction, ownerLinkAction } from "./actions";
 
 /** Link pronto para copiar ou mandar no WhatsApp. */
 function LinkBox({ url, text }: { url: string; text: string }) {
@@ -72,5 +72,25 @@ export function OwnerLink({ organizationId, firstAccess }: { organizationId: str
         </SubmitButton>
       </form>
     </div>
+  );
+}
+
+/** Suspender (ninguém entra, os dados ficam) ou reativar a empresa. */
+export function OrganizationStatus({ organizationId, name, status }: { organizationId: string; name: string; status: "active" | "suspended" }) {
+  const [state, action] = useActionState(organizationStatusAction, null);
+  const suspend = status === "active";
+  return (
+    <form
+      action={action}
+      className="remove-record"
+      onSubmit={(e) => {
+        if (suspend && !window.confirm(`Suspender ${name}? Ninguém da empresa vai conseguir entrar até você reativar.`)) e.preventDefault();
+      }}
+    >
+      <FormMessage state={state} />
+      <input type="hidden" name="organizationId" value={organizationId} />
+      <input type="hidden" name="status" value={suspend ? "suspended" : "active"} />
+      <SubmitButton className="secondary" pendingText="Salvando...">{suspend ? "Suspender empresa" : "Reativar empresa"}</SubmitButton>
+    </form>
   );
 }

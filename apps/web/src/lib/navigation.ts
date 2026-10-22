@@ -11,7 +11,7 @@ export interface NavItem {
   phase: number;
 }
 
-export type NavIcon = "home" | "cart" | "tag" | "box" | "truck" | "wallet" | "coins" | "chart" | "bot" | "zap" | "bulb" | "sliders";
+export type NavIcon = "home" | "cart" | "tag" | "box" | "truck" | "wallet" | "coins" | "chart" | "bot" | "zap" | "bulb" | "sliders" | "shield";
 
 export interface NavGroup {
   label: string;
@@ -166,7 +166,18 @@ export const NAVIGATION: NavGroup[] = [
       { label: "Permissões", href: "/administracao/permissoes", permission: "roles.view", phase: 1 },
       { label: "Auditoria", href: "/administracao/auditoria", permission: "audit.view", phase: 1 },
       { label: "Configurações gerais", href: "/administracao/configuracoes", permission: "settings.view", phase: 1 },
-      { label: "Todas as empresas", href: "/administracao/empresas", developerOnly: true, phase: 1 },
+    ],
+  },
+  {
+    label: "Plataforma",
+    short: "Plataforma",
+    hint: "Pedidos de cadastro, empresas e quem está usando",
+    icon: "shield",
+    items: [
+      { label: "Visão geral", href: "/plataforma", developerOnly: true, phase: 1 },
+      { label: "Pedidos de cadastro", href: "/plataforma/pedidos", developerOnly: true, phase: 1 },
+      { label: "Empresas", href: "/plataforma/empresas", developerOnly: true, phase: 1 },
+      { label: "Usuários", href: "/plataforma/usuarios", developerOnly: true, phase: 1 },
     ],
   },
 ];

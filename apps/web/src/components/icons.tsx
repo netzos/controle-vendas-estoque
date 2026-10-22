@@ -13,6 +13,7 @@ const PATHS: Record<NavIcon | "logout" | "logo" | "search" | "mic" | "send" | "m
   bot: "M5 9h14v10H5zM12 5v4M9 14h.01M15 14h.01M2 13v2M22 13v2",
   zap: "M13 2 4 14h7l-1 8 9-12h-7z",
   bulb: "M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z",
+  shield: "M12 3 4 6v6c0 5 3.4 8.2 8 9 4.6-.8 8-4 8-9V6zM9 12l2 2 4-4",
   sliders: "M4 7h10M18 7h2M4 17h4M12 17h8M14 4v6M8 14v6",
   logout: "M10 4H5a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h5M15 8l4 4-4 4M19 12H9",
   logo: "M5 4h6v16H5zM13 4h6l-6 8z",

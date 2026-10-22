@@ -1,10 +1,10 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createPlatformOrganization, platformOwnerPasswordLink } from "@erp/core";
+import { createPlatformOrganization, platformOwnerPasswordLink, setOrganizationStatus } from "@erp/core";
 import { currentActor } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { str, toFormState } from "@/lib/actions";
+import { str, toFormState, type FormState } from "@/lib/actions";
 
 export type CreateOrgState = {
   ok: boolean;
@@ -25,7 +25,7 @@ export async function createOrganizationAction(_: CreateOrgState, form: FormData
       ownerEmail: str(form, "ownerEmail"),
       joinAsOwner: str(form, "joinAsOwner") === "1",
     });
-    revalidatePath("/", "layout");
+    revalidatePath("/plataforma", "layout");
     return {
       ok: true,
       organizationName,
@@ -56,5 +56,17 @@ export async function ownerLinkAction(_: LinkState, form: FormData): Promise<Lin
     };
   } catch (err) {
     return { ok: false, message: toFormState(err)?.message };
+  }
+}
+
+export async function organizationStatusAction(_: FormState, form: FormData): Promise<FormState> {
+  try {
+    const actor = await currentActor();
+    const status = str(form, "status") === "suspended" ? "suspended" : "active";
+    await setOrganizationStatus(db(), actor, str(form, "organizationId"), status);
+    revalidatePath("/plataforma", "layout");
+    return { ok: true, message: status === "suspended" ? "Empresa suspensa. Ninguém entra nela até você reativar." : "Empresa reativada." };
+  } catch (err) {
+    return toFormState(err);
   }
 }

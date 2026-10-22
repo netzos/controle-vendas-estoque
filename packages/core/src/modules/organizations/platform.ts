@@ -141,3 +141,75 @@ export async function platformOwnerPasswordLink(db: Db, developerUserId: string,
     return { ...link, name: org.ownerName!, firstAccess };
   });
 }
+
+export interface PlatformOverview {
+  organizations: number;
+  organizationsSuspended: number;
+  pendingRequests: number;
+  usersTotal: number;
+  usersToday: number;
+  users7d: number;
+  users30d: number;
+  usersNever: number;
+  sales30d: number;
+  revenue30d: string;
+  netzMessages30d: number;
+}
+
+export async function platformOverview(db: Db, developerUserId: string): Promise<PlatformOverview> {
+  await assertDeveloper(db, developerUserId);
+  const { rows } = await db.query<PlatformOverview>(
+    `SELECT organizations, organizations_suspended AS "organizationsSuspended", pending_requests AS "pendingRequests",
+            users_total AS "usersTotal", users_today AS "usersToday", users_7d AS "users7d", users_30d AS "users30d",
+            users_never AS "usersNever", sales_30d AS "sales30d", revenue_30d AS "revenue30d", netz_messages_30d AS "netzMessages30d"
+       FROM controle_vendas_estoque.platform_overview($1)`,
+    [developerUserId],
+  );
+  return rows[0]!;
+}
+
+export interface PlatformUser {
+  id: string;
+  name: string;
+  email: string;
+  status: "active" | "disabled";
+  lastLoginAt: Date | null;
+  createdAt: Date;
+  organizations: string[];
+  isDeveloper: boolean;
+  netzMessages30d: number;
+}
+
+export async function listPlatformUsers(db: Db, developerUserId: string): Promise<PlatformUser[]> {
+  await assertDeveloper(db, developerUserId);
+  const { rows } = await db.query<PlatformUser>(
+    `SELECT id, name, email, status, last_login_at AS "lastLoginAt", created_at AS "createdAt", organizations,
+            is_developer AS "isDeveloper", netz_messages_30d AS "netzMessages30d"
+       FROM controle_vendas_estoque.platform_users($1)`,
+    [developerUserId],
+  );
+  return rows;
+}
+
+/** Suspende ou reativa uma empresa. Suspensa, ninguém entra nela (os dados ficam guardados). */
+export async function setOrganizationStatus(
+  db: Db,
+  developer: { userId: string; userName: string },
+  organizationId: string,
+  status: "active" | "suspended",
+): Promise<void> {
+  await assertDeveloper(db, developer.userId);
+  const org = (await listPlatformOrganizations(db, developer.userId)).find((o) => o.id === organizationId);
+  if (!org) throw notFound("Empresa");
+  if (org.status === status) return;
+  await withTransaction(db, async (tx) => {
+    await setTenant(tx, { organizationId, userId: developer.userId });
+    await tx.query("UPDATE controle_vendas_estoque.organizations SET status = $2 WHERE id = $1", [organizationId, status]);
+    await recordAudit(tx, { organizationId, userId: developer.userId, channel: "web" }, {
+      action: status === "suspended" ? "organization.suspend" : "organization.reactivate",
+      entityType: "organization",
+      entityId: organizationId,
+      summary: `Empresa ${org.name} ${status === "suspended" ? "suspensa" : "reativada"} por ${developer.userName}`,
+    });
+  });
+}
