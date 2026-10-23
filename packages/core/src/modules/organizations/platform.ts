@@ -726,6 +726,7 @@ export const ACTION_LABELS: Record<string, string> = {
   "member.update": "Pessoa alterada",
   "member.profile": "Perfil de pessoa alterado",
   "member.password_link": "Link de senha gerado",
+  "member.telegram_link": "Link do Telegram gerado",
   "member.support_join": "Equipe entrou para suporte",
   "member.support_leave": "Equipe saiu do suporte",
   "role.create": "Perfil de acesso criado",

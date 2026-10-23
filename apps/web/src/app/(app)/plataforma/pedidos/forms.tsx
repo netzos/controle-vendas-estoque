@@ -10,7 +10,10 @@ export function RequestDecision({ requestId, name }: { requestId: string; name: 
   const [rejecting, setRejecting] = useState(false);
   const a = approved?.approved;
   if (a) {
-    const text = `Olá, ${a.name}! Sua conta no netzsales foi aprovada e a ${a.organizationName} já está liberada. Entre com seu e-mail e a senha que você criou: ${a.loginUrl}`;
+    const text =
+      `Olá, ${a.name}! Sua conta no netzsales foi aprovada e a ${a.organizationName} já está liberada.\n\n` +
+      (a.telegramUrl ? `Para falar com a Netz, sua assistente, no Telegram, toque aqui e depois em Iniciar: ${a.telegramUrl}\n\n` : "") +
+      `Para usar o painel no navegador, entre com seu e-mail e a senha que você criou: ${a.loginUrl}`;
     return (
       <div>
         <div className="alert success" role="status">{approved.message}</div>

@@ -3,7 +3,7 @@
 import { useActionState, useState } from "react";
 import type { Branch, Member, Role } from "@erp/core";
 import { Field, FormMessage, SubmitButton } from "@/components/form";
-import { addMemberAction, passwordLinkAction, updateMemberAction } from "./actions";
+import { addMemberAction, passwordLinkAction, telegramLinkAction, updateMemberAction } from "./actions";
 
 function BranchPicker({ branches, selected, prefix }: { branches: Branch[]; selected: string[] | null; prefix: string }) {
   const [all, setAll] = useState(selected === null);
@@ -125,6 +125,39 @@ export function PasswordLink({ member }: { member: Member }) {
       <form action={action}>
         <input type="hidden" name="membershipId" value={member.membershipId} />
         <SubmitButton className="secondary" pendingText="Gerando...">{state?.url ? "Gerar outro link" : "Gerar link de senha"}</SubmitButton>
+      </form>
+    </div>
+  );
+}
+
+/** Link do Telegram da pessoa: ela toca no WhatsApp e já cai na conversa com a Netz, com a conta ligada. */
+export function TelegramLink({ member, linked }: { member: Member; linked: boolean }) {
+  const [state, action] = useActionState(telegramLinkAction, null);
+  const [copied, setCopied] = useState(false);
+  const whatsapp = state?.url
+    ? `https://wa.me/?text=${encodeURIComponent(`Olá, ${member.name}! Toque neste link para falar com a Netz, a assistente do netzsales, no Telegram. Depois é só tocar em Iniciar: ${state.url}`)}`
+    : null;
+  return (
+    <div className="remove-record">
+      <h3>Telegram</h3>
+      <p className="muted">
+        {linked ? "Já está ligado ao Telegram. Gere um link novo só se a pessoa trocou de celular ou de conta." : "Ainda não está ligado. Gere o link e mande pelo WhatsApp: a pessoa toca e já conversa com a Netz."}
+      </p>
+      {state?.message && <div className={`alert ${state.ok ? "success" : "error"}`}>{state.message}</div>}
+      {state?.url && (
+        <div className="link-box">
+          <input readOnly value={state.url} aria-label="Link do Telegram" onFocus={(e) => e.currentTarget.select()} />
+          <div className="actions">
+            <button type="button" className="secondary" onClick={() => navigator.clipboard.writeText(state.url!).then(() => setCopied(true))}>
+              {copied ? "Copiado" : "Copiar link"}
+            </button>
+            {whatsapp && <a className="button" href={whatsapp} target="_blank" rel="noreferrer">Mandar no WhatsApp</a>}
+          </div>
+        </div>
+      )}
+      <form action={action}>
+        <input type="hidden" name="membershipId" value={member.membershipId} />
+        <SubmitButton className="secondary" pendingText="Gerando...">{state?.url ? "Gerar outro link" : "Gerar link do Telegram"}</SubmitButton>
       </form>
     </div>
   );

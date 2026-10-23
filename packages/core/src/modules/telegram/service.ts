@@ -3,7 +3,8 @@ import type { Db } from "@erp/db";
 import { withTenant, withTransaction } from "@erp/db";
 import { can, resolveActor, type Actor } from "../../context.ts";
 import { enabledFeatures } from "../../features.ts";
-import { AppError, forbidden } from "../../errors.ts";
+import { AppError, forbidden, notFound } from "../../errors.ts";
+import { recordAudit } from "../../audit.ts";
 import { appUrl } from "../../mail.ts";
 import { transcribeAudioDetailed, transcriptionConfigured, type Transcriber } from "../../transcribe.ts";
 import { recordTranscriptionUsage } from "../../usage.ts";
@@ -15,6 +16,8 @@ import { telegramApi, telegramConfigured, telegramWebhookSecret, type TelegramAp
 // e a conversa é a mesma do balão do painel, com as mesmas permissões.
 
 const CODE_TTL_MINUTES = 15;
+// Link mandado por WhatsApp (aprovação do cadastro, Ajustes › Usuários): a pessoa pode demorar a abrir.
+const INVITE_TTL_MINUTES = 7 * 24 * 60;
 const TEXT_LIMIT = 4000;
 // Limites do áudio: o getFile do Telegram só entrega até 20 MB.
 const AUDIO_MAX_SECONDS = 10 * 60;
@@ -28,6 +31,8 @@ export interface TelegramDeps {
 
 export interface TelegramStatus {
   configured: boolean;
+  /** Conversa com o robô (sem código), para quem já está ligado. */
+  botUrl: string | null;
   link: { username: string | null; firstName: string | null; organizationId: string; createdAt: Date } | null;
 }
 
@@ -59,25 +64,33 @@ async function ensureWebhook(api: TelegramApi) {
   await api.call("setWebhook", { url, secret_token: telegramWebhookSecret(), allowed_updates: ["message", "callback_query"] });
 }
 
-export async function getTelegramStatus(db: Db, actor: Actor): Promise<TelegramStatus> {
+export async function getTelegramStatus(db: Db, actor: Actor, deps: TelegramDeps = {}): Promise<TelegramStatus> {
   if (!can(actor, "nets.use")) throw forbidden();
+  const configured = telegramConfigured();
+  const bot = configured ? await botUsername(deps.api ?? telegramApi).catch(() => null) : null;
   const { rows } = await db.query<NonNullable<TelegramStatus["link"]>>(
     `SELECT username, first_name AS "firstName", organization_id AS "organizationId", created_at AS "createdAt"
        FROM controle_vendas_estoque.telegram_links WHERE user_id = $1 AND status = 'active'`,
     [actor.userId],
   );
-  return { configured: telegramConfigured(), link: rows[0] ?? null };
+  return { configured, botUrl: bot ? `https://t.me/${bot}` : null, link: rows[0] ?? null };
 }
 
-/** Link do botão "Conectar": abre o robô com um código que vale uma vez, por 15 minutos. */
-export async function createTelegramLink(db: Db, actor: Actor, deps: TelegramDeps = {}): Promise<{ url: string }> {
-  if (!can(actor, "nets.use")) throw forbidden("Você não tem permissão para conversar com a Netz.");
+/** Pessoas desta empresa com o Telegram ligado (Ajustes › Usuários e botão do topo). */
+export async function listTelegramLinkedUsers(db: Db, actor: Actor): Promise<Set<string>> {
+  const { rows } = await db.query<{ userId: string }>(
+    `SELECT user_id AS "userId" FROM controle_vendas_estoque.telegram_links WHERE organization_id = $1 AND status = 'active'`,
+    [actor.organizationId],
+  );
+  return new Set(rows.map((r) => r.userId));
+}
+
+/** Prepara o robô e devolve o nome dele, com a mensagem certa quando o Telegram recusa o token. */
+async function readyBot(api: TelegramApi): Promise<string> {
   if (!telegramConfigured()) throw new AppError("invalid_input", "O robô do Telegram ainda não foi ligado (falta TELEGRAM_BOT_TOKEN na Vercel).");
-  const api = deps.api ?? telegramApi;
-  let bot: string;
   try {
     await ensureWebhook(api);
-    bot = await botUsername(api);
+    return await botUsername(api);
   } catch (err) {
     console.error("telegram connect", err);
     const reason = err instanceof Error ? err.message : String(err);
@@ -88,16 +101,58 @@ export async function createTelegramLink(db: Db, actor: Actor, deps: TelegramDep
         : `O Telegram recusou a ligação (${reason}).`,
     );
   }
+}
+
+/** Código de uso único que liga a conta de quem tocar no link. Só o último código da pessoa vale. */
+async function issueCode(db: Db, userId: string, organizationId: string, minutes: number): Promise<string> {
   const code = randomBytes(18).toString("base64url");
   await withTransaction(db, async (tx) => {
-    await tx.query("UPDATE controle_vendas_estoque.telegram_link_codes SET used_at = now() WHERE user_id = $1 AND used_at IS NULL", [actor.userId]);
+    await tx.query("UPDATE controle_vendas_estoque.telegram_link_codes SET used_at = now() WHERE user_id = $1 AND used_at IS NULL", [userId]);
     await tx.query(
       `INSERT INTO controle_vendas_estoque.telegram_link_codes (user_id, organization_id, code_hash, expires_at)
        VALUES ($1, $2, $3, now() + make_interval(mins => $4))`,
-      [actor.userId, actor.organizationId, hash(code), CODE_TTL_MINUTES],
+      [userId, organizationId, hash(code), minutes],
     );
   });
-  return { url: `https://t.me/${bot}?start=${code}` };
+  return code;
+}
+
+/** Link do botão "Telegram" do painel: abre o robô com um código que vale uma vez, por 15 minutos. */
+export async function createTelegramLink(db: Db, actor: Actor, deps: TelegramDeps = {}): Promise<{ url: string }> {
+  if (!can(actor, "nets.use")) throw forbidden("Você não tem permissão para conversar com a Netz.");
+  const bot = await readyBot(deps.api ?? telegramApi);
+  return { url: `https://t.me/${bot}?start=${await issueCode(db, actor.userId, actor.organizationId, CODE_TTL_MINUTES)}` };
+}
+
+/**
+ * Link do Telegram para mandar a outra pessoa pelo WhatsApp: vale 7 dias e uma vez.
+ * Usado na aprovação do cadastro e em Ajustes › Usuários.
+ */
+export async function createTelegramInvite(db: Db, userId: string, organizationId: string, deps: TelegramDeps = {}): Promise<{ url: string; days: number }> {
+  const bot = await readyBot(deps.api ?? telegramApi);
+  return { url: `https://t.me/${bot}?start=${await issueCode(db, userId, organizationId, INVITE_TTL_MINUTES)}`, days: INVITE_TTL_MINUTES / 60 / 24 };
+}
+
+/** Ajustes › Usuários: link do Telegram de uma pessoa da empresa. */
+export async function createMemberTelegramLink(db: Db, actor: Actor, membershipId: string, deps: TelegramDeps = {}): Promise<{ url: string; days: number; name: string }> {
+  if (!can(actor, "users.manage")) throw forbidden();
+  const m = await withTenant(db, { organizationId: actor.organizationId, userId: actor.userId }, async (tx) => {
+    const { rows } = await tx.query<{ userId: string; name: string; status: string; isOwner: boolean }>(
+      `SELECT u.id AS "userId", u.name, m.status, m.is_owner AS "isOwner"
+         FROM controle_vendas_estoque.memberships m JOIN controle_vendas_estoque.users u ON u.id = m.user_id
+        WHERE m.id = $1 AND m.organization_id = $2`,
+      [membershipId, actor.organizationId],
+    );
+    return rows[0];
+  });
+  if (!m) throw notFound("Usuário");
+  if (m.status !== "active") throw new AppError("conflict", "Ative o acesso antes de gerar o link.");
+  if (m.isOwner && !actor.isOwner && m.userId !== actor.userId) throw forbidden("Apenas um proprietário gera link para outro proprietário.");
+  const invite = await createTelegramInvite(db, m.userId, actor.organizationId, deps);
+  await withTenant(db, { organizationId: actor.organizationId, userId: actor.userId }, (tx) =>
+    recordAudit(tx, actor, { action: "member.telegram_link", entityType: "membership", entityId: membershipId, summary: `Link do Telegram gerado para ${m.name}` }),
+  );
+  return { ...invite, name: m.name };
 }
 
 export async function unlinkTelegram(db: Db, actor: Actor): Promise<void> {
@@ -138,7 +193,8 @@ export interface TelegramUpdate {
 
 const HOW_TO_LINK =
   "Olá! Eu sou a Netz, a assistente do netzsales.\n\n" +
-  "Para conversar comigo por aqui, ligue sua conta: entre no netzsales pelo navegador, abra Assistente › Telegram e toque em Conectar.";
+  "Para conversar comigo por aqui, ligue sua conta: entre no netzsales pelo navegador e toque no botão Telegram, no alto da tela. " +
+  "Se alguém da sua empresa já te mandou um link do Telegram, é só tocar nele.";
 
 async function send(api: TelegramApi, chatId: number | string, text: string, markup?: unknown): Promise<number | null> {
   let last: number | null = null;
@@ -240,7 +296,7 @@ async function connect(db: Db, api: TelegramApi, msg: TgMessage, code: string) {
     return c;
   });
   if (!linked) {
-    await send(api, msg.chat.id, "Esse link de conexão já foi usado ou venceu. No netzsales, abra Assistente › Telegram e toque em Conectar de novo.");
+    await send(api, msg.chat.id, "Esse link de conexão já foi usado ou venceu. No netzsales, toque no botão Telegram, no alto da tela, para receber um novo.");
     return;
   }
   const org = await withTenant(db, { organizationId: linked.organizationId, userId: linked.userId }, async (tx) => {
@@ -305,7 +361,7 @@ async function onMessage(db: Db, api: TelegramApi, update: TelegramUpdate, deps:
   }
   if (/^\/(sair|desconectar)\b/i.test(text)) {
     await db.query("UPDATE controle_vendas_estoque.telegram_links SET status = 'revoked' WHERE telegram_user_id = $1 AND status = 'active'", [msg.from.id]);
-    await send(api, msg.chat.id, "Conta desligada. Para voltar, use Conectar no painel do netzsales.");
+    await send(api, msg.chat.id, "Conta desligada. Para voltar, toque no botão Telegram no painel do netzsales.");
     return;
   }
   const actor = await linkActor(db, link);

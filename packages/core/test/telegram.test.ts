@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { after, before, beforeEach, describe, it } from "node:test";
 import type Anthropic from "@anthropic-ai/sdk";
 import {
+  createMemberTelegramLink,
   createTelegramLink,
   getTelegramStatus,
   cleanReply,
@@ -88,7 +89,7 @@ describe("Netz no Telegram", () => {
   it("sem ligar a conta, o robô explica como conectar", async () => {
     const f = fakeApi();
     await handleTelegramUpdate(t.app, text("oi"), { api: f.api });
-    assert.match(f.sent()[0]!, /Conectar/);
+    assert.match(f.sent()[0]!, /botão Telegram/);
   });
 
   it("liga a conta pelo link, conversa e confirma pelo botão", async () => {
@@ -152,7 +153,21 @@ describe("Netz no Telegram", () => {
     await handleTelegramUpdate(t.app, text("/sair", ana), { api: f.api });
     assert.equal((await getTelegramStatus(t.app, other.actor)).link, null);
     await handleTelegramUpdate(t.app, text("oi", ana), { api: f.api });
-    assert.match(f.sent().at(-1)!, /Conectar/);
+    assert.match(f.sent().at(-1)!, /botão Telegram/);
+  });
+
+  it("link do Telegram de outra pessoa (Ajustes › Usuários) liga a conta dela", async () => {
+    const f = fakeApi();
+    const other = await addUserWithRole(t.app, owner, "sales", "Bia");
+    await assert.rejects(createMemberTelegramLink(t.app, other.actor, other.membershipId, { api: f.api }));
+    const invite = await createMemberTelegramLink(t.app, owner, other.membershipId, { api: f.api });
+    assert.equal(invite.days, 7);
+    const bia = { id: 1234, first_name: "Bia", username: "bia" };
+    await handleTelegramUpdate(t.app, text(`/start ${invite.url.split("start=")[1]}`, bia), { api: f.api });
+    assert.match(f.sent().at(-1)!, /ligada à empresa Relojoaria/);
+    const status = await getTelegramStatus(t.app, other.actor, { api: f.api });
+    assert.equal(status.link?.username, "bia");
+    assert.equal(status.botUrl, "https://t.me/netzsales_bot");
   });
 
   it("grupo e áudio recebem aviso", async () => {

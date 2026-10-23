@@ -128,17 +128,6 @@ export const NAVIGATION: NavGroup[] = [
     ],
   },
   {
-    label: "Assistente IA",
-    short: "Assistente",
-    hint: "Netz no painel e no Telegram",
-    icon: "bot",
-    items: [
-      { label: "Telegram", href: "/assistente/telegram", permission: "nets.use", feature: "telegram", phase: 2 },
-      { label: "Operações", href: "/assistente/operacoes", phase: 8 },
-      { label: "Configurações do assistente", href: "/assistente/configuracoes", phase: 8 },
-    ],
-  },
-  {
     label: "Automações",
     short: "Automações",
     hint: "Regras automáticas",
@@ -159,7 +148,7 @@ export const NAVIGATION: NavGroup[] = [
   {
     label: "Administração",
     short: "Ajustes",
-    hint: "Empresa, usuários e permissões",
+    hint: "Empresa, usuários, permissões e seu Telegram",
     icon: "sliders",
     items: [
       { label: "Empresa", href: "/administracao/empresa", permission: "organization.view", phase: 1 },
@@ -168,6 +157,8 @@ export const NAVIGATION: NavGroup[] = [
       { label: "Permissões", href: "/administracao/permissoes", permission: "roles.view", phase: 1 },
       { label: "Auditoria", href: "/administracao/auditoria", permission: "audit.view", phase: 1 },
       { label: "Configurações gerais", href: "/administracao/configuracoes", permission: "settings.view", phase: 1 },
+      // O dia a dia do Telegram é o botão do topo; aqui ficam a ligação e o Desligar.
+      { label: "Meu Telegram", href: "/assistente/telegram", permission: "nets.use", feature: "telegram", phase: 2 },
     ],
   },
   {

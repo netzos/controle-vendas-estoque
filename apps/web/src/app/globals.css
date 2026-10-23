@@ -471,6 +471,12 @@ summary .edit-hint { float: right; font-size: 13px; color: var(--muted); font-we
 .imp-groups li { margin-bottom: 8px; }
 .imp-groups .imp-inline { display: inline-flex; margin-left: 8px; }
 .topbar-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+/* Botão Telegram do topo e cartão de boas-vindas da Início. */
+.telegram-button { display: flex; align-items: center; gap: 8px; margin: 0; }
+.telegram-error { color: var(--danger, #b42318); font-size: 0.85rem; max-width: 280px; }
+.telegram-welcome { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.telegram-welcome h2 { margin: 0 0 4px; }
+.telegram-welcome p { margin: 0; max-width: 560px; }
 
 /* Plataforma › Empresas: lista e ficha */
 .kpi-grid.compact.four { grid-template-columns: repeat(4, minmax(0, 1fr)); }

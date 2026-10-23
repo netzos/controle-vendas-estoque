@@ -2,19 +2,20 @@ import { getOrganization, getTelegramStatus } from "@erp/core";
 import { requirePermission } from "@/lib/auth";
 import { query } from "@/lib/actions";
 import { db } from "@/lib/db";
-import { ConnectTelegram, DisconnectTelegram } from "./forms";
+import { ConnectTelegram, DisconnectTelegram, TelegramButton } from "./forms";
 
-export const metadata = { title: "Telegram" };
+export const metadata = { title: "Meu Telegram" };
 
 export default async function TelegramPage() {
   const actor = await requirePermission("nets.use");
   const [status, org] = await Promise.all([getTelegramStatus(db(), actor), query(getOrganization, {})]);
   const link = status.link;
+  const here = link?.organizationId === actor.organizationId;
   const fmt = new Intl.DateTimeFormat("pt-BR", { timeZone: org.timezone, dateStyle: "short", timeStyle: "short" });
   return (
     <>
       <div className="page-header">
-        <h1>Netz no Telegram</h1>
+        <h1>Meu Telegram</h1>
         <p>Converse com a Netz pelo Telegram, com os mesmos dados e permissões do painel. Antes de mudar algo, ela pede confirmação com botões.</p>
       </div>
       <section className="card">
@@ -25,11 +26,11 @@ export default async function TelegramPage() {
             <h2>Conectado</h2>
             <p>
               Telegram {link.username ? `@${link.username}` : link.firstName ?? ""} ligado em {fmt.format(link.createdAt)}
-              {link.organizationId !== actor.organizationId && " a outra empresa. Toque em Conectar de novo para usar esta."}
-              {link.organizationId === actor.organizationId && ` à empresa ${org.name}.`}
+              {here ? ` à empresa ${org.name}.` : " a outra empresa. Toque em Conectar de novo para usar esta."}
             </p>
             <p className="muted small-text">Para trocar de empresa no Telegram, entre na empresa aqui no painel e toque em Conectar de novo.</p>
             <div className="actions">
+              {here && <TelegramButton linked large />}
               <ConnectTelegram again />
               <DisconnectTelegram />
             </div>
@@ -38,12 +39,12 @@ export default async function TelegramPage() {
           <>
             <h2>Conectar</h2>
             <ol className="steps-howto">
-              <li>Toque no botão abaixo. O Telegram abre na conversa com o robô do netzsales.</li>
+              <li>Toque no botão abaixo. O Telegram abre na conversa com a Netz.</li>
               <li>Toque em <strong>Iniciar</strong>. Pronto: sua conta fica ligada a {org.name}.</li>
-              <li>Escreva o que precisa, como &quot;vendi 2 latas no pix&quot; ou &quot;quanto tenho em estoque?&quot;.</li>
+              <li>Escreva ou mande áudio, como &quot;vendi 2 latas no pix&quot; ou &quot;quanto tenho em estoque?&quot;.</li>
             </ol>
             <ConnectTelegram again={false} />
-            <p className="muted small-text">O link vale por 15 minutos e só uma vez.</p>
+            <p className="muted small-text">O botão Telegram no alto da tela faz a mesma coisa, de qualquer página.</p>
           </>
         )}
       </section>
