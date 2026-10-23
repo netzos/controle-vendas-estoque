@@ -258,6 +258,33 @@ async function pendingSignup(db: Db, telegramUserId: number): Promise<{ name: st
 
 type SignupStatusTg = "pending" | "approved" | "rejected";
 
+/** Em qual empresa o Telegram da pessoa está trabalhando (null = não ligado). */
+export async function telegramOrganizationOf(db: Db, userId: string): Promise<string | null> {
+  const { rows } = await db.query<{ organizationId: string }>(
+    `SELECT organization_id AS "organizationId" FROM controle_vendas_estoque.telegram_links WHERE user_id = $1 AND status = 'active'`,
+    [userId],
+  );
+  return rows[0]?.organizationId ?? null;
+}
+
+/** Painel: faz a Netz do Telegram trabalhar na empresa escolhida (mesmo efeito do /empresa). */
+export async function setTelegramOrganization(db: Db, actor: Actor, organizationId: string, deps: TelegramDeps = {}): Promise<{ name: string }> {
+  const { rows } = await db.query<LinkRow & { telegramUserId: string }>(
+    `SELECT user_id AS "userId", organization_id AS "organizationId", chat_id::text AS "chatId", first_name AS "firstName", telegram_user_id::text AS "telegramUserId"
+       FROM controle_vendas_estoque.telegram_links WHERE user_id = $1 AND status = 'active'`,
+    [actor.userId],
+  );
+  const link = rows[0];
+  if (!link) throw new AppError("conflict", "Seu Telegram ainda não está ligado. Toque em Conectar Telegram.");
+  const org = (await listUserOrganizations(db, actor.userId)).find((o) => o.id === organizationId);
+  if (!org) throw notFound("Empresa");
+  if (link.organizationId === organizationId) return { name: org.name };
+  if (!(await linkActor(db, { ...link, organizationId }))) throw forbidden(`Na empresa ${org.name} a Netz não está liberada para você.`);
+  await db.query("UPDATE controle_vendas_estoque.telegram_links SET organization_id = $2 WHERE user_id = $1 AND status = 'active'", [actor.userId, organizationId]);
+  await notifyTelegram(link.chatId, `Agora estou na empresa ${org.name} (trocada pelo painel). Para trocar de novo, envie /empresa.`, deps);
+  return { name: org.name };
+}
+
 /** Pessoas desta empresa com o Telegram ligado (Ajustes › Usuários e botão do topo). */
 export async function listTelegramLinkedUsers(db: Db, actor: Actor): Promise<Set<string>> {
   const { rows } = await db.query<{ userId: string }>(

@@ -5,6 +5,7 @@ import type Anthropic from "@anthropic-ai/sdk";
 import {
   approveSignup,
   requestAnotherOrganization,
+  setTelegramOrganization,
   createMemberTelegramLink,
   rejectSignup,
   requestSignup,
@@ -333,7 +334,7 @@ describe("Várias empresas no mesmo Telegram", () => {
     const { rows: me } = await t.app.query<{ email: string }>("SELECT email FROM controle_vendas_estoque.users WHERE id = $1", [owner.userId]);
     await assert.rejects(
       requestSignup(t.app, { name: "Pepe", email: me[0]!.email, organizationName: "Ótica", password: "senha-do-pepe-123" }),
-      /Criar outra empresa/,
+      /Nova empresa/,
     );
 
     await requestAnotherOrganization(t.app, owner, { organizationName: "Ótica do Pepe" }, { api: f.api });
@@ -357,6 +358,11 @@ describe("Várias empresas no mesmo Telegram", () => {
       `SELECT organization_id AS "organizationId" FROM controle_vendas_estoque.telegram_links WHERE telegram_user_id = 777 AND status = 'active'`,
     );
     assert.equal(link.rows[0]!.organizationId, otica.callback_data.slice(4));
+
+    // Pelo painel (Meu Telegram) também troca, e a Netz avisa no Telegram.
+    await setTelegramOrganization(t.app, owner, owner.organizationId, { api: f.api });
+    assert.match(f.sent().at(-1)!, /Agora estou na empresa Relojoaria \(trocada pelo painel\)/);
+    await setTelegramOrganization(t.app, owner, otica.callback_data.slice(4), { api: f.api });
 
     // A confirmação mostra em qual empresa a ação acontece.
     const { rows: units } = await t.owner.query<{ id: string }>(

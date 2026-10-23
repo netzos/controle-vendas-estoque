@@ -2,7 +2,7 @@
 
 import { useActionState } from "react";
 import { FormMessage, SubmitButton } from "@/components/form";
-import { connectTelegramAction, disconnectTelegramAction } from "./actions";
+import { connectTelegramAction, disconnectTelegramAction, telegramOrganizationAction } from "./actions";
 
 export function ConnectTelegram({ again }: { again: boolean }) {
   const [state, action] = useActionState(connectTelegramAction, null);
@@ -35,5 +35,30 @@ export function DisconnectTelegram() {
       <FormMessage state={state} />
       <SubmitButton className="secondary">Desligar</SubmitButton>
     </form>
+  );
+}
+
+/** Lista de empresas da pessoa: a que está no Telegram fica marcada, as outras têm "Usar no Telegram". */
+export function TelegramOrganizations({ organizations, activeId }: { organizations: { id: string; name: string }[]; activeId: string }) {
+  const [state, action] = useActionState(telegramOrganizationAction, null);
+  return (
+    <div>
+      <FormMessage state={state} />
+      <ul className="org-choice">
+        {organizations.map((o) => (
+          <li key={o.id} className={o.id === activeId ? "active" : undefined}>
+            <span>{o.name}</span>
+            {o.id === activeId ? (
+              <span className="tag ok">Netz trabalhando aqui</span>
+            ) : (
+              <form action={action}>
+                <input type="hidden" name="organizationId" value={o.id} />
+                <SubmitButton className="secondary small" pendingText="Trocando...">Usar no Telegram</SubmitButton>
+              </form>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }

@@ -81,7 +81,7 @@ export async function requestSignup(
   }
   const user = await db.query("SELECT 1 FROM controle_vendas_estoque.users WHERE email = $1", [email]);
   if (user.rowCount) {
-    throw new AppError("conflict", "Este e-mail já tem conta. Para abrir outro negócio, entre no netzsales e use Ajustes › Criar outra empresa. A empresa nova fica na mesma conta, com o mesmo e-mail e a mesma senha.", {
+    throw new AppError("conflict", "Este e-mail já tem conta. Para abrir outro negócio, entre no netzsales e use Ajustes › Nova empresa. A empresa nova fica na mesma conta, com o mesmo e-mail e a mesma senha.", {
       details: { issues: [{ path: "email", message: "Este e-mail já tem conta." }] },
     });
   }
@@ -129,6 +129,20 @@ export async function requestAnotherOrganization(
     deps,
   );
   return { number };
+}
+
+/** Pedidos de outra empresa feitos por esta pessoa (tela Criar outra empresa). */
+export async function listMyOrganizationRequests(
+  db: Db,
+  userId: string,
+): Promise<{ number: number; organizationName: string; status: SignupStatus; createdAt: Date }[]> {
+  // O motivo da recusa é anotação interna do administrador: não aparece aqui.
+  const { rows } = await db.query<{ number: number; organizationName: string; status: SignupStatus; createdAt: Date }>(
+    `SELECT number::int AS number, organization_name AS "organizationName", status, created_at AS "createdAt"
+       FROM controle_vendas_estoque.signup_requests WHERE requested_by = $1 ORDER BY created_at DESC LIMIT 20`,
+    [userId],
+  );
+  return rows;
 }
 
 async function assertDeveloper(db: Db, userId: string) {

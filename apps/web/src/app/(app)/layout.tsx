@@ -1,4 +1,4 @@
-import { can, enabledFeatures, isPlatformDeveloper, listPlatformOrganizations, listTelegramLinkedUsers, listUserOrganizations, telegramConfigured } from "@erp/core";
+import { can, enabledFeatures, isPlatformDeveloper, listPlatformOrganizations, listUserOrganizations, telegramConfigured, telegramOrganizationOf } from "@erp/core";
 import { db } from "@/lib/db";
 import { currentActor } from "@/lib/auth";
 import { CURRENT_PHASE, NAVIGATION } from "@/lib/navigation";
@@ -29,7 +29,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     : own;
   // Botão Telegram no topo de todas as telas: a pessoa chega à Netz com um clique.
   const telegram = can(actor, "nets.use") && features.has("telegram") && telegramConfigured() && !actor.platformView;
-  const telegramLinked = telegram && (await listTelegramLinkedUsers(db(), actor)).has(actor.userId);
+  const telegramLinked = telegram && (await telegramOrganizationOf(db(), actor.userId)) !== null;
   const viewing = actor.platformView ? all.find((o) => o.id === actor.organizationId) : undefined;
   // O menu mostra só o que o perfil pode abrir; as páginas verificam de novo.
   const navigation = NAVIGATION.map((g) => ({
@@ -46,7 +46,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <div className="topbar-actions">
           {telegram && <TelegramButton linked={telegramLinked} />}
           {developer && <Link href="/plataforma" className="button secondary small">Painel da plataforma</Link>}
-          <OrganizationSwitcher organizations={organizations} activeId={actor.organizationId} action={switchOrganizationAction} />
+          <OrganizationSwitcher
+            organizations={organizations}
+            activeId={actor.organizationId}
+            action={switchOrganizationAction}
+            createHref={developer ? undefined : "/administracao/outra-empresa"}
+          />
         </div>
       }
     >

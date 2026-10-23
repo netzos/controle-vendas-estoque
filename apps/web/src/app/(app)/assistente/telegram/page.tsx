@@ -1,21 +1,21 @@
-import { getOrganization, getTelegramStatus } from "@erp/core";
+import { getOrganization, getTelegramStatus, listUserOrganizations } from "@erp/core";
 import { requirePermission } from "@/lib/auth";
 import { query } from "@/lib/actions";
 import { db } from "@/lib/db";
-import { ConnectTelegram, DisconnectTelegram, TelegramButton } from "./forms";
+import { ConnectTelegram, DisconnectTelegram, TelegramButton, TelegramOrganizations } from "./forms";
 
-export const metadata = { title: "Meu Telegram" };
+export const metadata = { title: "Telegram" };
 
 export default async function TelegramPage() {
   const actor = await requirePermission("nets.use");
-  const [status, org] = await Promise.all([getTelegramStatus(db(), actor), query(getOrganization, {})]);
+  const [status, org, organizations] = await Promise.all([getTelegramStatus(db(), actor), query(getOrganization, {}), listUserOrganizations(db(), actor.userId)]);
   const link = status.link;
   const here = link?.organizationId === actor.organizationId;
   const fmt = new Intl.DateTimeFormat("pt-BR", { timeZone: org.timezone, dateStyle: "short", timeStyle: "short" });
   return (
     <>
       <div className="page-header">
-        <h1>Meu Telegram</h1>
+        <h1>Telegram</h1>
         <p>Converse com a Netz pelo Telegram, com os mesmos dados e permissões do painel. Antes de mudar algo, ela pede confirmação com botões.</p>
       </div>
       <section className="card">
@@ -26,9 +26,8 @@ export default async function TelegramPage() {
             <h2>Conectado</h2>
             <p>
               Telegram {link.username ? `@${link.username}` : link.firstName ?? ""} ligado em {fmt.format(link.createdAt)}
-              {here ? ` à empresa ${org.name}.` : " e agora trabalhando em outra empresa. Para usar esta, envie /empresa no Telegram."}
+              {here || organizations.length < 2 ? ` à empresa ${organizations.find((o) => o.id === link.organizationId)?.name ?? org.name}.` : "."}
             </p>
-            <p className="muted small-text">Tem mais de uma empresa? No Telegram, envie /empresa e escolha em qual delas a Netz trabalha.</p>
             <div className="actions">
               {here && <TelegramButton linked large />}
               <ConnectTelegram again />
@@ -48,6 +47,13 @@ export default async function TelegramPage() {
           </>
         )}
       </section>
+      {link && organizations.length > 1 && (
+        <section className="card">
+          <h2>Em qual empresa a Netz trabalha no Telegram</h2>
+          <p className="muted">Tudo o que você pedir no Telegram vale para a empresa marcada. Troque aqui, ou no Telegram enviando /empresa.</p>
+          <TelegramOrganizations organizations={organizations} activeId={link.organizationId} />
+        </section>
+      )}
     </>
   );
 }
