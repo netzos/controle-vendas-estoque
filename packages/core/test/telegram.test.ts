@@ -279,6 +279,46 @@ describe("Telegram logo no pedido de conta", () => {
   });
 });
 
+describe("Aprovar cadastros pelo Telegram", () => {
+  it("o administrador recebe o pedido com Aprovar e Recusar e decide por lá", async () => {
+    await t.owner.query("INSERT INTO controle_vendas_estoque.platform_developers (user_id) VALUES ($1) ON CONFLICT DO NOTHING", [owner.userId]);
+    const f = fakeApi();
+    const { url } = await createTelegramLink(t.app, owner, { api: f.api });
+    await handleTelegramUpdate(t.app, text(`/start ${url.split("start=")[1]}`), { api: f.api });
+
+    await requestSignup(t.app, { name: "Eva Lima", email: "eva@loja.com", whatsapp: "(91) 97777-6666", organizationName: "Loja da Eva", password: "senha-da-eva-123" }, null, { api: f.api });
+    const card = f.calls.find((c) => c.method === "sendMessage" && /Pedido de conta/.test(String(c.params.text)))!;
+    assert.equal(String(card.params.chat_id), "777");
+    assert.match(String(card.params.text), /Loja da Eva[\s\S]*eva@loja\.com[\s\S]*Posso liberar\?/);
+    const [approveBtn, rejectBtn] = (card.params.reply_markup as { inline_keyboard: { callback_data: string }[][] }).inline_keyboard[0]!;
+
+    // Quem não é administrador não decide.
+    await handleTelegramUpdate(t.app, { update_id: nextUpdate++, callback_query: { id: "s0", from: { id: 4242, first_name: "Z" }, data: approveBtn!.callback_data } }, { api: f.api });
+    assert.ok(f.calls.some((c) => c.method === "answerCallbackQuery" && /Só o administrador/.test(String(c.params.text))));
+
+    await handleTelegramUpdate(
+      t.app,
+      { update_id: nextUpdate++, callback_query: { id: "s1", from: tgUser, data: approveBtn!.callback_data, message: { message_id: 9, chat: { id: 777, type: "private" } } } },
+      { api: f.api },
+    );
+    const done = f.calls.filter((c) => c.method === "sendMessage").at(-1)!;
+    assert.match(String(done.params.text), /Aprovado\. A Loja da Eva já está liberada/);
+    assert.match(JSON.stringify(done.params.reply_markup), /wa\.me\/5591977776666/);
+    const st = await t.app.query<{ status: string }>("SELECT status FROM controle_vendas_estoque.signup_requests WHERE email = 'eva@loja.com'");
+    assert.equal(st.rows[0]!.status, "approved");
+    // Tocar de novo não aprova duas vezes.
+    await handleTelegramUpdate(t.app, { update_id: nextUpdate++, callback_query: { id: "s2", from: tgUser, data: approveBtn!.callback_data } }, { api: f.api });
+    assert.match(f.sent().at(-1)!, /já foi decidido/);
+    assert.ok(rejectBtn!.callback_data.startsWith("signup:r:"));
+
+    await requestSignup(t.app, { name: "Fabio", email: "fabio@loja.com", organizationName: "Loja do Fabio", password: "senha-do-fabio-123" }, null, { api: f.api });
+    const card2 = f.calls.filter((c) => c.method === "sendMessage" && /Loja do Fabio/.test(String(c.params.text))).at(-1)!;
+    const reject = (card2.params.reply_markup as { inline_keyboard: { callback_data: string }[][] }).inline_keyboard[0]![1]!;
+    await handleTelegramUpdate(t.app, { update_id: nextUpdate++, callback_query: { id: "s3", from: tgUser, data: reject.callback_data } }, { api: f.api });
+    assert.equal(f.sent().at(-1), "Pedido recusado.");
+  });
+});
+
 describe("Microfone do balão da Netz", () => {
   it("transcreve com a mesma API do Telegram e respeita a permissão", async () => {
     const data = new TextEncoder().encode("audio");

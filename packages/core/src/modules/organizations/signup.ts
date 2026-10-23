@@ -7,7 +7,7 @@ import { normalizeEmail } from "../../auth/session.ts";
 import { AppError, conflict, forbidden, notFound, parseInput } from "../../errors.ts";
 import { appUrl, mailConfigured, sendMail } from "../../mail.ts";
 import { telegramConfigured } from "../telegram/api.ts";
-import { createSignupTelegramLink, createTelegramInvite, linkSignupTelegramTx, notifyTelegram, signupTelegramChat, type TelegramDeps } from "../telegram/service.ts";
+import { notifySignupRequest, createSignupTelegramLink, createTelegramInvite, linkSignupTelegramTx, notifyTelegram, signupTelegramChat, type TelegramDeps } from "../telegram/service.ts";
 import { createOrganizationTx } from "./bootstrap.ts";
 import { isPlatformDeveloper, listPlatformOrganizations } from "./platform.ts";
 
@@ -91,6 +91,8 @@ export async function requestSignup(
     [input.name, email, whatsapp, input.organizationName, input.business || null, await hashPassword(input.password), ip ?? null],
   );
   const { id, number } = rows[0]!;
+  // O administrador recebe o pedido no Telegram, com Aprovar e Recusar.
+  await notifySignupRequest(db, { id, number, name: input.name, email, whatsapp, organizationName: input.organizationName, business: input.business || null }, deps);
   // A pessoa já fala com a Netz no Telegram enquanto espera a aprovação.
   return { number, telegramUrl: await createSignupTelegramLink(db, id, deps) };
 }

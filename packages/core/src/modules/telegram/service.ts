@@ -172,6 +172,79 @@ async function connectSignup(db: Db, api: TelegramApi, msg: TgMessage, code: str
   );
 }
 
+/** Pedido novo: avisa o administrador da plataforma no Telegram, com os botões Aprovar e Recusar. */
+export async function notifySignupRequest(
+  db: Db,
+  req: { id: string; number: number; name: string; email: string; whatsapp: string | null; organizationName: string; business: string | null },
+  deps: TelegramDeps = {},
+): Promise<void> {
+  if (!telegramConfigured()) return;
+  const { rows } = await db.query<{ chatId: string }>(
+    `SELECT chat_id::text AS "chatId" FROM controle_vendas_estoque.telegram_links
+      WHERE status = 'active' AND controle_vendas_estoque.is_platform_developer(user_id)`,
+  );
+  const text =
+    `📝 Pedido de conta nº ${req.number}\n\n` +
+    `Empresa: ${req.organizationName}\nNome: ${req.name}\nE-mail: ${req.email}` +
+    (req.whatsapp ? `\nWhatsApp: +${req.whatsapp}` : "") +
+    (req.business ? `\nO que vende: ${req.business}` : "") +
+    "\n\nPosso liberar?";
+  const markup = { inline_keyboard: [[{ text: "✅ Aprovar", callback_data: `signup:a:${req.id}` }, { text: "✖️ Recusar", callback_data: `signup:r:${req.id}` }]] };
+  for (const r of rows) {
+    await send(deps.api ?? telegramApi, r.chatId, text, markup).catch((err) => console.error("telegram signup notify failed", err instanceof Error ? err.message : err));
+  }
+}
+
+/** Aprovar ou Recusar tocado na mensagem do pedido. Só o administrador da plataforma decide. */
+async function onSignupDecision(db: Db, api: TelegramApi, cb: NonNullable<TelegramUpdate["callback_query"]>, approve: boolean, requestId: string, deps: TelegramDeps) {
+  const answer = (text: string) => api.call("answerCallbackQuery", { callback_query_id: cb.id, text }).catch(() => {});
+  const link = await findLink(db, cb.from.id);
+  const { rows } = link
+    ? await db.query<{ name: string; dev: boolean }>(
+        "SELECT name, controle_vendas_estoque.is_platform_developer(id) AS dev FROM controle_vendas_estoque.users WHERE id = $1",
+        [link.userId],
+      )
+    : { rows: [] };
+  const dev = rows[0];
+  if (!link || !dev?.dev) {
+    await answer("Só o administrador da plataforma pode decidir.");
+    return;
+  }
+  // Tira os botões para não decidir duas vezes.
+  if (cb.message) {
+    await api.call("editMessageReplyMarkup", { chat_id: cb.message.chat.id, message_id: cb.message.message_id, reply_markup: { inline_keyboard: [] } }).catch(() => {});
+  }
+  // Import tardio: o cadastro também usa este módulo.
+  const { approveSignup, rejectSignup } = await import("../organizations/signup.ts");
+  const developer = { userId: link.userId, userName: dev.name };
+  try {
+    if (!approve) {
+      await rejectSignup(db, developer, requestId, null, { ...deps, api });
+      await answer("Recusado");
+      await send(api, link.chatId, "Pedido recusado.");
+      return;
+    }
+    const a = await approveSignup(db, developer, requestId, { ...deps, api });
+    await answer("Aprovado");
+    const notice =
+      `Olá, ${a.name}! Sua conta no netzsales foi aprovada e a ${a.organizationName} já está liberada.\n\n` +
+      (a.telegramUrl ? `Para falar com a Netz no Telegram, toque aqui e depois em Iniciar: ${a.telegramUrl}\n\n` : "") +
+      `Para usar o painel no navegador, entre com seu e-mail e a senha que você criou: ${a.loginUrl}`;
+    await send(
+      api,
+      link.chatId,
+      `Aprovado. A ${a.organizationName} já está liberada.` +
+        (a.telegramLinked ? ` Avisei ${a.name.split(" ")[0]} aqui no Telegram, e a conta já está ligada.` : ""),
+      a.whatsapp && !a.telegramLinked
+        ? { inline_keyboard: [[{ text: `Avisar ${a.name.split(" ")[0]} no WhatsApp`, url: `https://wa.me/${a.whatsapp}?text=${encodeURIComponent(notice)}` }]] }
+        : undefined,
+    );
+  } catch (err) {
+    await answer("Não deu certo");
+    await send(api, link.chatId, err instanceof AppError ? err.message : "Não consegui registrar a decisão. Tente pelo painel.");
+  }
+}
+
 /** Quem ainda não tem conta ligada, mas tem pedido em análise feito por este Telegram. */
 async function pendingSignup(db: Db, telegramUserId: number): Promise<{ name: string; organizationName: string } | null> {
   const { rows } = await db.query<{ name: string; organizationName: string }>(
@@ -520,8 +593,11 @@ async function onMessage(db: Db, api: TelegramApi, update: TelegramUpdate, deps:
   await deliver(db, api, actor, link.chatId, posted.id);
 }
 
-async function onCallback(db: Db, api: TelegramApi, update: TelegramUpdate, model?: NetsModel) {
+async function onCallback(db: Db, api: TelegramApi, update: TelegramUpdate, deps: TelegramDeps) {
+  const model = deps.model;
   const cb = update.callback_query!;
+  const signup = /^signup:([ar]):([0-9a-f-]{36})$/.exec(cb.data ?? "");
+  if (signup) return onSignupDecision(db, api, cb, signup[1] === "a", signup[2]!, deps);
   const m = /^nets:([cx]):([0-9a-f-]{36})$/.exec(cb.data ?? "");
   const answer = (text: string) => api.call("answerCallbackQuery", { callback_query_id: cb.id, text }).catch(() => {});
   const link = await findLink(db, cb.from.id);
@@ -567,7 +643,7 @@ export async function handleTelegramUpdate(db: Db, update: TelegramUpdate, deps:
   const api = deps.api ?? telegramApi;
   try {
     if (update.message) await onMessage(db, api, update, deps);
-    else if (update.callback_query) await onCallback(db, api, update, deps.model);
+    else if (update.callback_query) await onCallback(db, api, update, deps);
   } catch (err) {
     console.error("telegram update failed", err instanceof Error ? err.message : err);
     const chat = update.message?.chat.id ?? update.callback_query?.message?.chat.id;
