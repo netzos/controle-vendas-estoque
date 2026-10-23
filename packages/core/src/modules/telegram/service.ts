@@ -5,6 +5,7 @@ import { can, resolveActor, type Actor } from "../../context.ts";
 import { enabledFeatures } from "../../features.ts";
 import { AppError, forbidden, notFound } from "../../errors.ts";
 import { recordAudit } from "../../audit.ts";
+import { listUserOrganizations } from "../../auth/session.ts";
 import { appUrl } from "../../mail.ts";
 import { transcribeAudioDetailed, transcriptionConfigured, type Transcriber } from "../../transcribe.ts";
 import { recordTranscriptionUsage } from "../../usage.ts";
@@ -425,8 +426,11 @@ async function deliver(db: Db, api: TelegramApi, actor: Actor, chatId: string, f
     );
     return rows;
   });
+  // Quem tem mais de uma empresa vê em qual delas a ação vai acontecer.
+  const orgs = replies.some((r) => r.title) ? await listUserOrganizations(db, actor.userId) : [];
+  const where = orgs.length > 1 ? `[${orgs.find((o) => o.id === actor.organizationId)?.name ?? "empresa"}] ` : "";
   for (const r of replies) {
-    const text = r.title ? `${r.body}\n\n👉 ${r.title}` : r.body;
+    const text = r.title ? `${r.body}\n\n👉 ${where}${r.title}` : r.body;
     const markup = r.pending
       ? { inline_keyboard: [[{ text: "✅ Confirmar", callback_data: `nets:c:${r.id}` }, { text: "✖️ Cancelar", callback_data: `nets:x:${r.id}` }]] }
       : undefined;
@@ -451,6 +455,50 @@ async function deliver(db: Db, api: TelegramApi, actor: Actor, chatId: string, f
       tx.query("UPDATE controle_vendas_estoque.nets_messages SET telegram_message_id = $2 WHERE id = $1", [r.id, sent ?? 0]),
     );
   }
+}
+
+// Várias empresas -----------------------------------------------------------------
+// O Telegram é da pessoa; a empresa em que a Netz trabalha é escolhida por /empresa.
+
+/** Mostra um botão para cada empresa da pessoa (a atual marcada). */
+async function chooseOrganization(db: Db, api: TelegramApi, link: LinkRow) {
+  const orgs = await listUserOrganizations(db, link.userId);
+  if (orgs.length <= 1) {
+    await send(api, link.chatId, orgs[0] ? `Você tem só uma empresa: ${orgs[0].name}. Estou trabalhando nela.` : "Não encontrei empresas na sua conta.");
+    return;
+  }
+  const here = orgs.find((o) => o.id === link.organizationId);
+  await send(
+    api,
+    link.chatId,
+    `${here ? `Agora estou na empresa ${here.name}.` : "Você ainda não escolheu uma empresa."} Em qual empresa você quer que eu trabalhe?`,
+    { inline_keyboard: orgs.map((o) => [{ text: `${o.id === link.organizationId ? "✅ " : ""}${o.name}`, callback_data: `org:${o.id}` }]) },
+  );
+}
+
+async function onChooseOrganization(db: Db, api: TelegramApi, cb: NonNullable<TelegramUpdate["callback_query"]>, organizationId: string) {
+  const answer = (text: string) => api.call("answerCallbackQuery", { callback_query_id: cb.id, text }).catch(() => {});
+  const link = await findLink(db, cb.from.id);
+  const org = link && (await listUserOrganizations(db, link.userId)).find((o) => o.id === organizationId);
+  if (!link || !org) {
+    await answer("Essa empresa não está na sua conta.");
+    return;
+  }
+  const actor = await linkActor(db, { ...link, organizationId });
+  if (!actor) {
+    await answer("Sem acesso à Netz nessa empresa.");
+    await send(api, link.chatId, `Na empresa ${org.name} a Netz não está liberada para você. Fale com o dono da empresa.`);
+    return;
+  }
+  await db.query("UPDATE controle_vendas_estoque.telegram_links SET organization_id = $2 WHERE telegram_user_id = $1 AND status = 'active'", [
+    cb.from.id,
+    organizationId,
+  ]);
+  if (cb.message) {
+    await api.call("editMessageReplyMarkup", { chat_id: cb.message.chat.id, message_id: cb.message.message_id, reply_markup: { inline_keyboard: [] } }).catch(() => {});
+  }
+  await answer(org.name);
+  await send(api, link.chatId, `Pronto, agora estou na empresa ${org.name}. Tudo o que você pedir vale para ela. Para trocar de novo, envie /empresa.`);
 }
 
 async function connect(db: Db, api: TelegramApi, msg: TgMessage, code: string) {
@@ -548,6 +596,10 @@ async function onMessage(db: Db, api: TelegramApi, update: TelegramUpdate, deps:
     );
     return;
   }
+  if (/^\/empresas?\b/i.test(text) || /^(trocar|mudar)( de)? empresa\b/i.test(text)) {
+    await chooseOrganization(db, api, link);
+    return;
+  }
   if (/^\/(sair|desconectar)\b/i.test(text)) {
     await db.query("UPDATE controle_vendas_estoque.telegram_links SET status = 'revoked' WHERE telegram_user_id = $1 AND status = 'active'", [msg.from.id]);
     await send(api, msg.chat.id, "Conta desligada. Para voltar, toque no botão Telegram no painel do netzsales.");
@@ -555,11 +607,25 @@ async function onMessage(db: Db, api: TelegramApi, update: TelegramUpdate, deps:
   }
   const actor = await linkActor(db, link);
   if (!actor) {
-    await send(api, msg.chat.id, "Sua conta não tem mais acesso a essa empresa ou à Netz. Fale com quem administra o netzsales.");
+    const others = (await listUserOrganizations(db, link.userId)).filter((o) => o.id !== link.organizationId);
+    await send(
+      api,
+      msg.chat.id,
+      others.length
+        ? "Sua conta não tem mais acesso a essa empresa ou à Netz. Envie /empresa para escolher outra das suas empresas."
+        : "Sua conta não tem mais acesso a essa empresa ou à Netz. Fale com quem administra o netzsales.",
+    );
     return;
   }
   if (start) {
-    await send(api, msg.chat.id, `Oi${link.firstName ? `, ${link.firstName}` : ""}! Sua conta já está ligada. É só me dizer o que precisa.`);
+    const orgs = await listUserOrganizations(db, link.userId);
+    const here = orgs.find((o) => o.id === link.organizationId)?.name;
+    await send(
+      api,
+      msg.chat.id,
+      `Oi${link.firstName ? `, ${link.firstName}` : ""}! Sua conta já está ligada` +
+        (orgs.length > 1 ? `, e agora estou na empresa ${here}. Para trocar, envie /empresa.` : ". É só me dizer o que precisa."),
+    );
     return;
   }
   let said = text;
@@ -596,6 +662,8 @@ async function onMessage(db: Db, api: TelegramApi, update: TelegramUpdate, deps:
 async function onCallback(db: Db, api: TelegramApi, update: TelegramUpdate, deps: TelegramDeps) {
   const model = deps.model;
   const cb = update.callback_query!;
+  const org = /^org:([0-9a-f-]{36})$/.exec(cb.data ?? "");
+  if (org) return onChooseOrganization(db, api, cb, org[1]!);
   const signup = /^signup:([ar]):([0-9a-f-]{36})$/.exec(cb.data ?? "");
   if (signup) return onSignupDecision(db, api, cb, signup[1] === "a", signup[2]!, deps);
   const m = /^nets:([cx]):([0-9a-f-]{36})$/.exec(cb.data ?? "");

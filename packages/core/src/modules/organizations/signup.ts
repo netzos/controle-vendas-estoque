@@ -46,6 +46,8 @@ export interface SignupRequest {
   decidedAt: Date | null;
   rejectReason: string | null;
   organizationId: string | null;
+  /** Cliente que já tem conta pedindo mais uma empresa (Criar outra empresa). */
+  existingUser: boolean;
   /** A pessoa já abriu o robô pelo link da tela "pedido recebido". */
   telegramLinked: boolean;
   createdAt: Date;
@@ -54,7 +56,7 @@ export interface SignupRequest {
 const SELECT = `
   SELECT r.id, r.number::int AS number, r.name, r.email, r.whatsapp, r.organization_name AS "organizationName", r.business, r.status,
          u.name AS "decidedByName", r.decided_at AS "decidedAt", r.reject_reason AS "rejectReason",
-         r.organization_id AS "organizationId", r.telegram_user_id IS NOT NULL AS "telegramLinked", r.created_at AS "createdAt"
+         r.organization_id AS "organizationId", r.telegram_user_id IS NOT NULL AS "telegramLinked", r.requested_by IS NOT NULL AS "existingUser", r.created_at AS "createdAt"
     FROM controle_vendas_estoque.signup_requests r
     LEFT JOIN controle_vendas_estoque.users u ON u.id = r.decided_by`;
 
@@ -79,7 +81,7 @@ export async function requestSignup(
   }
   const user = await db.query("SELECT 1 FROM controle_vendas_estoque.users WHERE email = $1", [email]);
   if (user.rowCount) {
-    throw new AppError("conflict", "Este e-mail já tem conta. Entre pela tela de login ou use \"Esqueci minha senha\".", {
+    throw new AppError("conflict", "Este e-mail já tem conta. Para abrir outro negócio, entre no netzsales e use Ajustes › Criar outra empresa. A empresa nova fica na mesma conta, com o mesmo e-mail e a mesma senha.", {
       details: { issues: [{ path: "email", message: "Este e-mail já tem conta." }] },
     });
   }
@@ -95,6 +97,38 @@ export async function requestSignup(
   await notifySignupRequest(db, { id, number, name: input.name, email, whatsapp, organizationName: input.organizationName, business: input.business || null }, deps);
   // A pessoa já fala com a Netz no Telegram enquanto espera a aprovação.
   return { number, telegramUrl: await createSignupTelegramLink(db, id, deps) };
+}
+
+export const anotherOrganizationInput = z.object({
+  organizationName: z.string().trim().min(2, "Informe o nome da empresa.").max(120),
+  business: z.string().trim().max(500, "Use até 500 caracteres.").optional().nullable(),
+});
+
+/** Ajustes › Criar outra empresa: quem já tem conta pede mais uma empresa, que passa pela mesma aprovação. */
+export async function requestAnotherOrganization(
+  db: Db,
+  actor: { userId: string },
+  raw: z.input<typeof anotherOrganizationInput>,
+  deps: TelegramDeps = {},
+): Promise<{ number: number }> {
+  const input = parseInput(anotherOrganizationInput, raw);
+  const { rows: users } = await db.query<{ name: string; email: string }>("SELECT name, email FROM controle_vendas_estoque.users WHERE id = $1", [actor.userId]);
+  const user = users[0];
+  if (!user) throw notFound("Usuário");
+  const pending = await db.query("SELECT 1 FROM controle_vendas_estoque.signup_requests WHERE email = $1 AND status = 'pending'", [user.email]);
+  if (pending.rowCount) throw conflict("Você já tem um pedido em análise. Assim que ele for aprovado, peça a próxima empresa.");
+  const { rows } = await db.query<{ id: string; number: number }>(
+    `INSERT INTO controle_vendas_estoque.signup_requests (name, email, organization_name, business, requested_by)
+     VALUES ($1, $2, $3, $4, $5) RETURNING id, number::int AS number`,
+    [user.name, user.email, input.organizationName, input.business || null, actor.userId],
+  );
+  const { id, number } = rows[0]!;
+  await notifySignupRequest(
+    db,
+    { id, number, name: `${user.name} (já é cliente, quer mais uma empresa)`, email: user.email, whatsapp: null, organizationName: input.organizationName, business: input.business || null },
+    deps,
+  );
+  return { number };
 }
 
 async function assertDeveloper(db: Db, userId: string) {
@@ -133,28 +167,48 @@ export async function approveSignup(
   if (!z.string().uuid().safeParse(requestId).success) throw notFound("Pedido");
   const orgNames = new Set((await listPlatformOrganizations(db, developer.userId)).map((o) => o.name.toLowerCase()));
   const result = await withTransaction(db, async (tx) => {
-    const { rows } = await tx.query<{ name: string; email: string; whatsapp: string | null; organizationName: string; passwordHash: string; status: SignupStatus }>(
-      `SELECT name, email, whatsapp, organization_name AS "organizationName", password_hash AS "passwordHash", status
+    const { rows } = await tx.query<{
+      name: string;
+      email: string;
+      whatsapp: string | null;
+      organizationName: string;
+      passwordHash: string | null;
+      requestedBy: string | null;
+      status: SignupStatus;
+    }>(
+      `SELECT name, email, whatsapp, organization_name AS "organizationName", password_hash AS "passwordHash", requested_by AS "requestedBy", status
          FROM controle_vendas_estoque.signup_requests WHERE id = $1 FOR UPDATE`,
       [requestId],
     );
     const r = rows[0];
     if (!r) throw notFound("Pedido");
     if (r.status !== "pending") throw conflict("Este pedido já foi decidido.");
-    const taken = await tx.query("SELECT 1 FROM controle_vendas_estoque.users WHERE email = $1", [r.email]);
-    if (taken.rowCount) throw conflict("Este e-mail ganhou uma conta depois do pedido. Recuse o pedido e crie a empresa pela aba Empresas.");
+    const taken = r.requestedBy ? null : await tx.query("SELECT 1 FROM controle_vendas_estoque.users WHERE email = $1", [r.email]);
+    if (taken?.rowCount) throw conflict("Este e-mail ganhou uma conta depois do pedido. Recuse o pedido e crie a empresa pela aba Empresas.");
     // Nome repetido ganha um complemento para não confundir na lista.
     let orgName = r.organizationName;
     for (let i = 2; orgNames.has(orgName.toLowerCase()); i++) orgName = `${r.organizationName} (${i})`;
 
-    const u = await tx.query<{ id: string }>(
-      "INSERT INTO controle_vendas_estoque.users (email, name, password_hash, must_change_password) VALUES ($1, $2, $3, false) RETURNING id",
-      [r.email, r.name, r.passwordHash],
-    );
-    const userId = u.rows[0]!.id;
+    // Cliente que já tem conta: a empresa nova entra na mesma conta.
+    const userId = r.requestedBy
+      ? r.requestedBy
+      : (
+          await tx.query<{ id: string }>(
+            "INSERT INTO controle_vendas_estoque.users (email, name, password_hash, must_change_password) VALUES ($1, $2, $3, false) RETURNING id",
+            [r.email, r.name, r.passwordHash],
+          )
+        ).rows[0]!.id;
     const { organizationId } = await createOrganizationTx(tx, userId, { name: orgName });
-    // Quem abriu o robô pelo link do pedido já sai com o Telegram ligado.
-    const telegramChat = await linkSignupTelegramTx(tx, requestId, userId, organizationId);
+    // Quem abriu o robô pelo link do pedido já sai com o Telegram ligado. Quem já
+    // tinha conta continua no Telegram dele e troca de empresa com /empresa.
+    const telegramChat = r.requestedBy
+      ? ((
+          await tx.query<{ chatId: string }>(
+            "SELECT chat_id::text AS \"chatId\" FROM controle_vendas_estoque.telegram_links WHERE user_id = $1 AND status = 'active'",
+            [userId],
+          )
+        ).rows[0]?.chatId ?? null)
+      : await linkSignupTelegramTx(tx, requestId, userId, organizationId);
     await setTenant(tx, { organizationId, userId: developer.userId });
     await tx.query(
       `UPDATE controle_vendas_estoque.signup_requests
@@ -168,9 +222,16 @@ export async function approveSignup(
       entityId: organizationId,
       summary: `Cadastro de ${r.name} <${r.email}> aprovado por ${developer.userName}`,
     });
-    return { organizationId, userId, telegramChat, name: r.name, email: r.email, whatsapp: r.whatsapp, organizationName: orgName, loginUrl: `${appUrl()}/login` };
+    return { organizationId, userId, telegramChat, existingUser: !!r.requestedBy, name: r.name, email: r.email, whatsapp: r.whatsapp, organizationName: orgName, loginUrl: `${appUrl()}/login` };
   });
-  if (result.telegramChat) {
+  if (result.telegramChat && result.existingUser) {
+    await notifyTelegram(
+      result.telegramChat,
+      `Boa notícia, ${result.name.split(" ")[0]}! Sua nova empresa ${result.organizationName} foi aprovada e já está na sua conta.\n\n` +
+        "Para eu trabalhar nela aqui no Telegram, envie /empresa e escolha. No painel, use o seletor de empresa no alto da tela.",
+      deps,
+    );
+  } else if (result.telegramChat) {
     await notifyTelegram(
       result.telegramChat,
       `Boa notícia, ${result.name.split(" ")[0]}! Sua conta da ${result.organizationName} foi aprovada e já está ligada aqui.\n\n` +
@@ -189,7 +250,9 @@ export async function approveSignup(
     await sendMail({
       to: result.email,
       subject: `Sua conta no netzsales foi aprovada`,
-      text:
+      text: result.existingUser
+        ? `Olá, ${result.name}.\n\nSua nova empresa ${result.organizationName} já está liberada no netzsales, na mesma conta. Entre e escolha a empresa no alto da tela:\n\n${result.loginUrl}`
+        :
         `Olá, ${result.name}.\n\nA ${result.organizationName} já está liberada no netzsales. Entre com seu e-mail e a senha que você criou:\n\n${result.loginUrl}` +
         (telegramUrl ? `\n\nPara falar com a Netz, sua assistente, no Telegram, toque aqui (vale 7 dias):\n\n${telegramUrl}` : ""),
     }).catch((err) => console.error("[signup] e-mail de aprovação não enviado", err));
