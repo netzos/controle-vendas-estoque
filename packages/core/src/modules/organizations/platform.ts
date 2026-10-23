@@ -664,3 +664,194 @@ export async function platformUsageSummary(db: Db, developerUserId: string, sinc
   );
   return rows;
 }
+
+// Monitoramento da empresa ----------------------------------------------------
+
+export type UsageKind =
+  | "categories" | "products" | "customers" | "suppliers" | "sales" | "sales_cancelled"
+  | "stock_moves" | "costs" | "photos" | "netz_messages" | "netz_actions";
+
+export const USAGE_LABELS: Record<UsageKind, string> = {
+  categories: "Categorias",
+  products: "Produtos",
+  customers: "Clientes",
+  suppliers: "Fornecedores",
+  sales: "Vendas",
+  sales_cancelled: "Vendas canceladas",
+  stock_moves: "Entradas e ajustes de estoque",
+  costs: "Custos lançados",
+  photos: "Fotos de produtos",
+  netz_messages: "Mensagens para a Netz",
+  netz_actions: "Ações feitas pela Netz",
+};
+
+/** Nome amigável de cada ação registrada (audit_logs.action), para o resumo "O que foi feito". */
+export const ACTION_LABELS: Record<string, string> = {
+  "category.create": "Categoria cadastrada",
+  "category.update": "Categoria alterada",
+  "product.create": "Produto cadastrado",
+  "product.update": "Produto alterado",
+  "product.price_change": "Preço de produto alterado",
+  "product.image_add": "Foto de produto adicionada",
+  "product.image_remove": "Foto de produto removida",
+  "product.cost_part": "Custo de obtenção alterado",
+  "customer.create": "Cliente cadastrado",
+  "customer.update": "Cliente alterado",
+  "supplier.create": "Fornecedor cadastrado",
+  "supplier.update": "Fornecedor alterado",
+  "supplier.price_set": "Preço combinado com fornecedor",
+  "supplier.price_remove": "Preço de fornecedor removido",
+  "sale.create": "Venda registrada",
+  "sale.cancel": "Venda cancelada",
+  "stock.in": "Entrada de estoque",
+  "stock.out": "Saída de estoque",
+  "stock.adjust": "Ajuste de estoque",
+  "cost.create": "Custo lançado",
+  "cost.cancel": "Custo cancelado",
+  "cost_type.create": "Tipo de custo criado",
+  "cost_type.update": "Tipo de custo alterado",
+  "followup.create": "Acompanhamento criado",
+  "followup.update": "Acompanhamento atualizado",
+  "followup.step_status": "Etapa depois da venda mudou de situação",
+  "followup.step_update": "Etapa depois da venda alterada",
+  "step_type.create": "Tipo de etapa criado",
+  "step_type.update": "Tipo de etapa alterado",
+  "custom_field.create": "Campo personalizado criado",
+  "custom_field.update": "Campo personalizado alterado",
+  "unit.create": "Unidade criada",
+  "unit.update": "Unidade alterada",
+  "branch.create": "Filial criada",
+  "branch.update": "Filial alterada",
+  "member.add": "Pessoa adicionada",
+  "member.update": "Pessoa alterada",
+  "member.profile": "Perfil de pessoa alterado",
+  "member.password_link": "Link de senha gerado",
+  "member.support_join": "Equipe entrou para suporte",
+  "member.support_leave": "Equipe saiu do suporte",
+  "role.create": "Perfil de acesso criado",
+  "role.update": "Perfil de acesso alterado",
+  "role.delete": "Perfil de acesso apagado",
+  "settings.update": "Ajustes alterados",
+  "organization.create": "Empresa criada",
+  "organization.platform_create": "Empresa criada pela equipe",
+  "organization.update": "Dados da empresa alterados",
+  "organization.kind": "Tipo da empresa alterado",
+  "organization.billing": "Mensalidade alterada",
+  "organization.suspend": "Empresa suspensa",
+  "organization.reactivate": "Empresa reativada",
+  "signup.approve": "Cadastro aprovado",
+};
+
+const REMOVED_LABELS: Record<string, [string, string]> = {
+  product: ["Produto", "o"], customer: ["Cliente", "o"], supplier: ["Fornecedor", "o"], category: ["Categoria", "a"],
+};
+
+export function actionLabel(action: string): string {
+  if (ACTION_LABELS[action]) return ACTION_LABELS[action];
+  const [entity, verb] = action.split(".");
+  const removed = entity ? REMOVED_LABELS[entity] : undefined;
+  if (removed && verb === "delete") return `${removed[0]} excluíd${removed[1]}`;
+  if (removed && verb === "deactivate") return `${removed[0]} desativad${removed[1]}`;
+  return action;
+}
+
+export interface PlatformOrganizationMonitoring {
+  usage: Array<{ kind: UsageKind; total: number; last7d: number; last30d: number; lastAt: Date | null }>;
+  /** Ações dos últimos 30 dias, juntadas por tipo, com quantas vieram de cada canal. */
+  actions: Array<{ action: string; label: string; total: number; byChannel: Record<string, number>; lastAt: Date }>;
+  conversations: PlatformConversation[];
+}
+
+export interface PlatformConversation {
+  userId: string;
+  name: string;
+  email: string;
+  messages: number;
+  userMessages: number;
+  actionsDone: number;
+  channels: string[];
+  firstAt: Date;
+  lastAt: Date;
+}
+
+function assertOrgId(organizationId: string) {
+  if (!z.string().uuid().safeParse(organizationId).success) throw notFound("Empresa");
+}
+
+/** Resumo de uso da empresa para a ficha: cadastros, o que foi feito e quem conversa com a Netz. */
+export async function platformOrganizationMonitoring(db: Db, developerUserId: string, organizationId: string): Promise<PlatformOrganizationMonitoring> {
+  await assertDeveloper(db, developerUserId);
+  assertOrgId(organizationId);
+  const [usage, actions, conversations] = await Promise.all([
+    db.query<PlatformOrganizationMonitoring["usage"][number]>(
+      `SELECT kind, total, last_7d AS "last7d", last_30d AS "last30d", last_at AS "lastAt"
+         FROM controle_vendas_estoque.platform_organization_usage($1, $2)`,
+      [developerUserId, organizationId],
+    ),
+    db.query<{ action: string; channel: string; total: number; lastAt: Date }>(
+      `SELECT action, channel, total, last_at AS "lastAt"
+         FROM controle_vendas_estoque.platform_organization_action_counts($1, $2, 30)`,
+      [developerUserId, organizationId],
+    ),
+    listPlatformConversations(db, developerUserId, organizationId),
+  ]);
+  const grouped = new Map<string, PlatformOrganizationMonitoring["actions"][number]>();
+  for (const r of actions.rows) {
+    const g = grouped.get(r.action) ?? { action: r.action, label: actionLabel(r.action), total: 0, byChannel: {}, lastAt: r.lastAt };
+    g.total += r.total;
+    g.byChannel[r.channel] = (g.byChannel[r.channel] ?? 0) + r.total;
+    if (r.lastAt > g.lastAt) g.lastAt = r.lastAt;
+    grouped.set(r.action, g);
+  }
+  const order = Object.keys(USAGE_LABELS);
+  return {
+    usage: usage.rows.sort((a, b) => order.indexOf(a.kind) - order.indexOf(b.kind)),
+    actions: [...grouped.values()].sort((a, b) => b.total - a.total),
+    conversations,
+  };
+}
+
+export async function listPlatformConversations(db: Db, developerUserId: string, organizationId: string): Promise<PlatformConversation[]> {
+  await assertDeveloper(db, developerUserId);
+  assertOrgId(organizationId);
+  const { rows } = await db.query<PlatformConversation>(
+    `SELECT user_id AS "userId", name, email, messages, user_messages AS "userMessages", actions_done AS "actionsDone",
+            channels, first_at AS "firstAt", last_at AS "lastAt"
+       FROM controle_vendas_estoque.platform_organization_conversations($1, $2)`,
+    [developerUserId, organizationId],
+  );
+  return rows;
+}
+
+export interface PlatformConversationMessage {
+  id: string;
+  createdAt: Date;
+  role: "user" | "assistant";
+  body: string;
+  channel: string;
+  context: string | null;
+  status: string;
+  actionTitle: string | null;
+  actionStatus: string | null;
+  actionResult: string | null;
+}
+
+/** Últimas mensagens da conversa de uma pessoa com a Netz (só leitura, para acompanhar o uso). */
+export async function platformConversationMessages(
+  db: Db,
+  developerUserId: string,
+  organizationId: string,
+  memberUserId: string,
+  limit = 200,
+): Promise<PlatformConversationMessage[]> {
+  await assertDeveloper(db, developerUserId);
+  assertOrgId(organizationId);
+  if (!z.string().uuid().safeParse(memberUserId).success) throw notFound("Pessoa");
+  const { rows } = await db.query<PlatformConversationMessage>(
+    `SELECT id, created_at AS "createdAt", role, body, channel, context, status, action_title AS "actionTitle",
+            action_status AS "actionStatus", action_result AS "actionResult"
+       FROM controle_vendas_estoque.platform_organization_messages($1, $2, $3, $4)`,
+    [developerUserId, organizationId, memberUserId, limit],
+  );
+  return rows;
+}
