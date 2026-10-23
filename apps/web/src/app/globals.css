@@ -61,6 +61,13 @@ p { margin: 0 0 8px; }
 .topbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; min-height: 92px; padding: 18px 0 10px; color: var(--muted); }
 .org-name { font-weight: 600; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 999px; padding: 6px 14px; white-space: nowrap; }
 .org-select { width: auto; border-radius: 999px; padding: 6px 14px; font-weight: 600; }
+.org-add { margin-left: 10px; font-weight: 500; font-size: 0.85rem; color: var(--muted, #667085); }
+.org-add:hover { color: var(--text); }
+/* Lista de empresas da pessoa (Meu Telegram, Criar outra empresa). */
+.org-choice { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 8px; }
+.org-choice li { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 10px 14px; border: 1px solid var(--border); border-radius: 14px; }
+.org-choice li.active { border-color: var(--text); }
+.org-choice form { margin: 0; }
 .tabs { float: right; display: flex; gap: 4px; padding: 6px; margin: 14px 0 12px 24px; background: var(--surface); border: 1px solid var(--border); border-radius: 18px; max-width: 100%; overflow-x: auto; }
 .tabs a { padding: 9px 18px; border-radius: 13px; color: var(--muted); font-weight: 500; white-space: nowrap; }
 .tabs a:hover { color: var(--text); background: var(--surface-2); text-decoration: none; }

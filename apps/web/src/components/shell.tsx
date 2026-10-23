@@ -78,17 +78,31 @@ export function Shell({
   );
 }
 
+const NEW_ORGANIZATION = "__nova__";
+
 export function OrganizationSwitcher({
   organizations,
   activeId,
   action,
+  createHref,
 }: {
   organizations: { id: string; name: string }[];
   activeId: string;
   action: (form: FormData) => Promise<void>;
+  /** Tela para pedir mais uma empresa na mesma conta. */
+  createHref?: string;
 }) {
   if (organizations.length < 2) {
-    return <span className="org-name">{organizations.find((o) => o.id === activeId)?.name}</span>;
+    return (
+      <span className="org-name">
+        {organizations.find((o) => o.id === activeId)?.name}
+        {createHref && (
+          <a href={createHref} className="org-add" title="Tem outro negócio? Crie outra empresa na mesma conta">
+            + Outra empresa
+          </a>
+        )}
+      </span>
+    );
   }
   return (
     <form action={action}>
@@ -97,11 +111,18 @@ export function OrganizationSwitcher({
         defaultValue={activeId}
         aria-label="Empresa ativa"
         className="org-select"
-        onChange={(e) => e.currentTarget.form?.requestSubmit()}
+        onChange={(e) => {
+          if (createHref && e.currentTarget.value === NEW_ORGANIZATION) {
+            window.location.href = createHref;
+            return;
+          }
+          e.currentTarget.form?.requestSubmit();
+        }}
       >
         {organizations.map((o) => (
           <option key={o.id} value={o.id}>{o.name}</option>
         ))}
+        {createHref && <option value={NEW_ORGANIZATION}>+ Criar outra empresa</option>}
       </select>
     </form>
   );

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { can, enabledFeatures, FULFILLMENTS, getOrganization, listTelegramLinkedUsers, PAYMENT_LABELS, salesDashboard, stepCounts, stockOverview, telegramConfigured, type SalesPeriod } from "@erp/core";
+import { can, enabledFeatures, FULFILLMENTS, getOrganization, PAYMENT_LABELS, salesDashboard, stepCounts, stockOverview, telegramConfigured, telegramOrganizationOf, type SalesPeriod } from "@erp/core";
 import { currentActor } from "@/lib/auth";
 import { query } from "@/lib/actions";
 import { money, quantity } from "@/lib/format";
@@ -31,7 +31,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
     can(actor, "deliveries.view") ? query(stepCounts, {}) : null,
     // Cartão de boas-vindas da Netz no Telegram até a pessoa ligar a conta.
     telegramReady
-      ? Promise.all([enabledFeatures(db(), actor.organizationId), listTelegramLinkedUsers(db(), actor)]).then(([f, linked]) => f.has("telegram") && !linked.has(actor.userId))
+      ? Promise.all([enabledFeatures(db(), actor.organizationId), telegramOrganizationOf(db(), actor.userId)]).then(([f, linkedTo]) => f.has("telegram") && !linkedTo)
       : false,
   ]);
   const timeFmt = new Intl.DateTimeFormat("pt-BR", { timeZone: org.timezone, hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" });
