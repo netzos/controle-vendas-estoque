@@ -1,9 +1,11 @@
 import Link from "next/link";
-import { can, FULFILLMENTS, getOrganization, PAYMENT_LABELS, salesDashboard, stepCounts, stockOverview, type SalesPeriod } from "@erp/core";
+import { can, enabledFeatures, FULFILLMENTS, getOrganization, listTelegramLinkedUsers, PAYMENT_LABELS, salesDashboard, stepCounts, stockOverview, telegramConfigured, type SalesPeriod } from "@erp/core";
 import { currentActor } from "@/lib/auth";
 import { query } from "@/lib/actions";
 import { money, quantity } from "@/lib/format";
 import { BarChart, Kpi, RankList } from "@/components/charts";
+import { db } from "@/lib/db";
+import { TelegramButton } from "./assistente/telegram/forms";
 
 export const metadata = { title: "Início" };
 
@@ -21,11 +23,16 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const canSales = can(actor, "sales.view");
   const canStock = can(actor, "stock.view");
   const canCosts = can(actor, "costs.view");
-  const [org, dash, stock, steps] = await Promise.all([
+  const telegramReady = can(actor, "nets.use") && telegramConfigured() && !actor.platformView;
+  const [org, dash, stock, steps, telegramPending] = await Promise.all([
     query(getOrganization, {}),
     canSales ? query(salesDashboard, { period: period.key }) : null,
     canStock ? query(stockOverview, {}) : null,
     can(actor, "deliveries.view") ? query(stepCounts, {}) : null,
+    // Cartão de boas-vindas da Netz no Telegram até a pessoa ligar a conta.
+    telegramReady
+      ? Promise.all([enabledFeatures(db(), actor.organizationId), listTelegramLinkedUsers(db(), actor)]).then(([f, linked]) => f.has("telegram") && !linked.has(actor.userId))
+      : false,
   ]);
   const timeFmt = new Intl.DateTimeFormat("pt-BR", { timeZone: org.timezone, hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" });
   const alerts = stock?.rows.filter((r) => r.status === "out" || r.status === "low").sort((a, b) => Number(a.stockQty) - Number(b.stockQty)) ?? [];
@@ -50,6 +57,18 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
           {can(actor, "sales.create") && <Link className="button" href="/vendas/nova">+ Nova venda</Link>}
         </div>
       </div>
+
+      {telegramPending && (
+        <section className="card telegram-welcome">
+          <div>
+            <h2>Fale com a Netz no Telegram</h2>
+            <p className="muted">
+              Registre vendas, veja o estoque e lance custos conversando, por texto ou áudio. Toque no botão, depois em <strong>Iniciar</strong> no Telegram, e pronto.
+            </p>
+          </div>
+          <TelegramButton linked={false} large />
+        </section>
+      )}
 
       {steps && (steps.late > 0 || steps.today > 0) && (
         <Link href={`/entregas?filtro=${steps.late > 0 ? "late" : "today"}`} className="card notice-link">

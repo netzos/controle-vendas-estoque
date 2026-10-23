@@ -1,6 +1,6 @@
 "use server";
 
-import { addMember, memberPasswordLink, runService, updateMember } from "@erp/core";
+import { addMember, createMemberTelegramLink, memberPasswordLink, runService, updateMember } from "@erp/core";
 import { currentActor } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { optional, perform, str, toFormState, type FormState } from "@/lib/actions";
@@ -55,6 +55,15 @@ export async function passwordLinkAction(_: LinkState, form: FormData): Promise<
       url: r.url,
       message: `Link para ${r.name} ${r.firstAccess ? "criar a senha" : "trocar a senha"}. Vale por ${r.validFor} e só pode ser usado uma vez.`,
     };
+  } catch (err) {
+    return { ok: false, message: toFormState(err)?.message };
+  }
+}
+
+export async function telegramLinkAction(_: LinkState, form: FormData): Promise<LinkState> {
+  try {
+    const r = await createMemberTelegramLink(db(), await currentActor(), str(form, "membershipId"));
+    return { ok: true, url: r.url, message: `Link do Telegram para ${r.name}. Vale por ${r.days} dias e só pode ser usado uma vez.` };
   } catch (err) {
     return { ok: false, message: toFormState(err)?.message };
   }

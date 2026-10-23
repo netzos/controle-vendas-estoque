@@ -6,6 +6,8 @@ import { hashPassword, MIN_PASSWORD_LENGTH } from "../../auth/password.ts";
 import { normalizeEmail } from "../../auth/session.ts";
 import { AppError, conflict, forbidden, notFound, parseInput } from "../../errors.ts";
 import { appUrl, mailConfigured, sendMail } from "../../mail.ts";
+import { telegramConfigured } from "../telegram/api.ts";
+import { createTelegramInvite, type TelegramDeps } from "../telegram/service.ts";
 import { createOrganizationTx } from "./bootstrap.ts";
 import { isPlatformDeveloper, listPlatformOrganizations } from "./platform.ts";
 
@@ -105,7 +107,8 @@ export async function approveSignup(
   db: Db,
   developer: { userId: string; userName: string },
   requestId: string,
-): Promise<{ organizationId: string; name: string; email: string; whatsapp: string | null; organizationName: string; loginUrl: string }> {
+  deps: TelegramDeps = {},
+): Promise<{ organizationId: string; name: string; email: string; whatsapp: string | null; organizationName: string; loginUrl: string; telegramUrl: string | null }> {
   await assertDeveloper(db, developer.userId);
   if (!z.string().uuid().safeParse(requestId).success) throw notFound("Pedido");
   const orgNames = new Set((await listPlatformOrganizations(db, developer.userId)).map((o) => o.name.toLowerCase()));
@@ -143,16 +146,25 @@ export async function approveSignup(
       entityId: organizationId,
       summary: `Cadastro de ${r.name} <${r.email}> aprovado por ${developer.userName}`,
     });
-    return { organizationId, name: r.name, email: r.email, whatsapp: r.whatsapp, organizationName: orgName, loginUrl: `${appUrl()}/login` };
+    return { organizationId, userId, name: r.name, email: r.email, whatsapp: r.whatsapp, organizationName: orgName, loginUrl: `${appUrl()}/login` };
   });
+  // A mensagem de aprovação já leva o robô: a pessoa toca e o Telegram abre com a conta ligada.
+  const telegramUrl = telegramConfigured()
+    ? await createTelegramInvite(db, result.userId, result.organizationId, deps)
+        .then((i) => i.url)
+        .catch((err) => (console.error("[signup] link do Telegram não gerado", err), null))
+    : null;
   if (mailConfigured()) {
     await sendMail({
       to: result.email,
       subject: `Sua conta no netzsales foi aprovada`,
-      text: `Olá, ${result.name}.\n\nA ${result.organizationName} já está liberada no netzsales. Entre com seu e-mail e a senha que você criou:\n\n${result.loginUrl}`,
+      text:
+        `Olá, ${result.name}.\n\nA ${result.organizationName} já está liberada no netzsales. Entre com seu e-mail e a senha que você criou:\n\n${result.loginUrl}` +
+        (telegramUrl ? `\n\nPara falar com a Netz, sua assistente, no Telegram, toque aqui (vale 7 dias):\n\n${telegramUrl}` : ""),
     }).catch((err) => console.error("[signup] e-mail de aprovação não enviado", err));
   }
-  return result;
+  const { organizationId, name, email, whatsapp, organizationName, loginUrl } = result;
+  return { organizationId, name, email, whatsapp, organizationName, loginUrl, telegramUrl };
 }
 
 export async function rejectSignup(db: Db, developer: { userId: string }, requestId: string, reason?: string | null): Promise<void> {

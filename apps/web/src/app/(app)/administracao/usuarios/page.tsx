@@ -1,7 +1,8 @@
-import { can, listBranches, listMembers, listRoles, mailConfigured } from "@erp/core";
+import { can, enabledFeatures, listBranches, listMembers, listRoles, listTelegramLinkedUsers, mailConfigured, telegramConfigured } from "@erp/core";
 import { requirePermission } from "@/lib/auth";
 import { query } from "@/lib/actions";
-import { AddMemberForm, EditMemberForm, PasswordLink } from "./member-forms";
+import { db } from "@/lib/db";
+import { AddMemberForm, EditMemberForm, PasswordLink, TelegramLink } from "./member-forms";
 
 export const metadata = { title: "Usuários" };
 
@@ -15,6 +16,8 @@ export default async function UsersPage() {
     can(actor, "roles.view") || canManage ? query(listRoles, {}) : Promise.resolve([]),
     query(listBranches, {}).catch(() => []),
   ]);
+  const telegram = telegramConfigured() && (await enabledFeatures(db(), actor.organizationId)).has("telegram");
+  const linked = telegram ? await listTelegramLinkedUsers(db(), actor) : new Set<string>();
   // Só o proprietário concede o perfil Proprietário.
   const assignable = roles.filter((r) => r.key !== "owner" || actor.isOwner);
   const branchName = new Map(branches.map((b) => [b.id, b.name]));
@@ -23,13 +26,14 @@ export default async function UsersPage() {
     <>
       <div className="page-header">
         <h1>Usuários</h1>
-        <p>Quem acessa esta empresa pelo painel e pelo Telegram. Toque em uma pessoa para editar o cadastro ou gerar o link de senha.</p>
+        <p>Quem acessa esta empresa pelo painel e pelo Telegram. Toque em uma pessoa para editar o cadastro ou gerar o link de senha e o do Telegram.</p>
       </div>
       {members.map((m) => {
         const summary = (
           <>
             {m.name} <span className="muted">{m.email}</span> <span className="tag">{m.roleName}</span>{" "}
             <span className={`tag ${m.status === "active" ? "ok" : "off"}`}>{m.status === "active" ? "Ativo" : "Desativado"}</span>
+            {linked.has(m.userId) && <> <span className="tag ok">Telegram</span></>}
           </>
         );
         const details = (
@@ -45,6 +49,7 @@ export default async function UsersPage() {
             {details}
             <EditMemberForm member={m} roles={assignable} branches={branches} />
             {m.status === "active" && <PasswordLink member={m} />}
+            {m.status === "active" && telegram && <TelegramLink member={m} linked={linked.has(m.userId)} />}
           </details>
         ) : (
           <div className="card" key={m.membershipId}>
