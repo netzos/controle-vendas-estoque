@@ -3,7 +3,10 @@ import { randomUUID } from "node:crypto";
 import { after, before, beforeEach, describe, it } from "node:test";
 import type Anthropic from "@anthropic-ai/sdk";
 import {
+  approveSignup,
   createMemberTelegramLink,
+  rejectSignup,
+  requestSignup,
   createTelegramLink,
   getTelegramStatus,
   cleanReply,
@@ -238,6 +241,41 @@ describe("Netz no Telegram", () => {
   it("limpeza não mexe em texto normal", () => {
     assert.deepEqual(cleanReply("> citação\nTexto <b>normal</b> com 3 > 2."), { text: "> citação\nTexto <b>normal</b> com 3 > 2.", removed: [] });
     assert.equal(cleanReply("<thinking>pensando</thinking>Resposta").text, "Resposta");
+  });
+});
+
+describe("Telegram logo no pedido de conta", () => {
+  it("o robô reconhece o pedido em análise e avisa quando é aprovado, com a conta já ligada", async () => {
+    await t.owner.query("INSERT INTO controle_vendas_estoque.platform_developers (user_id) VALUES ($1) ON CONFLICT DO NOTHING", [owner.userId]);
+    const f = fakeApi();
+    const r = await requestSignup(t.app, { name: "Carla Dias", email: "carla@loja.com", organizationName: "Loja da Carla", password: "senha-da-carla-123" }, null, { api: f.api });
+    assert.match(r.telegramUrl!, /^https:\/\/t\.me\/netzsales_bot\?start=c_[\w-]{20,}$/);
+    const carla = { id: 4321, first_name: "Carla", username: "carla" };
+    await handleTelegramUpdate(t.app, text(`/start ${r.telegramUrl!.split("start=")[1]}`, carla), { api: f.api });
+    assert.match(f.sent().at(-1)!, /Loja da Carla\. Ele está aguardando aprovação/);
+    await handleTelegramUpdate(t.app, text("oi", carla), { api: f.api });
+    assert.match(f.sent().at(-1)!, /ainda está aguardando aprovação/);
+    // Outra conta do Telegram não usa o mesmo link.
+    await handleTelegramUpdate(t.app, text(`/start ${r.telegramUrl!.split("start=")[1]}`, { id: 5555, first_name: "X", username: "x" }), { api: f.api });
+    assert.match(f.sent().at(-1)!, /outra conta do Telegram/);
+
+    const [req] = (await t.app.query<{ id: string }>("SELECT id FROM controle_vendas_estoque.signup_requests WHERE email = 'carla@loja.com'")).rows;
+    const ok = await approveSignup(t.app, owner, req!.id, { api: f.api });
+    assert.equal(ok.telegramLinked, true);
+    assert.equal(ok.telegramUrl, null);
+    assert.match(f.sent().at(-1)!, /Sua conta da Loja da Carla foi aprovada e já está ligada aqui/);
+    const linked = await t.app.query("SELECT 1 FROM controle_vendas_estoque.telegram_links WHERE telegram_user_id = 4321 AND status = 'active'");
+    assert.equal(linked.rowCount, 1);
+  });
+
+  it("recusa também é avisada no Telegram", async () => {
+    const f = fakeApi();
+    const r = await requestSignup(t.app, { name: "Davi", email: "davi@loja.com", organizationName: "Loja do Davi", password: "senha-do-davi-123" }, null, { api: f.api });
+    const davi = { id: 6789, first_name: "Davi", username: "davi" };
+    await handleTelegramUpdate(t.app, text(`/start ${r.telegramUrl!.split("start=")[1]}`, davi), { api: f.api });
+    const [req] = (await t.app.query<{ id: string }>("SELECT id FROM controle_vendas_estoque.signup_requests WHERE email = 'davi@loja.com'")).rows;
+    await rejectSignup(t.app, owner, req!.id, null, { api: f.api });
+    assert.match(f.sent().at(-1)!, /não foi aprovado/);
   });
 });
 

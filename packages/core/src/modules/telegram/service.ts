@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import type { Db } from "@erp/db";
+import type { Db, Tx } from "@erp/db";
 import { withTenant, withTransaction } from "@erp/db";
 import { can, resolveActor, type Actor } from "../../context.ts";
 import { enabledFeatures } from "../../features.ts";
@@ -75,6 +75,114 @@ export async function getTelegramStatus(db: Db, actor: Actor, deps: TelegramDeps
   );
   return { configured, botUrl: bot ? `https://t.me/${bot}` : null, link: rows[0] ?? null };
 }
+
+// Pedido de conta ---------------------------------------------------------------
+// A tela "pedido recebido" traz o link do robô; o código começa com c_ para
+// não se confundir com o código de ligação de quem já tem conta.
+const SIGNUP_PREFIX = "c_";
+
+/** Link do Telegram da tela "pedido recebido". Vale enquanto o pedido estiver em análise. */
+export async function createSignupTelegramLink(db: Db, requestId: string, deps: TelegramDeps = {}): Promise<string | null> {
+  if (!telegramConfigured()) return null;
+  let bot: string;
+  try {
+    bot = await readyBot(deps.api ?? telegramApi);
+  } catch {
+    return null;
+  }
+  const code = randomBytes(18).toString("base64url");
+  const { rowCount } = await db.query(
+    "UPDATE controle_vendas_estoque.signup_requests SET telegram_code_hash = $2 WHERE id = $1 AND status = 'pending'",
+    [requestId, hash(code)],
+  );
+  return rowCount ? `https://t.me/${bot}?start=${SIGNUP_PREFIX}${code}` : null;
+}
+
+/** Na aprovação (dentro da transação): liga a conta nova ao Telegram usado no pedido. Devolve o chat para avisar. */
+export async function linkSignupTelegramTx(tx: Tx, requestId: string, userId: string, organizationId: string): Promise<string | null> {
+  const { rows } = await tx.query<{ tgUser: string; chatId: string; username: string | null; firstName: string | null }>(
+    `SELECT telegram_user_id AS "tgUser", telegram_chat_id AS "chatId", telegram_username AS username, telegram_first_name AS "firstName"
+       FROM controle_vendas_estoque.signup_requests WHERE id = $1 AND telegram_user_id IS NOT NULL`,
+    [requestId],
+  );
+  const r = rows[0];
+  if (!r) return null;
+  await tx.query(
+    "UPDATE controle_vendas_estoque.telegram_links SET status = 'revoked' WHERE status = 'active' AND (user_id = $1 OR telegram_user_id = $2)",
+    [userId, r.tgUser],
+  );
+  await tx.query(
+    `INSERT INTO controle_vendas_estoque.telegram_links (user_id, organization_id, telegram_user_id, chat_id, username, first_name)
+     VALUES ($1, $2, $3, $4, $5, $6)`,
+    [userId, organizationId, r.tgUser, r.chatId, r.username, r.firstName],
+  );
+  return r.chatId;
+}
+
+/** Chat do Telegram usado no pedido, para avisar da recusa. */
+export async function signupTelegramChat(db: Db, requestId: string): Promise<string | null> {
+  const { rows } = await db.query<{ chatId: string | null }>(
+    `SELECT telegram_chat_id AS "chatId" FROM controle_vendas_estoque.signup_requests WHERE id = $1`,
+    [requestId],
+  );
+  return rows[0]?.chatId ?? null;
+}
+
+/** Avisa no Telegram (aprovação e recusa do pedido). Falha só fica no log. */
+export async function notifyTelegram(chatId: string, text: string, deps: TelegramDeps = {}): Promise<void> {
+  await send(deps.api ?? telegramApi, chatId, text).catch((err) => console.error("telegram notify failed", err instanceof Error ? err.message : err));
+}
+
+async function connectSignup(db: Db, api: TelegramApi, msg: TgMessage, code: string) {
+  const from = msg.from!;
+  const { rows } = await db.query<{ id: string; name: string; organizationName: string; status: SignupStatusTg; tgUser: string | null }>(
+    `SELECT id, name, organization_name AS "organizationName", status, telegram_user_id::text AS "tgUser"
+       FROM controle_vendas_estoque.signup_requests WHERE telegram_code_hash = $1`,
+    [hash(code)],
+  );
+  const r = rows[0];
+  if (!r) {
+    await send(api, msg.chat.id, "Não encontrei esse pedido de conta. Se você já tem conta, entre no netzsales e toque no botão Telegram, no alto da tela.");
+    return;
+  }
+  if (r.tgUser && r.tgUser !== String(from.id)) {
+    await send(api, msg.chat.id, "Esse link já foi usado por outra conta do Telegram.");
+    return;
+  }
+  if (r.status === "rejected") {
+    await send(api, msg.chat.id, "Esse pedido de conta não foi aprovado. Se achar que foi engano, fale com a equipe do netzsales.");
+    return;
+  }
+  if (r.status === "approved") {
+    await send(api, msg.chat.id, "Seu pedido já foi aprovado. Se eu ainda não te respondo por aqui, entre no netzsales e toque no botão Telegram, no alto da tela.");
+    return;
+  }
+  await db.query(
+    `UPDATE controle_vendas_estoque.signup_requests
+        SET telegram_user_id = $2, telegram_chat_id = $3, telegram_username = $4, telegram_first_name = $5
+      WHERE id = $1 AND status = 'pending'`,
+    [r.id, from.id, msg.chat.id, from.username ?? null, from.first_name ?? null],
+  );
+  await send(
+    api,
+    msg.chat.id,
+    `Olá, ${r.name.split(" ")[0]}! Eu sou a Netz, a assistente do netzsales.\n\n` +
+      `Recebi seu pedido de conta para ${r.organizationName}. Ele está aguardando aprovação. ` +
+      "Assim que for liberado, eu te aviso aqui mesmo e já podemos começar: você vai poder registrar vendas, ver o estoque e muito mais, por texto ou áudio.",
+  );
+}
+
+/** Quem ainda não tem conta ligada, mas tem pedido em análise feito por este Telegram. */
+async function pendingSignup(db: Db, telegramUserId: number): Promise<{ name: string; organizationName: string } | null> {
+  const { rows } = await db.query<{ name: string; organizationName: string }>(
+    `SELECT name, organization_name AS "organizationName" FROM controle_vendas_estoque.signup_requests
+      WHERE telegram_user_id = $1 AND status = 'pending' ORDER BY created_at DESC LIMIT 1`,
+    [telegramUserId],
+  );
+  return rows[0] ?? null;
+}
+
+type SignupStatusTg = "pending" | "approved" | "rejected";
 
 /** Pessoas desta empresa com o Telegram ligado (Ajustes › Usuários e botão do topo). */
 export async function listTelegramLinkedUsers(db: Db, actor: Actor): Promise<Set<string>> {
@@ -352,11 +460,19 @@ async function onMessage(db: Db, api: TelegramApi, update: TelegramUpdate, deps:
   }
   const text = (msg.text ?? msg.caption ?? "").trim();
   const start = /^\/start(?:@\w+)?(?:\s+(\S+))?$/.exec(text);
+  if (start?.[1]?.startsWith(SIGNUP_PREFIX)) return connectSignup(db, api, msg, start[1].slice(SIGNUP_PREFIX.length));
   if (start?.[1]) return connect(db, api, msg, start[1]);
 
   const link = await findLink(db, msg.from.id);
   if (!link) {
-    await send(api, msg.chat.id, HOW_TO_LINK);
+    const waiting = await pendingSignup(db, msg.from.id);
+    await send(
+      api,
+      msg.chat.id,
+      waiting
+        ? `Seu pedido de conta para ${waiting.organizationName} ainda está aguardando aprovação. Eu te aviso aqui assim que for liberado.`
+        : HOW_TO_LINK,
+    );
     return;
   }
   if (/^\/(sair|desconectar)\b/i.test(text)) {

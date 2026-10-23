@@ -9,7 +9,7 @@ import { optional, str, toFormState } from "@/lib/actions";
 export type DecisionState = {
   ok: boolean;
   message?: string;
-  approved?: { name: string; organizationName: string; whatsapp: string | null; email: string; loginUrl: string; telegramUrl: string | null };
+  approved?: { name: string; organizationName: string; whatsapp: string | null; email: string; loginUrl: string; telegramUrl: string | null; telegramLinked: boolean };
 } | null;
 
 export async function approveAction(_: DecisionState, form: FormData): Promise<DecisionState> {
