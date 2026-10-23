@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
+  actionLabel,
   BILLING_LABELS,
   FEATURES,
   HEALTH_LABELS,
@@ -11,7 +12,9 @@ import {
   platformBillingNotes,
   platformFeatures,
   platformOrganizationDetail,
+  platformOrganizationMonitoring,
   platformUsdBrl,
+  USAGE_LABELS,
   type ImprovementStatus,
 } from "@erp/core";
 import { BarChart, Kpi } from "@/components/charts";
@@ -40,11 +43,12 @@ export default async function OrganizationDetailPage({ params }: { params: Promi
     if (isAppError(err) && err.code === "not_found") notFound();
     throw err;
   }
-  const [features, viewer, rate, billingNotes] = await Promise.all([
+  const [features, viewer, rate, billingNotes, monitoring] = await Promise.all([
     platformFeatures(db(), actor.userId),
     improvementViewer(db(), await currentActor()),
     platformUsdBrl(db()),
     platformBillingNotes(db(), actor.userId, id),
+    platformOrganizationMonitoring(db(), actor.userId, id),
   ]);
   const improvements = await listImprovements(db(), viewer, { organizationId: id, includeMerged: true });
   const { organization: o, members, dailySales, activity, notes, signup } = detail;
@@ -94,11 +98,69 @@ export default async function OrganizationDetailPage({ params }: { params: Promi
         <Kpi label="Pessoas usando na semana" value={`${o.usersActive7d} de ${o.usersTotal}`} sub={o.usersTotal - o.usersActive7d > 0 ? `${o.usersTotal - o.usersActive7d} sem usar` : "todas usando"} tone={o.usersActive7d === 0 ? "warn" : undefined} />
         <Kpi label="Último uso" value={sinceLabel(o.lastActivityAt)} sub={o.lastActivityAt ? dateTime.format(new Date(o.lastActivityAt)) : "ninguém da empresa entrou ainda"} tone={o.health === "idle" || o.health === "never" ? "warn" : undefined} />
       </div>
-      <div className="kpi-grid compact four">
-        <Kpi label="Produtos ativos" value={String(o.products)} />
-        <Kpi label="Clientes" value={String(o.customers)} />
-        <Kpi label="Mensagens para a Netz (30 dias)" value={String(o.netzMessages30d)} />
-        <Kpi label="Telegram ligado" value={String(o.telegramLinks)} sub={o.telegramLinks === 1 ? "pessoa" : "pessoas"} />
+      <section className="card">
+        <div className="card-head">
+          <h2>Uso do sistema</h2>
+          <span className="muted">tudo o que a empresa já cadastrou e registrou · Telegram ligado para {o.telegramLinks} {o.telegramLinks === 1 ? "pessoa" : "pessoas"}</span>
+        </div>
+        <div className="usage-grid">
+          {monitoring.usage.map((u) => (
+            <div key={u.kind} className={`usage-tile${u.total === 0 ? " empty" : ""}`}>
+              <span className="usage-label">{USAGE_LABELS[u.kind]}</span>
+              <strong>{u.total}</strong>
+              <span className="muted">
+                {u.total === 0 ? "nada ainda" : u.last7d > 0 ? `+${u.last7d} na semana` : `último ${sinceLabel(u.lastAt)}`}
+              </span>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <div className="dash-grid two">
+        <section className="card">
+          <div className="card-head">
+            <h2>O que foi feito</h2>
+            <span className="muted">últimos 30 dias</span>
+          </div>
+          {monitoring.actions.length === 0 ? (
+            <p className="chart-empty">Nenhuma ação registrada nos últimos 30 dias.</p>
+          ) : (
+            <ul className="done-list">
+              {monitoring.actions.map((a) => (
+                <li key={a.action}>
+                  <b>{a.total}</b>
+                  <div>
+                    <span>{a.label}</span>
+                    <span className="muted">
+                      {Object.entries(a.byChannel).map(([c, n]) => `${CHANNEL[c] ?? c} ${n}`).join(" · ")} · último {sinceLabel(a.lastAt)}
+                    </span>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+        <section className="card">
+          <div className="card-head">
+            <h2>Conversas com a Netz</h2>
+            <Link href={`/plataforma/empresas/${o.id}/conversas`} className="muted">Ver conversas ›</Link>
+          </div>
+          {monitoring.conversations.length === 0 ? (
+            <p className="chart-empty">Ninguém desta empresa conversou com a Netz ainda.</p>
+          ) : (
+            <ul className="org-improvements">
+              {monitoring.conversations.map((c) => (
+                <li key={c.userId}>
+                  <Link href={`/plataforma/empresas/${o.id}/conversas?pessoa=${c.userId}`}>{c.name}</Link>
+                  <span className="muted">
+                    {c.userMessages} {c.userMessages === 1 ? "mensagem" : "mensagens"} · {c.actionsDone} {c.actionsDone === 1 ? "ação feita" : "ações feitas"} · última {sinceLabel(c.lastAt)}
+                  </span>
+                  <span className="tag">{c.channels.map((ch) => CHANNEL[ch] ?? ch).join(" e ")}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
       </div>
 
       <div className="dash-grid spaced">
@@ -280,7 +342,7 @@ export default async function OrganizationDetailPage({ params }: { params: Promi
       <section className="card">
         <div className="card-head">
           <h2>Atividade recente</h2>
-          <span className="muted">últimas {activity.length} ações registradas</span>
+          <span className="muted">últimas {activity.length} ações registradas, uma por uma</span>
         </div>
         {activity.length === 0 ? (
           <p className="chart-empty">Nada registrado ainda.</p>
@@ -294,7 +356,7 @@ export default async function OrganizationDetailPage({ params }: { params: Promi
                     <td className="nowrap">{dateTime.format(new Date(a.createdAt))}</td>
                     <td>{a.actorName ?? <span className="muted">sistema</span>}</td>
                     <td>{CHANNEL[a.channel] ?? a.channel}</td>
-                    <td>{a.summary ?? a.action}</td>
+                    <td>{a.summary ?? actionLabel(a.action)}</td>
                   </tr>
                 ))}
               </tbody>
