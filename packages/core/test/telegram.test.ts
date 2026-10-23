@@ -4,6 +4,7 @@ import { after, before, beforeEach, describe, it } from "node:test";
 import type Anthropic from "@anthropic-ai/sdk";
 import {
   approveSignup,
+  requestAnotherOrganization,
   createMemberTelegramLink,
   rejectSignup,
   requestSignup,
@@ -316,6 +317,58 @@ describe("Aprovar cadastros pelo Telegram", () => {
     const reject = (card2.params.reply_markup as { inline_keyboard: { callback_data: string }[][] }).inline_keyboard[0]![1]!;
     await handleTelegramUpdate(t.app, { update_id: nextUpdate++, callback_query: { id: "s3", from: tgUser, data: reject.callback_data } }, { api: f.api });
     assert.equal(f.sent().at(-1), "Pedido recusado.");
+  });
+});
+
+describe("Várias empresas no mesmo Telegram", () => {
+  it("outra empresa entra na mesma conta e o Telegram troca com /empresa", async () => {
+    await t.owner.query("INSERT INTO controle_vendas_estoque.platform_developers (user_id) VALUES ($1) ON CONFLICT DO NOTHING", [owner.userId]);
+    const f = fakeApi();
+    const { url } = await createTelegramLink(t.app, owner, { api: f.api });
+    await handleTelegramUpdate(t.app, text(`/start ${url.split("start=")[1]}`), { api: f.api });
+    await handleTelegramUpdate(t.app, text("/empresa"), { api: f.api });
+    assert.match(f.sent().at(-1)!, /só uma empresa: Relojoaria/);
+
+    // Cadastro com o mesmo e-mail é orientado a usar Criar outra empresa.
+    const { rows: me } = await t.app.query<{ email: string }>("SELECT email FROM controle_vendas_estoque.users WHERE id = $1", [owner.userId]);
+    await assert.rejects(
+      requestSignup(t.app, { name: "Pepe", email: me[0]!.email, organizationName: "Ótica", password: "senha-do-pepe-123" }),
+      /Criar outra empresa/,
+    );
+
+    await requestAnotherOrganization(t.app, owner, { organizationName: "Ótica do Pepe" }, { api: f.api });
+    const card = f.calls.filter((c) => c.method === "sendMessage" && /Ótica do Pepe/.test(String(c.params.text))).at(-1)!;
+    assert.match(String(card.params.text), /já é cliente/);
+    const approve = (card.params.reply_markup as { inline_keyboard: { callback_data: string }[][] }).inline_keyboard[0]![0]!;
+    await handleTelegramUpdate(t.app, { update_id: nextUpdate++, callback_query: { id: "o1", from: tgUser, data: approve.callback_data } }, { api: f.api });
+    assert.ok(f.sent().some((m) => /Sua nova empresa Ótica do Pepe foi aprovada/.test(m)));
+    // Não criou outro usuário: a empresa nova é do mesmo dono.
+    const { rows: users } = await t.app.query("SELECT 1 FROM controle_vendas_estoque.users WHERE email = $1", [me[0]!.email]);
+    assert.equal(users.length, 1);
+
+    await handleTelegramUpdate(t.app, text("trocar de empresa"), { api: f.api });
+    const choose = f.calls.filter((c) => c.method === "sendMessage").at(-1)!;
+    const buttons = (choose.params.reply_markup as { inline_keyboard: { text: string; callback_data: string }[][] }).inline_keyboard.map((r) => r[0]!);
+    assert.ok(buttons.some((b) => b.text === "✅ Relojoaria"));
+    const otica = buttons.find((b) => b.text === "Ótica do Pepe")!;
+    await handleTelegramUpdate(t.app, { update_id: nextUpdate++, callback_query: { id: "o2", from: tgUser, data: otica.callback_data } }, { api: f.api });
+    assert.match(f.sent().at(-1)!, /agora estou na empresa Ótica do Pepe/);
+    const link = await t.app.query<{ organizationId: string }>(
+      `SELECT organization_id AS "organizationId" FROM controle_vendas_estoque.telegram_links WHERE telegram_user_id = 777 AND status = 'active'`,
+    );
+    assert.equal(link.rows[0]!.organizationId, otica.callback_data.slice(4));
+
+    // A confirmação mostra em qual empresa a ação acontece.
+    const { rows: units } = await t.owner.query<{ id: string }>(
+      "SELECT id FROM controle_vendas_estoque.units WHERE organization_id = $1 AND code = 'UN'",
+      [otica.callback_data.slice(4)],
+    );
+    const model = script(
+      [{ type: "tool_use", name: "products_create", input: { _resumo: "Cadastrar Óculos Ray", sku: "RAY", name: "Óculos Ray", unitId: units[0]!.id, salePrice: "300", costPrice: "100", minStock: "0" } }],
+      [{ type: "text", text: "Vou cadastrar." }],
+    );
+    await handleTelegramUpdate(t.app, text("cadastra o óculos ray"), { api: f.api, model });
+    assert.match(f.sent().at(-1)!, /👉 \[Ótica do Pepe\] Cadastrar Óculos Ray/);
   });
 });
 

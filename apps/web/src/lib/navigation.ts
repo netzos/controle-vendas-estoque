@@ -159,6 +159,7 @@ export const NAVIGATION: NavGroup[] = [
       { label: "Configurações gerais", href: "/administracao/configuracoes", permission: "settings.view", phase: 1 },
       // O dia a dia do Telegram é o botão do topo; aqui ficam a ligação e o Desligar.
       { label: "Meu Telegram", href: "/assistente/telegram", permission: "nets.use", feature: "telegram", phase: 2 },
+      { label: "Criar outra empresa", href: "/administracao/outra-empresa", phase: 1 },
     ],
   },
   {

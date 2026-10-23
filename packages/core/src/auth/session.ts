@@ -63,7 +63,7 @@ export async function login(
     // desde que a senha confira com a do pedido (não revela e-mails a terceiros).
     const req = await db.query<{ status: string; password_hash: string }>(
       `SELECT status, password_hash FROM controle_vendas_estoque.signup_requests
-        WHERE email = $1 AND status <> 'approved' ORDER BY created_at DESC LIMIT 1`,
+        WHERE email = $1 AND status <> 'approved' AND password_hash IS NOT NULL ORDER BY created_at DESC LIMIT 1`,
       [email],
     );
     const r = req.rows[0];

@@ -26,9 +26,9 @@ export default async function TelegramPage() {
             <h2>Conectado</h2>
             <p>
               Telegram {link.username ? `@${link.username}` : link.firstName ?? ""} ligado em {fmt.format(link.createdAt)}
-              {here ? ` à empresa ${org.name}.` : " a outra empresa. Toque em Conectar de novo para usar esta."}
+              {here ? ` à empresa ${org.name}.` : " e agora trabalhando em outra empresa. Para usar esta, envie /empresa no Telegram."}
             </p>
-            <p className="muted small-text">Para trocar de empresa no Telegram, entre na empresa aqui no painel e toque em Conectar de novo.</p>
+            <p className="muted small-text">Tem mais de uma empresa? No Telegram, envie /empresa e escolha em qual delas a Netz trabalha.</p>
             <div className="actions">
               {here && <TelegramButton linked large />}
               <ConnectTelegram again />
