@@ -12,12 +12,14 @@ import {
   latestImprovementAnalysis,
   listImprovements,
   mergeImprovement,
+  publishImprovementInTx,
   platformFeatures,
   setFeature,
   type Actor,
   type ImprovementViewer,
   type NetsModel,
 } from "../src/index.ts";
+import { withTenant } from "@erp/db";
 import { actorFor, seedCompany, setupTestDb, type TestDb } from "./helpers.ts";
 
 const rejectsWith = (code: string) => (err: unknown) => {
@@ -113,7 +115,15 @@ describe("melhorias na plataforma", () => {
       assert.ok(messages.some((m) => /prioridade \d/.test(m.body)));
       assert.ok(messages.some((m) => m.body.includes("Teste com uma venda curta.")));
     }
-    assert.ok((await latestImprovementAnalysis(t.app, dev))?.executedAt);
+    const latest = await latestImprovementAnalysis(t.app, dev);
+    assert.ok(latest?.executedAt);
+    assert.equal(latest?.stillOpen, 2);
+
+    // Publicados os pedidos, a análise fica só como histórico.
+    for (const id of [p1.id, p2.id]) {
+      await withTenant(t.app, { organizationId: dev.organizationId, userId: dev.userId }, (tx) => publishImprovementInTx(tx, dev, id, "https://exemplo", "Publicado."));
+    }
+    assert.equal((await latestImprovementAnalysis(t.app, dev))?.stillOpen, 0);
   });
 
   it("liberações: liga e desliga por empresa ou para todas", async () => {

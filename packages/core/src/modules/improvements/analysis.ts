@@ -1,4 +1,4 @@
-import type { Db } from "@erp/db";
+import type { Db, Tx } from "@erp/db";
 import { recordAiUsage } from "../../usage.ts";
 import { withTenant } from "@erp/db";
 import { AppError, forbidden } from "../../errors.ts";
@@ -15,6 +15,8 @@ export interface ImprovementAnalysis {
   items: number;
   /** Quando o administrador mandou executar as prioridades desta análise. */
   executedAt: Date | null;
+  /** Pedidos citados na análise que ainda estão em aberto. Zero: tudo já foi resolvido. */
+  stillOpen: number;
   result: {
     resumo: string;
     grupos: Array<{ titulo: string; numeros: number[]; motivo: string }>;
@@ -39,8 +41,24 @@ export async function latestImprovementAnalysis(db: Db, viewer: ImprovementViewe
       `SELECT id, created_at AS "createdAt", items, executed_at AS "executedAt", result
          FROM controle_vendas_estoque.improvement_analyses ORDER BY created_at DESC LIMIT 1`,
     );
-    return rows[0] ?? null;
+    const analysis = rows[0];
+    if (!analysis) return null;
+    analysis.stillOpen = await countStillOpen(tx, analysis.result);
+    return analysis;
   });
+}
+
+const OPEN_STATUSES = ["new", "analysis", "approved", "building"];
+
+async function countStillOpen(tx: Tx, result: ImprovementAnalysis["result"]): Promise<number> {
+  const numbers = [...new Set([...result.prioridades.map((p) => p.numero), ...result.grupos.flatMap((g) => g.numeros)])];
+  if (numbers.length === 0) return 0;
+  const { rows } = await tx.query<{ n: number }>(
+    `SELECT count(*)::int AS n FROM controle_vendas_estoque.improvements
+      WHERE number = ANY($1::bigint[]) AND merged_into IS NULL AND status = ANY($2::text[])`,
+    [numbers, OPEN_STATUSES],
+  );
+  return rows[0]?.n ?? 0;
 }
 
 function parseResult(text: string): ImprovementAnalysis["result"] {
@@ -110,7 +128,9 @@ export async function analyzeImprovementsWithAI(db: Db, viewer: ImprovementViewe
        RETURNING id, created_at AS "createdAt", items, executed_at AS "executedAt", result`,
       [viewer.userId, JSON.stringify(result), rows.length],
     );
-    return saved.rows[0]!;
+    const analysis = saved.rows[0]!;
+    analysis.stillOpen = await countStillOpen(tx, analysis.result);
+    return analysis;
   });
 }
 

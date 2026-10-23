@@ -129,6 +129,11 @@ export async function ImprovementsBoard({ mode, searchParams }: { mode: "company
           </div>
           {!analysis ? (
             <p className="muted">A IA lê todos os pedidos em aberto, sugere quais juntar e resume o que cada empresa precisa.</p>
+          ) : analysis.stillOpen === 0 ? (
+            <p className="muted">
+              A última análise, de {fmt.format(new Date(analysis.createdAt))}, já foi toda resolvida: nenhum pedido dela está mais em aberto.
+              Quando chegarem pedidos novos, toque em Analisar com IA.
+            </p>
           ) : (
             <>
               <p className="muted">Feita em {fmt.format(new Date(analysis.createdAt))}, com {analysis.items} pedidos em aberto.</p>
