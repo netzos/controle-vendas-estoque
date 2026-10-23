@@ -31,6 +31,7 @@ export default async function SignupRequestsPage() {
           <p>
             <strong>{r.name}</strong> · {r.email}
             {r.whatsapp && <> · WhatsApp {whatsappLabel(r.whatsapp)}</>}
+            {r.telegramLinked && <> · <span className="tag ok">Já falou com a Netz no Telegram</span></>}
           </p>
           {r.business && <p className="muted">Vende: {r.business}</p>}
           <p className="muted">Pedido nº {r.number}, em {fmt.format(new Date(r.createdAt))}</p>

@@ -1,18 +1,32 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState } from "react";
+import { useActionState, useEffect } from "react";
 import { Field, FormMessage, SubmitButton } from "@/components/form";
 import { signupAction } from "./actions";
 
 export function SignupForm() {
   const [state, action] = useActionState(signupAction, null);
+  const telegram = state?.ok ? state.telegramUrl : null;
+  // O Telegram abre sozinho na conversa com a Netz, que já reconhece o pedido.
+  useEffect(() => {
+    if (telegram) window.location.href = telegram;
+  }, [telegram]);
   if (state?.ok) {
     return (
       <div>
         <div className="alert success" role="status">
-          Recebemos seu pedido. Vamos analisar e avisar pelo WhatsApp ou e-mail assim que sua conta for liberada.
+          Recebemos seu pedido. Vamos analisar e avisar {telegram ? "pelo Telegram, WhatsApp ou e-mail" : "pelo WhatsApp ou e-mail"} assim que sua conta for liberada.
         </div>
+        {telegram && (
+          <div className="card telegram-welcome">
+            <div>
+              <h2>Fale com a Netz no Telegram</h2>
+              <p className="muted">O Telegram deve abrir sozinho. Toque em <strong>Iniciar</strong> e a Netz te avisa por lá quando a conta for aprovada.</p>
+            </div>
+            <a className="button" href={telegram}>Abrir no Telegram</a>
+          </div>
+        )}
         <p className="muted">Depois da aprovação, é só entrar com o e-mail e a senha que você acabou de criar.</p>
         <div className="actions"><Link href="/login" className="button secondary">Voltar para o login</Link></div>
       </div>

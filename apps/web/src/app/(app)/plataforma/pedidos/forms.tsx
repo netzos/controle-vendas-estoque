@@ -16,7 +16,10 @@ export function RequestDecision({ requestId, name }: { requestId: string; name: 
       `Para usar o painel no navegador, entre com seu e-mail e a senha que você criou: ${a.loginUrl}`;
     return (
       <div>
-        <div className="alert success" role="status">{approved.message}</div>
+        <div className="alert success" role="status">
+          {approved.message}
+          {a.telegramLinked && ` A Netz já avisou ${a.name.split(" ")[0]} no Telegram, e a conta já está ligada lá.`}
+        </div>
         <div className="actions">
           <a className="button" href={`https://wa.me/${a.whatsapp ?? ""}?text=${encodeURIComponent(text)}`} target="_blank" rel="noreferrer">
             Avisar {a.name} no WhatsApp
