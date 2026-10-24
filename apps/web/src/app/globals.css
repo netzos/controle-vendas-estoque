@@ -22,6 +22,16 @@
   --radius-sm: 12px;
   --rail-w: 104px;
   --shadow: 0 1px 2px rgba(16, 24, 40, .04), 0 1px 3px rgba(16, 24, 40, .04);
+  /* Área de administração (Protocolo Netzcode, regra 1): moldura e faixa laranja, menu escuro. */
+  --admin: #c2410c;
+  --admin-text: #ffffff;
+  --admin-soft: #fbe6dc;
+  --admin-glow: #ff8a4c;
+  --admin-rail: #0f1115;
+  --admin-rail-2: #22252c;
+  --admin-rail-text: #c4c9d2;
+  --admin-frame: 6px;
+  --admin-band-h: 44px;
   color-scheme: light;
   font-family: "Outfit", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
@@ -545,6 +555,29 @@ summary .edit-hint { float: right; font-size: 13px; color: var(--muted); font-we
 /* Administrador olhando uma empresa sem ser membro */
 .view-banner { background: var(--text); color: #fff; }
 .view-banner a { color: #fff; text-decoration: underline; }
+
+/* Área de administração (Protocolo Netzcode, regra 1). O Shell marca a área ativa em data-area. */
+.admin-band { position: sticky; top: 0; z-index: 30; display: flex; align-items: center; justify-content: space-between; gap: 8px 16px; flex-wrap: wrap; min-height: var(--admin-band-h); padding: 8px 24px; background: var(--admin); color: var(--admin-text); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; font-size: 13.5px; }
+.admin-band-label { display: inline-flex; align-items: center; gap: 10px; }
+.admin-band a { color: var(--admin-text); text-decoration: underline; text-transform: none; letter-spacing: 0; font-size: 14px; }
+.shell[data-area="admin"]::after { content: ""; position: fixed; inset: 0; border: var(--admin-frame) solid var(--admin); pointer-events: none; z-index: 40; }
+.shell[data-area="admin"] { background: linear-gradient(to right, var(--admin-rail) var(--rail-w), transparent 0); }
+.shell[data-area="admin"] .rail { background: var(--admin-rail); border-right-color: var(--admin-rail); }
+.shell[data-area="admin"] .rail-item { color: var(--admin-rail-text); }
+.shell[data-area="admin"] .rail-item:hover { background: var(--admin-rail-2); color: #fff; }
+.shell[data-area="admin"] .rail-item.active { background: var(--admin); color: var(--admin-text); box-shadow: none; }
+.shell[data-area="admin"] .rail-user { color: var(--admin-rail-text); }
+.shell[data-area="admin"] .rail-user:hover { color: #fff; }
+.shell[data-area="admin"] .avatar { color: #fff; background: var(--admin-rail-2); border-color: var(--admin-rail); box-shadow: 0 0 0 2px var(--admin-glow); }
+.shell[data-area="admin"] .tabs a.active { background: var(--admin-soft); color: var(--admin); }
+@media (min-width: 861px) {
+  .shell[data-area="admin"] .rail { top: var(--admin-band-h); height: calc(100vh - var(--admin-band-h)); }
+}
+@media (max-width: 860px) {
+  .admin-band { padding: 8px 16px; }
+  .shell[data-area="admin"] { background: none; }
+  .shell[data-area="admin"] .rail { border-top-color: var(--admin-rail); }
+}
 
 /* Comunicação da Netz (Plataforma): manual versionado, antes e depois, pedidos de ajuste. */
 .comm-text { white-space: pre-wrap; word-break: break-word; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 14px 16px; font-family: inherit; font-size: 14px; line-height: 1.55; max-height: 520px; overflow-y: auto; margin: 10px 0; }

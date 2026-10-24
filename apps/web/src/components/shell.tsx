@@ -25,9 +25,22 @@ export function Shell({
   const pathname = usePathname();
   const current = navigation.find((g) => g.items.some((i) => matches(i, pathname)));
   const initials = user.name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join("");
+  // Protocolo Netzcode, regra 1: a administração tem visual próprio, inconfundível com a área do usuário.
+  // A tela marca a área ativa em data-area; as cores de cada área ficam nos tokens do globals.css.
+  const area = isAdminArea(pathname) ? "admin" : "user";
 
   return (
-    <div className="shell">
+    <>
+    {area === "admin" && (
+      <div className="admin-band" role="status">
+        <span className="admin-band-label">
+          <Icon name="shield" size={20} />
+          Modo administrador · Painel da plataforma
+        </span>
+        <Link href="/">Voltar para a área do usuário</Link>
+      </div>
+    )}
+    <div className="shell" data-area={area}>
       <aside className="rail" aria-label="Menu principal">
         <Link href="/" className="rail-logo" aria-label={`${BRAND_NAME} · Início`}>
           <LogoMark size={52} />
@@ -75,7 +88,15 @@ export function Shell({
         </main>
       </div>
     </div>
+    </>
   );
+}
+
+/** Rotas da área de administração. Por enquanto só o Painel da plataforma (Netzcode). */
+const ADMIN_PREFIXES = ["/plataforma"];
+
+function isAdminArea(pathname: string) {
+  return ADMIN_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 }
 
 const NEW_ORGANIZATION = "__nova__";
