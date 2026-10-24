@@ -38,13 +38,13 @@ export default async function PermissionsPage() {
         </section>
       )}
       <section className="card">
-        <h2>Catálogo de permissões</h2>
+        <h2>Tudo o que dá para liberar</h2>
         {modules.map((m) => (
           <div key={m}>
             <strong>{MODULE_LABELS[m] ?? m}</strong>
             <ul>
               {catalog.filter((p) => p.module === m).map((p) => (
-                <li key={p.key}><code>{p.key}</code>: {p.description}</li>
+                <li key={p.key}>{p.description}</li>
               ))}
             </ul>
           </div>

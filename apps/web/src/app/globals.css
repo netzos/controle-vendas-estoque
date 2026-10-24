@@ -48,6 +48,24 @@ p { margin: 0 0 8px; }
 .rail-item { display: flex; flex-direction: column; align-items: center; gap: 4px; width: 100%; padding: 10px 4px; border-radius: 16px; color: var(--muted); font-size: 12.5px; font-weight: 500; text-align: center; background: none; border: none; cursor: pointer; }
 .rail-item:hover { background: var(--surface-2); color: var(--text); text-decoration: none; }
 .rail-item.active { background: var(--accent); color: #fff; box-shadow: 0 6px 16px rgba(15, 17, 21, .2); }
+.rail-item.primary { color: var(--text); box-shadow: inset 0 0 0 1.5px var(--accent); }
+.rail-item.primary.active { background: var(--accent); color: #fff; box-shadow: 0 6px 16px rgba(15, 17, 21, .2); }
+.mobile-only { display: none !important; }
+.back-link { margin: 0 0 6px; font-weight: 500; }
+.back-link a { color: var(--muted); }
+/* "Mais" do celular */
+.more-sheet { position: fixed; inset: 0; z-index: 70; }
+.more-backdrop { position: absolute; inset: 0; width: 100%; height: 100%; background: rgba(15, 17, 21, .35); border: none; border-radius: 0; padding: 0; }
+.more-backdrop:hover { background: rgba(15, 17, 21, .35); }
+.more-panel { position: absolute; left: 0; right: 0; bottom: 0; background: var(--surface); border-radius: 24px 24px 0 0; padding: 18px 16px calc(84px + env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column; gap: 14px; box-shadow: 0 -8px 30px rgba(15, 17, 21, .15); }
+.more-panel nav { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.more-panel nav a { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 14px 6px; border-radius: 16px; background: var(--surface-2); color: var(--text); font-weight: 500; font-size: 13px; text-align: center; }
+.more-panel nav a.active { background: var(--accent); color: #fff; }
+.more-panel nav a:hover { text-decoration: none; }
+.more-foot { display: flex; justify-content: space-between; align-items: center; gap: 10px; border-top: 1px solid var(--border); padding-top: 12px; }
+.more-foot a { display: flex; align-items: center; gap: 10px; color: var(--text); font-weight: 500; min-width: 0; }
+.more-foot form { margin: 0; }
+.avatar.small { width: 34px; height: 34px; font-size: 13px; }
 .rail-foot { margin-top: auto; display: flex; flex-direction: column; align-items: center; gap: 8px; width: 100%; }
 .rail-foot form { width: 100%; }
 .rail-user { display: flex; flex-direction: column; align-items: center; gap: 4px; color: var(--muted); font-size: 12.5px; font-weight: 500; max-width: 100%; }
@@ -132,11 +150,12 @@ details.card[open] > summary { margin-bottom: 14px; }
 
 @media (max-width: 860px) {
   .shell { grid-template-columns: 1fr; padding-bottom: 76px; }
-  .rail { position: fixed; inset: auto 0 0 0; top: auto; height: auto; flex-direction: row; padding: 6px 8px; gap: 4px; border-right: none; border-top: 1px solid var(--border); z-index: 20; overflow-x: auto; }
-  .rail-logo, .rail-user { display: none; }
-  .rail-nav { flex-direction: row; margin: 0; gap: 4px; width: auto; }
-  .rail-foot { margin: 0; width: auto; }
-  .rail-item { width: 72px; flex: none; padding: 8px 2px; font-size: 11px; }
+  .rail { position: fixed; inset: auto 0 0 0; top: auto; height: auto; flex-direction: row; padding: 6px max(8px, env(safe-area-inset-left, 0px)) calc(6px + env(safe-area-inset-bottom, 0px)); gap: 4px; border-right: none; border-top: 1px solid var(--border); z-index: 80; overflow: visible; }
+  .rail-logo, .rail-foot { display: none; }
+  .rail-nav { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); margin: 0; gap: 4px; width: 100%; }
+  .rail-item { width: auto; min-width: 0; padding: 8px 2px; font-size: 11px; }
+  .rail-item.desk-only { display: none; }
+  .mobile-only { display: flex !important; }
   .main { padding: 0 16px 16px; }
   .topbar { padding: 16px 0 10px; min-height: 0; }
   .brand-name span { display: none; }
@@ -158,7 +177,7 @@ details.card[open] > summary { margin-bottom: 14px; }
 .imp-tabs a.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
 .imp-tabs a span { font-size: 12px; }
 .imp-filter { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
-.imp-filter select { width: auto; flex: 1; }
+.imp-filter select { width: auto; flex: 1; min-width: 0; }
 .imp-items { list-style: none; padding: 0; margin: 0; }
 .imp-items a { display: flex; flex-direction: column; gap: 2px; padding: 10px; border-radius: 6px; color: var(--text); border-bottom: 1px solid var(--border); }
 .imp-items a:hover, .imp-items a.active { background: var(--surface-2); text-decoration: none; }
@@ -180,7 +199,7 @@ details.card[open] > summary { margin-bottom: 14px; }
 .imp-correct summary { cursor: pointer; color: var(--accent); }
 .imp-reply textarea { margin-bottom: 4px; }
 @media (max-width: 860px) {
-  .imp-layout { grid-template-columns: 1fr; }
+  .imp-layout { grid-template-columns: minmax(0, 1fr); }
   .imp-steps { grid-template-columns: repeat(2, 1fr); }
 }
 
@@ -209,7 +228,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-sp
 /* Painéis */
 .dash-header { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
 .dash-header p { margin: 0; }
-.dash-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.dash-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; min-width: 0; max-width: 100%; }
 .segmented { display: inline-flex; gap: 2px; padding: 4px; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; max-width: 100%; overflow-x: auto; }
 .segmented a, .segmented button { padding: 7px 14px; border-radius: 10px; color: var(--muted); font-weight: 500; white-space: nowrap; background: none; border: none; font-size: 14px; }
 .segmented a:hover, .segmented button:hover { color: var(--text); background: var(--surface-2); text-decoration: none; }
@@ -615,3 +634,57 @@ summary .edit-hint { float: right; font-size: 13px; color: var(--muted); font-we
 .comm-person h3 { margin-top: 0; }
 .comm-add { margin-top: 14px; }
 @media (max-width: 860px) { .comm-people { grid-template-columns: 1fr; } .comm-person { border-left: 0; padding-left: 0; } }
+
+/* Ajustes: atalhos por assunto */
+.hub-section { margin-bottom: 10px; }
+.hub-section h2 { margin: 6px 0 12px; color: var(--muted); font-size: 13px; text-transform: uppercase; letter-spacing: .08em; font-weight: 600; }
+.hub-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; margin-bottom: 14px; }
+.hub-card { display: flex; flex-direction: column; gap: 4px; margin: 0; color: var(--text); padding: 18px 20px; }
+.hub-card:hover { text-decoration: none; border-color: var(--text); }
+.hub-card strong { font-weight: 600; font-size: 16px; }
+.hub-card span { font-size: 13.5px; }
+
+/* Nova venda: barra fixa do total no celular */
+.pos-name { padding-right: 26px; }
+.pos-bar { display: none; }
+@media (max-width: 860px) {
+  .pos-bar { position: fixed; left: 12px; right: 12px; bottom: calc(76px + env(safe-area-inset-bottom, 0px)); z-index: 30; display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 14px 12px 18px; border-radius: 18px; background: var(--accent); color: #fff; box-shadow: 0 10px 28px rgba(15, 17, 21, .3); }
+  .pos-bar:hover { text-decoration: none; }
+  .pos-bar span { display: flex; flex-direction: column; font-size: 12.5px; line-height: 1.2; opacity: .95; }
+  .pos-bar b { font-size: 19px; font-weight: 600; }
+  .pos-bar em { font-style: normal; font-weight: 600; background: #fff; color: var(--accent); padding: 10px 14px; border-radius: 12px; }
+  .pos-cart { scroll-margin-top: 12px; }
+  form:has(.pos-bar) { padding-bottom: 80px; }
+}
+
+/* Balão da Netz com o nome */
+.nets-fab { width: auto; min-width: 56px; padding: 0 18px 0 16px; border-radius: 28px; display: flex; gap: 8px; font-weight: 600; font-size: 15px; }
+@media (max-width: 860px) {
+  .nets-fab { height: 48px; min-width: 48px; padding: 0 14px 0 12px; font-size: 14px; }
+  .pos-bar { right: 104px; }
+}
+
+/* Tabelas que viram cartões no celular */
+@media (max-width: 760px) {
+  table.cards thead { display: none; }
+  table.cards, table.cards tbody { display: block; }
+  table.cards tr { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 14px; padding: 14px 2px; border-bottom: 1px solid var(--border); }
+  table.cards tbody tr:last-child { border-bottom: none; }
+  table.cards td { display: flex; flex-direction: column; gap: 2px; padding: 0; border: none; text-align: left; min-width: 0; }
+  table.cards td.num { text-align: left; }
+  table.cards td:not([data-label]) { grid-column: 1 / -1; }
+  table.cards td:first-child:not([data-label]) { font-weight: 600; font-size: 16px; }
+  table.cards td[data-label]::before { content: attr(data-label); font-size: 11.5px; color: var(--faint); text-transform: uppercase; letter-spacing: .05em; font-weight: 600; }
+  table.cards td.sm-hide { display: none; }
+  table.cards td .button { width: 100%; justify-content: center; }
+  table.cards .tag { align-self: flex-start; }
+}
+
+/* Início: Precisa de você */
+.needs h2 { margin-bottom: 8px; }
+.needs ul { list-style: none; margin: 0; padding: 0; }
+.needs li + li { border-top: 1px solid var(--border); }
+.needs a { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 11px 2px; color: var(--text); font-weight: 500; }
+.needs a:hover { text-decoration: none; background: var(--surface-2); }
+.needs-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--warning); }
+.needs-dot.bad { background: var(--danger); }

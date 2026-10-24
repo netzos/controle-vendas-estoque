@@ -36,7 +36,7 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
       <div className="page-header dash-header">
         <div>
           <h1>Estoque</h1>
-          <p>Saldo, giro e quantos dias cada produto ainda aguenta no ritmo de vendas dos últimos 30 dias.</p>
+          <p>Quanto tem de cada produto e por quantos dias ainda dá, no ritmo de vendas dos últimos 30 dias.</p>
         </div>
         {can(actor, "stock.manage") && (
           <div className="dash-actions">
@@ -49,8 +49,8 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
       <div className="kpi-grid">
         <Kpi hero label="Valor em estoque (custo)" value={money(kpis.costValue)} sub={`${kpis.products} produtos`} />
         <Kpi label="Valor de venda" value={money(kpis.saleValue)} sub={`lucro potencial ${money(kpis.potentialProfit)}`} />
-        <Kpi label="Giro em 30 dias" value={kpis.turnover30 ? `${kpis.turnover30.replace(".", ",")}x` : "—"} sub="custo vendido ÷ estoque" />
-        <Kpi label="Cobertura média" value={days(kpis.avgCoverageDays)} sub="até acabar, no ritmo atual" />
+        <Kpi label="Vendido em 30 dias" value={kpis.turnover30 ? `${Math.round(Number(kpis.turnover30) * 100)}%` : "—"} sub="do valor que está no estoque" />
+        <Kpi label="O estoque dura" value={days(kpis.avgCoverageDays)} sub="em média, no ritmo atual" />
       </div>
 
       <div className="kpi-grid compact">
@@ -78,11 +78,11 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
           <p className="chart-empty">{rows.length === 0 ? "Nenhum produto com controle de estoque ainda." : "Nenhum produto neste filtro."}</p>
         ) : (
           <div className="table-wrap">
-            <table>
+            <table className="cards">
               <thead>
                 <tr>
                   <th>Produto</th><th className="num">Saldo</th><th>Saldo × mínimo</th><th className="num">Vendido 30d</th>
-                  <th className="num">Média/dia</th><th className="num">Cobertura</th><th className="num">Valor (custo)</th><th>Situação</th>
+                  <th className="num">Média/dia</th><th className="num">Dura</th><th className="num">Valor (custo)</th><th>Situação</th>
                 </tr>
               </thead>
               <tbody>
@@ -96,21 +96,24 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
                         <Link href={`/estoque/movimentacoes?produto=${r.id}`}>{r.name}</Link>
                         <small className="muted">{r.sku}{r.categoryName ? ` · ${r.categoryName}` : ""}</small>
                       </td>
-                      <td className="num"><strong>{quantity(r.stockQty)}</strong> {r.unitCode}</td>
-                      <td>
+                      <td data-label="Saldo" className="num"><strong>{quantity(r.stockQty)}</strong> {r.unitCode}</td>
+                      <td data-label="Saldo × mínimo" className="sm-hide">
                         <div className="meter" title={`Saldo ${quantity(r.stockQty)} · mínimo ${quantity(r.minStock)}`}>
                           <div className={`meter-fill ${r.status}`} style={{ width: `${(Math.max(stock, 0) / scale) * 100}%` }} />
                           {min > 0 && <div className="meter-min" style={{ left: `${(min / scale) * 100}%` }} />}
                         </div>
                       </td>
-                      <td className="num">{quantity(r.soldQty30)}</td>
-                      <td className="num">{quantity(r.avgDaily)}</td>
-                      <td className="num">{days(r.coverageDays)}</td>
-                      <td className="num">
+                      <td data-label="Vendido 30d" className="num sm-hide">{quantity(r.soldQty30)}</td>
+                      <td data-label="Média/dia" className="num sm-hide">{quantity(r.avgDaily)}</td>
+                      <td data-label="Dura" className="num">{days(r.coverageDays)}</td>
+                      <td data-label="Valor (custo)" className="num">
                         {money(r.costValue)}
                         <div className="value-bar"><div style={{ width: `${maxValue ? (Number(r.costValue) / maxValue) * 100 : 0}%` }} /></div>
                       </td>
-                      <td><span className={`tag ${STATUS[r.status].tag}`}>{STATUS[r.status].label}</span></td>
+                      <td data-label="Situação">
+                        {/* Saldo negativo = vendido por encomenda: falta pedir ao fornecedor. */}
+                        <span className={`tag ${STATUS[r.status].tag}`}>{stock < 0 ? `Encomendado · faltam ${quantity(String(-stock))}` : STATUS[r.status].label}</span>
+                      </td>
                     </tr>
                   );
                 })}

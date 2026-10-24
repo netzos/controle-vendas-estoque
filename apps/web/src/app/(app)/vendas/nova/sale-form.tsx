@@ -176,7 +176,7 @@ export function SaleForm({
         )}
       </section>
 
-      <section className="card pos-cart">
+      <section className="card pos-cart" id="venda">
         <h2>Venda</h2>
         <FormMessage state={state} />
         {lines.length === 0 ? (
@@ -322,6 +322,17 @@ export function SaleForm({
         {tradeTotal > 0 && <p className={`muted trade-note${toPay < 0 ? " warn-text" : ""}`}>{toPay < 0 ? "A troca passa do valor da venda." : `Venda de ${money(total)}; falta receber ${money(toPay)}.`}</p>}
         <SubmitButton className="block" pendingText="Registrando...">Finalizar venda</SubmitButton>
       </section>
+
+      {/* Celular: o total fica sempre à vista enquanto a pessoa escolhe os produtos. */}
+      {lines.length > 0 && (
+        <a href="#venda" className="pos-bar">
+          <span>
+            {lines.length} {lines.length === 1 ? "item" : "itens"}
+            <b>{money(tradeTotal > 0 ? Math.max(toPay, 0) : total)}</b>
+          </span>
+          <em>Finalizar →</em>
+        </a>
+      )}
     </form>
   );
 }

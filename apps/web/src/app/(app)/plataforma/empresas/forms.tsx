@@ -58,7 +58,7 @@ export function CreateOrganizationForm() {
         </div>
         <label style={{ display: "flex", gap: 8, margin: "8px 0" }}>
           <input type="checkbox" name="joinAsOwner" value="1" defaultChecked />
-          Eu também entro nessa empresa, para ajudar a configurar (dá para me tirar depois em Ajustes › Usuários)
+          Eu também entro nessa empresa, para ajudar a configurar (dá para me tirar depois em Ajustes › Equipe)
         </label>
         <div className="actions"><SubmitButton pendingText="Criando...">Criar empresa</SubmitButton></div>
       </form>

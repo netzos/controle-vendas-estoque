@@ -26,14 +26,20 @@ const ACTION_LABEL: Record<string, string> = {
   expired: "Ficou sem resposta",
 };
 
+// No celular o balão fica acima da barra de menu de baixo, sem cobri-la.
+const MOBILE_BOTTOM = 84;
+
 function readPosition(): Position {
+  const mobile = window.innerWidth <= 860;
   try {
     const raw = JSON.parse(window.localStorage.getItem(STORAGE) || "null");
-    if (raw && typeof raw.right === "number" && typeof raw.bottom === "number") return raw;
+    if (raw && typeof raw.right === "number" && typeof raw.bottom === "number") {
+      return mobile ? { right: raw.right, bottom: Math.max(raw.bottom, MOBILE_BOTTOM) } : raw;
+    }
   } catch {
     // Armazenamento bloqueado: fica no canto padrão.
   }
-  return DEFAULT;
+  return mobile ? { right: 12, bottom: MOBILE_BOTTOM } : DEFAULT;
 }
 
 // **negrito** e quebras de linha; o resto como texto.
@@ -337,7 +343,8 @@ export function NetsBubble() {
           }
         }}
       >
-        <Icon name="bot" size={24} />
+        <Icon name="bot" size={22} />
+        <span className="nets-fab-label">Netz</span>
         {!open && draft.trim() && <span className="nets-dot" aria-hidden="true" />}
       </button>
     </div>

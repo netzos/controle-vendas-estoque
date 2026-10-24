@@ -37,6 +37,18 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const timeFmt = new Intl.DateTimeFormat("pt-BR", { timeZone: org.timezone, hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" });
   const alerts = stock?.rows.filter((r) => r.status === "out" || r.status === "low").sort((a, b) => Number(a.stockQty) - Number(b.stockQty)) ?? [];
 
+  // "Precisa de você": o que pede ação hoje, no mesmo espírito do cartão do Painel da plataforma.
+  const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+  const owed = stock?.rows.filter((r) => Number(r.stockQty) < 0).length ?? 0;
+  const out = (stock?.rows.filter((r) => r.status === "out").length ?? 0) - owed;
+  const low = stock?.rows.filter((r) => r.status === "low").length ?? 0;
+  const needs: { href: string; text: string; action: string; tone: "bad" | "warn" }[] = [];
+  if (steps && steps.late > 0) needs.push({ href: "/entregas?filtro=late", text: `${plural(steps.late, "entrega ou serviço atrasado", "entregas ou serviços atrasados")}`, action: "Resolver", tone: "bad" });
+  if (steps && steps.today > 0) needs.push({ href: "/entregas?filtro=today", text: `${plural(steps.today, "entrega ou serviço", "entregas ou serviços")} para hoje`, action: "Ver", tone: "warn" });
+  if (owed > 0) needs.push({ href: "/estoque?filtro=zerados", text: `${plural(owed, "produto vendido por encomenda", "produtos vendidos por encomenda")}, falta pedir ao fornecedor`, action: "Ver", tone: "bad" });
+  if (out > 0) needs.push({ href: "/estoque?filtro=zerados", text: `${plural(out, "produto zerado", "produtos zerados")}`, action: "Repor", tone: "bad" });
+  if (low > 0) needs.push({ href: "/estoque?filtro=baixo", text: `${plural(low, "produto abaixo do mínimo", "produtos abaixo do mínimo")}`, action: "Repor", tone: "warn" });
+
   return (
     <>
       <div className="page-header dash-header">
@@ -70,12 +82,21 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
         </section>
       )}
 
-      {steps && (steps.late > 0 || steps.today > 0) && (
-        <Link href={`/entregas?filtro=${steps.late > 0 ? "late" : "today"}`} className="card notice-link">
-          <strong>Depois da venda:</strong>{" "}
-          {[steps.late > 0 && `${steps.late} ${steps.late === 1 ? "etapa atrasada" : "etapas atrasadas"}`, steps.today > 0 && `${steps.today} para hoje`].filter(Boolean).join(" · ")}
-          <span className="muted"> · ver entregas e serviços →</span>
-        </Link>
+      {needs.length > 0 && (
+        <section className="card needs">
+          <h2>Precisa de você</h2>
+          <ul>
+            {needs.map((n) => (
+              <li key={n.text}>
+                <Link href={n.href}>
+                  <span className={`needs-dot ${n.tone}`} aria-hidden="true" />
+                  <span>{n.text}</span>
+                  <span className="muted">{n.action} →</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
 
       {dash && (
@@ -184,7 +205,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
                     <li key={r.id}>
                       <span>{r.name}</span>
                       <span className={`tag ${r.status === "out" ? "off" : "warn"}`}>
-                        {r.status === "out" ? "Zerado" : `${quantity(r.stockQty)} ${r.unitCode}`}
+                        {Number(r.stockQty) < 0 ? `Faltam ${quantity(String(-Number(r.stockQty)))} ${r.unitCode}` : r.status === "out" ? "Zerado" : `${quantity(r.stockQty)} ${r.unitCode}`}
                       </span>
                     </li>
                   ))}
@@ -204,7 +225,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
                   {dash.recent.map((s) => (
                     <li key={s.id}>
                       <Link href={`/vendas?id=${s.id}`}>
-                        <strong>nº {s.number}</strong> <span className="muted">{timeFmt.format(s.soldAt)}</span>
+                        <strong>nº {s.number}</strong> <span className="muted">{s.customerName ?? "Consumidor"} · {timeFmt.format(s.soldAt)}</span>
                       </Link>
                       <span className={s.status === "cancelled" ? "strike muted" : ""}>{money(s.total)}</span>
                     </li>

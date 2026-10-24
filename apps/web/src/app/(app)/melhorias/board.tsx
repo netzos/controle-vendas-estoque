@@ -35,7 +35,7 @@ const SOURCE_LABEL: Record<ImprovementSource, string> = {
   site: "Pelo painel",
   telegram: "Pelo Telegram",
   erp_ai: "Percebido pela IA do sistema",
-  claude: "Sugerido pelo Claude",
+  claude: "Sugerido pela equipe netzsales",
 };
 const TABS = [
   { key: "abertos", label: "Em aberto", has: ["new", "analysis", "approved", "building"] },
@@ -47,7 +47,7 @@ const moduleLabel = (key: string) => IMPROVEMENT_MODULES.find((m) => m.key === k
 const origin = (i: Improvement) =>
   i.source === "site" || i.source === "telegram" ? `${SOURCE_LABEL[i.source]} · ${i.createdByName}` : SOURCE_LABEL[i.source];
 const authorLabel = (kind: AuthorKind, name: string) =>
-  kind === "claude" ? "Claude · desenvolvimento" : kind === "erp_ai" ? "IA do sistema" : name;
+  kind === "claude" ? "Equipe netzsales" : kind === "erp_ai" ? "IA do sistema" : name;
 
 export type Search = { aba?: string; modulo?: string; empresa?: string; id?: string; novo?: string; criado?: string };
 
@@ -106,17 +106,16 @@ export async function ImprovementsBoard({ mode, searchParams }: { mode: "company
           </p>
         ) : (
           <p>
-            Pedidos de mudança no sistema e a conversa sobre cada um. Qualquer pessoa da empresa pode pedir. O Claude, que
-            desenvolve o sistema, responde os pedidos novos com uma análise. A equipe do netzsales aprova ou recusa, e o que for
-            aprovado o Claude desenvolve, publica e registra aqui.
+            Falta alguma coisa ou algo está confuso? Peça aqui, do seu jeito. Qualquer pessoa da empresa pode pedir, e a equipe
+            netzsales responde, decide e avisa aqui quando estiver pronto.
           </p>
         )}
       </div>
       <ol className="imp-steps card">
-        <li><b>Pedido</b><span>painel ou IA</span></li>
-        <li><b>Análise</b><span>Claude responde</span></li>
-        <li><b>Decisão</b><span>desenvolvedor aprova</span></li>
-        <li><b>Publicação</b><span>Claude desenvolve e avisa</span></li>
+        <li><b>Pedido</b><span>{platform ? "painel ou IA" : "você pede aqui ou pela Netz"}</span></li>
+        <li><b>Análise</b><span>{platform ? "Claude responde" : "a equipe estuda"}</span></li>
+        <li><b>Decisão</b><span>{platform ? "desenvolvedor aprova" : "a equipe decide"}</span></li>
+        <li><b>Publicação</b><span>{platform ? "Claude desenvolve e avisa" : "fica pronto e você é avisado"}</span></li>
       </ol>
       {!platform && viewer.isDeveloper && (
         <p className="muted">Aqui aparecem só os pedidos desta empresa. Para ver os de todas e decidir, use <Link href="/plataforma/melhorias">Plataforma › Melhorias</Link>.</p>
@@ -253,7 +252,7 @@ export async function ImprovementsBoard({ mode, searchParams }: { mode: "company
             <p className="muted">{sp.id ? "Pedido não encontrado." : "Escolha um pedido para ver a conversa ou registre um novo."}</p>
           ) : (
             <>
-              {sp.criado === "1" && <div className="alert success">Pedido registrado. O Claude responde com uma análise na próxima conferência.</div>}
+              {sp.criado === "1" && <div className="alert success">Pedido registrado. A equipe netzsales responde aqui em breve.</div>}
               <div className="imp-row-head">
                 <span>
                   <span className={`tag ${STATUS_TONE[d.status]}`}>{STATUS_LABEL[d.status]}</span>{" "}
@@ -292,7 +291,7 @@ export async function ImprovementsBoard({ mode, searchParams }: { mode: "company
                   </li>
                 ))}
               </ol>
-              {detail!.messages.length === 0 && <p className="muted">Ainda sem conversa. O Claude responde na próxima conferência.</p>}
+              {detail!.messages.length === 0 && <p className="muted">Ainda sem conversa. A equipe netzsales responde aqui em breve.</p>}
               {platform && !d.mergedInto && (d.status === "new" || d.status === "analysis") && <DecideForm id={d.id} />}
               {mergeTargets.length > 0 && (d.status === "new" || d.status === "analysis") && (
                 <MergeForm id={d.id} targets={mergeTargets.map((i) => ({ id: i.id, label: `#${i.number} ${i.title}${i.organizationName ? ` (${i.organizationName})` : ""}` }))} />

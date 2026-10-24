@@ -266,7 +266,7 @@ export async function joinOrganizationForSupport(db: Db, developer: { userId: st
 export async function leaveOrganizationSupport(db: Db, developer: { userId: string; userName: string }, organizationId: string): Promise<void> {
   const me = (await listPlatformOrganizationMembers(db, developer.userId, organizationId)).find((m) => m.userId === developer.userId);
   if (!me || me.status !== "active") return;
-  if (me.isOwner) throw new AppError("conflict", "Você é proprietário desta empresa. Para sair, outro proprietário precisa tirar você em Ajustes › Usuários.");
+  if (me.isOwner) throw new AppError("conflict", "Você é proprietário desta empresa. Para sair, outro proprietário precisa tirar você em Ajustes › Equipe.");
   await withTransaction(db, async (tx) => {
     await setTenant(tx, { organizationId, userId: developer.userId });
     await tx.query("UPDATE controle_vendas_estoque.memberships SET status = 'disabled', updated_at = now() WHERE id = $1", [me.membershipId]);

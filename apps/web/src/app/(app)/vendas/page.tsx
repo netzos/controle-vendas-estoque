@@ -113,20 +113,20 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
           <p className="muted">{params.q ? "Nenhuma venda encontrada." : "Nenhuma venda registrada ainda."}</p>
         ) : (
           <div className="table-wrap">
-            <table>
+            <table className="cards">
               <thead>
                 <tr><th>Nº</th><th>Data</th><th>Cliente</th><th>Pagamento</th><th className="num">Itens</th><th className="num">Total</th><th>Situação</th></tr>
               </thead>
               <tbody>
                 {sales.map((s) => (
                   <tr key={s.id} className="clickable">
-                    <td><Link href={`/vendas?id=${s.id}`}>{s.number}</Link></td>
-                    <td>{fmt.format(s.soldAt)}</td>
-                    <td>{s.customerName ?? <span className="muted">Consumidor</span>}</td>
-                    <td>{PAYMENT_LABELS[s.paymentMethod]}</td>
-                    <td className="num">{s.itemCount}</td>
-                    <td className="num"><strong className={s.status === "cancelled" ? "strike muted" : ""}>{money(s.total)}</strong></td>
-                    <td><span className={`tag ${s.status === "completed" ? "ok" : "off"}`}>{s.status === "completed" ? "Concluída" : "Cancelada"}</span></td>
+                    <td data-label="Nº"><Link href={`/vendas?id=${s.id}`}>{s.number}</Link></td>
+                    <td data-label="Data">{fmt.format(s.soldAt)}</td>
+                    <td data-label="Cliente">{s.customerName ?? <span className="muted">Consumidor</span>}</td>
+                    <td data-label="Pagamento">{PAYMENT_LABELS[s.paymentMethod]}</td>
+                    <td data-label="Itens" className="num sm-hide">{s.itemCount}</td>
+                    <td data-label="Total" className="num"><strong className={s.status === "cancelled" ? "strike muted" : ""}>{money(s.total)}</strong></td>
+                    <td data-label="Situação"><span className={`tag ${s.status === "completed" ? "ok" : "off"}`}>{s.status === "completed" ? "Concluída" : "Cancelada"}</span></td>
                   </tr>
                 ))}
               </tbody>

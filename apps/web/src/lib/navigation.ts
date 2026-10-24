@@ -1,7 +1,9 @@
 import type { FeatureKey, Permission } from "@erp/core";
 
-// Estrutura de telas da seção 25. Itens de fases futuras ficam fora do menu
-// até serem entregues; não há tela vazia fingindo funcionalidade.
+// Menu organizado pelas tarefas do dia de quem vende (reanálise de 24/10/2026):
+// vender, ver as vendas, cuidar dos produtos, dos clientes e do dinheiro.
+// O que se configura uma vez fica em Ajustes, numa página de atalhos por assunto.
+// Itens de fases futuras ficam fora do menu até serem entregues.
 export interface NavItem {
   label: string;
   href: string;
@@ -11,9 +13,13 @@ export interface NavItem {
   /** Parte do sistema que precisa estar liberada para a empresa (Plataforma › Liberações). */
   feature?: FeatureKey;
   phase: number;
+  /** Assunto na página de Ajustes. */
+  section?: string;
+  /** Frase curta embaixo do nome, na página de Ajustes. */
+  description?: string;
 }
 
-export type NavIcon = "home" | "cart" | "tag" | "box" | "truck" | "wallet" | "coins" | "chart" | "bot" | "zap" | "bulb" | "sliders" | "shield";
+export type NavIcon = "home" | "plus" | "cart" | "tag" | "users" | "box" | "truck" | "wallet" | "coins" | "chart" | "bot" | "zap" | "bulb" | "sliders" | "shield";
 
 export interface NavGroup {
   label: string;
@@ -22,6 +28,12 @@ export interface NavGroup {
   /** Frase do topo da página, como no layout de referência. */
   hint: string;
   icon: NavIcon;
+  /** Botão de destaque no menu (Vender). */
+  primary?: boolean;
+  /** Página de atalhos do grupo: o menu leva para ela e as telas mostram "← Ajustes" em vez de abas. */
+  hub?: string;
+  /** Aparece direto na barra de baixo do celular; os outros ficam em "Mais". */
+  mobile?: boolean;
   items: NavItem[];
 }
 
@@ -29,137 +41,93 @@ export const CURRENT_PHASE = 2;
 
 export const NAVIGATION: NavGroup[] = [
   {
-    label: "Visão geral",
+    label: "Início",
     short: "Início",
     hint: "Como estão as vendas",
     icon: "home",
+    mobile: true,
     items: [
       { label: "Início", href: "/", phase: 1 },
       { label: "Central de alertas", href: "/alertas", phase: 6 },
-    ],
-  },
-  {
-    label: "Comercial",
-    short: "Vendas",
-    hint: "Clientes, vendas e orçamentos",
-    icon: "cart",
-    items: [
-      { label: "Vendas", href: "/vendas", permission: "sales.view", phase: 2 },
-      { label: "Entregas", href: "/entregas", permission: "deliveries.view", feature: "deliveries", phase: 2 },
-      { label: "Etapas depois da venda", href: "/etapas", permission: "deliveries.view", feature: "deliveries", phase: 2 },
-      { label: "Orçamentos", href: "/orcamentos", phase: 3 },
-      { label: "Clientes", href: "/clientes", permission: "customers.view", phase: 2 },
-      { label: "Vendedores", href: "/vendedores", phase: 3 },
-      { label: "Serviços", href: "/servicos", phase: 3 },
-    ],
-  },
-  {
-    label: "Catálogo",
-    short: "Catálogo",
-    hint: "Produtos, categorias e unidades que você vende",
-    icon: "tag",
-    items: [
-      { label: "Produtos", href: "/produtos", permission: "products.view", phase: 2 },
-      { label: "Categorias", href: "/categorias", permission: "products.view", phase: 2 },
-      { label: "Marcas", href: "/marcas", phase: 3 },
-      { label: "Unidades de medida", href: "/unidades", permission: "products.view", phase: 2 },
-      { label: "Tabelas de preços", href: "/tabelas-de-precos", phase: 3 },
-      { label: "Campos personalizados", href: "/campos-personalizados", permission: "products.view", feature: "custom_fields", phase: 2 },
-    ],
-  },
-  {
-    label: "Estoque",
-    short: "Estoque",
-    hint: "Saldo, giro e cobertura de cada produto",
-    icon: "box",
-    items: [
-      { label: "Painel do estoque", href: "/estoque", permission: "stock.view", phase: 2 },
-      { label: "Movimentações", href: "/estoque/movimentacoes", permission: "stock.view", phase: 2 },
-      { label: "Depósitos", href: "/estoque/depositos", phase: 4 },
-      { label: "Inventários", href: "/estoque/inventarios", phase: 4 },
-      { label: "Transferências", href: "/estoque/transferencias", phase: 4 },
-      { label: "Lotes e validades", href: "/estoque/lotes", phase: 4 },
-      { label: "Reposição", href: "/estoque/reposicao", phase: 4 },
-    ],
-  },
-  {
-    label: "Compras",
-    short: "Compras",
-    hint: "Fornecedores e pedidos de compra",
-    icon: "truck",
-    items: [
-      { label: "Fornecedores", href: "/fornecedores", permission: "suppliers.view", phase: 2 },
-      { label: "Pedidos de compra", href: "/compras/pedidos", phase: 4 },
-      { label: "Recebimentos", href: "/compras/recebimentos", phase: 4 },
-      { label: "Sugestões de compra", href: "/compras/sugestoes", phase: 4 },
-    ],
-  },
-  {
-    label: "Custos",
-    short: "Custos",
-    hint: "Quanto custa vender e o lucro de verdade",
-    icon: "coins",
-    items: [
-      { label: "Painel de custos", href: "/custos", permission: "costs.view", feature: "costs", phase: 2 },
-      { label: "Custo de obtenção", href: "/custos/obtencao", permission: "costs.view", feature: "costs", phase: 2 },
-      { label: "Tipos de custo", href: "/custos/tipos", permission: "costs.view", feature: "costs", phase: 2 },
-    ],
-  },
-  {
-    label: "Financeiro",
-    short: "Financeiro",
-    hint: "Contas a pagar e a receber",
-    icon: "wallet",
-    items: [
-      { label: "Contas a receber", href: "/financeiro/receber", phase: 5 },
-      { label: "Contas a pagar", href: "/financeiro/pagar", phase: 5 },
-      { label: "Despesas", href: "/financeiro/despesas", phase: 5 },
-      { label: "Fluxo de caixa", href: "/financeiro/fluxo", phase: 5 },
-    ],
-  },
-  {
-    label: "Inteligência",
-    short: "Relatórios",
-    hint: "Números do negócio",
-    icon: "chart",
-    items: [
-      { label: "Dashboard comercial", href: "/inteligencia", phase: 7 },
       { label: "Relatórios", href: "/relatorios", phase: 7 },
     ],
   },
   {
-    label: "Automações",
-    short: "Automações",
-    hint: "Regras automáticas",
-    icon: "zap",
+    label: "Vender",
+    short: "Vender",
+    hint: "Registre uma venda em poucos toques",
+    icon: "plus",
+    primary: true,
+    mobile: true,
+    items: [{ label: "Nova venda", href: "/vendas/nova", permission: "sales.create", phase: 2 }],
+  },
+  {
+    label: "Vendas",
+    short: "Vendas",
+    hint: "Vendas feitas e o que falta entregar",
+    icon: "cart",
+    mobile: true,
     items: [
-      { label: "Regras", href: "/automacoes", phase: 6 },
-      { label: "Relatórios programados", href: "/automacoes/relatorios", phase: 6 },
-      { label: "Histórico de execuções", href: "/automacoes/historico", phase: 6 },
+      { label: "Vendas", href: "/vendas", permission: "sales.view", phase: 2 },
+      { label: "Entregas e serviços", href: "/entregas", permission: "deliveries.view", feature: "deliveries", phase: 2 },
+      { label: "Orçamentos", href: "/orcamentos", phase: 3 },
     ],
   },
   {
-    label: "Colaboração",
-    short: "Melhorias",
-    hint: "Peça mudanças no sistema; o desenvolvedor aprova",
-    icon: "bulb",
-    items: [{ label: "Melhorias", href: "/melhorias", phase: 1 }],
+    label: "Produtos",
+    short: "Produtos",
+    hint: "O que você vende, o estoque e quem fornece",
+    icon: "tag",
+    mobile: true,
+    items: [
+      { label: "Produtos", href: "/produtos", permission: "products.view", phase: 2 },
+      { label: "Estoque", href: "/estoque", permission: "stock.view", phase: 2 },
+      { label: "Entradas e saídas", href: "/estoque/movimentacoes", permission: "stock.view", phase: 2 },
+      { label: "Fornecedores", href: "/fornecedores", permission: "suppliers.view", phase: 2 },
+      { label: "Pedidos de compra", href: "/compras/pedidos", phase: 4 },
+    ],
   },
   {
-    label: "Administração",
-    short: "Ajustes",
-    hint: "Empresa, usuários, permissões e seu Telegram",
-    icon: "sliders",
+    label: "Clientes",
+    short: "Clientes",
+    hint: "Quem compra de você",
+    icon: "users",
+    items: [{ label: "Clientes", href: "/clientes", permission: "customers.view", phase: 2 }],
+  },
+  {
+    label: "Dinheiro",
+    short: "Dinheiro",
+    hint: "Quanto sobra de verdade",
+    icon: "wallet",
     items: [
-      { label: "Empresa", href: "/administracao/empresa", permission: "organization.view", phase: 1 },
-      { label: "Filiais", href: "/administracao/filiais", permission: "branches.view", phase: 1 },
-      { label: "Usuários", href: "/administracao/usuarios", permission: "users.view", phase: 1 },
-      { label: "Permissões", href: "/administracao/permissoes", permission: "roles.view", phase: 1 },
-      { label: "Auditoria", href: "/administracao/auditoria", permission: "audit.view", phase: 1 },
-      { label: "Configurações gerais", href: "/administracao/configuracoes", permission: "settings.view", phase: 1 },
+      { label: "Lucro e custos", href: "/custos", permission: "costs.view", feature: "costs", phase: 2 },
+      { label: "Custo de obtenção", href: "/custos/obtencao", permission: "costs.view", feature: "costs", phase: 2 },
+      { label: "A receber", href: "/financeiro/receber", phase: 5 },
+      { label: "A pagar", href: "/financeiro/pagar", phase: 5 },
+    ],
+  },
+  {
+    label: "Ajustes",
+    short: "Ajustes",
+    hint: "Sua empresa, a equipe e como o netzsales funciona para você",
+    icon: "sliders",
+    hub: "/ajustes",
+    items: [
+      { label: "Dados da empresa", href: "/administracao/empresa", permission: "organization.view", phase: 1, section: "Empresa", description: "Nome, documento e contato" },
+      { label: "Filiais", href: "/administracao/filiais", permission: "branches.view", phase: 1, section: "Empresa", description: "Lojas ou pontos de venda" },
+      { label: "Configurações gerais", href: "/administracao/configuracoes", permission: "settings.view", phase: 1, section: "Empresa", description: "Retirada ou entrega por padrão e outros detalhes" },
+      { label: "Nova empresa", href: "/administracao/outra-empresa", phase: 1, section: "Empresa", description: "Tem outro negócio? Crie na mesma conta" },
+      { label: "Equipe", href: "/administracao/usuarios", permission: "users.view", phase: 1, section: "Equipe", description: "Quem usa o netzsales e o link de acesso de cada um" },
+      { label: "O que cada um pode fazer", href: "/administracao/permissoes", permission: "roles.view", phase: 1, section: "Equipe", description: "Perfis de acesso: vendedor, estoquista e outros" },
+      { label: "Histórico de alterações", href: "/administracao/auditoria", permission: "audit.view", phase: 1, section: "Equipe", description: "Quem mudou o quê e quando" },
+      { label: "Categorias", href: "/categorias", permission: "products.view", phase: 2, section: "Como sua empresa funciona", description: "Grupos de produtos" },
+      { label: "Unidades de medida", href: "/unidades", permission: "products.view", phase: 2, section: "Como sua empresa funciona", description: "Unidade, kg, lata, litro…" },
+      { label: "Campos personalizados", href: "/campos-personalizados", permission: "products.view", feature: "custom_fields", phase: 2, section: "Como sua empresa funciona", description: "Informações extras nos produtos" },
+      { label: "Etapas depois da venda", href: "/etapas", permission: "deliveries.view", feature: "deliveries", phase: 2, section: "Como sua empresa funciona", description: "Entrega, instalação, montagem: prazos e custos padrão" },
+      { label: "Tipos de custo", href: "/custos/tipos", permission: "costs.view", feature: "costs", phase: 2, section: "Como sua empresa funciona", description: "Aluguel, frete, comissão…" },
       // O dia a dia do Telegram é o botão do topo; aqui ficam a ligação e o Desligar.
-      { label: "Telegram", href: "/assistente/telegram", permission: "nets.use", feature: "telegram", phase: 2 },
-      { label: "Nova empresa", href: "/administracao/outra-empresa", phase: 1 },
+      { label: "Meu Telegram", href: "/assistente/telegram", permission: "nets.use", feature: "telegram", phase: 2, section: "Netz e melhorias", description: "Ligar ou desligar a Netz no seu Telegram" },
+      { label: "Pedir uma melhoria", href: "/melhorias", phase: 1, section: "Netz e melhorias", description: "Falta algo? Peça aqui e a equipe netzsales responde" },
     ],
   },
   {

@@ -88,7 +88,8 @@ export function Kpi({
   let delta: React.ReactNode = null;
   if (current !== undefined && previous !== undefined) {
     if (previous === 0) {
-      delta = current > 0 ? <span className="delta up">novo</span> : null;
+      // Sem período anterior não há com o que comparar.
+      delta = null;
     } else {
       const pct = ((current - previous) / previous) * 100;
       const dir = pct > 0.05 ? "up" : pct < -0.05 ? "down" : "flat";
