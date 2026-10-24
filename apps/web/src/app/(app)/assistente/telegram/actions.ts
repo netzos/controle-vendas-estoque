@@ -2,9 +2,9 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { createTelegramLink, getTelegramStatus, setTelegramOrganization, unlinkTelegram } from "@erp/core";
-import { toFormState, type FormState } from "@/lib/actions";
-import { requirePermission } from "@/lib/auth";
+import { addMyPersonNote, createTelegramLink, getTelegramStatus, removeMyPersonNote, setTelegramOrganization, unlinkTelegram } from "@erp/core";
+import { str, toFormState, type FormState } from "@/lib/actions";
+import { currentActor, requirePermission } from "@/lib/auth";
 import { db } from "@/lib/db";
 
 /** Botão Telegram (topo, Início e Meu Telegram): já ligado abre a conversa; senão liga a conta com um código. */
@@ -43,4 +43,24 @@ export async function telegramOrganizationAction(_: FormState, form: FormData): 
   } catch (err) {
     return toFormState(err);
   }
+}
+
+export async function removeMyNoteAction(_: FormState, form: FormData): Promise<FormState> {
+  try {
+    await removeMyPersonNote(db(), await currentActor(), Number(str(form, "id")));
+  } catch (err) {
+    return toFormState(err);
+  }
+  revalidatePath("/assistente/telegram");
+  return { ok: true };
+}
+
+export async function addMyNoteAction(_: FormState, form: FormData): Promise<FormState> {
+  try {
+    await addMyPersonNote(db(), await currentActor(), str(form, "body"));
+  } catch (err) {
+    return toFormState(err);
+  }
+  revalidatePath("/assistente/telegram");
+  return { ok: true };
 }

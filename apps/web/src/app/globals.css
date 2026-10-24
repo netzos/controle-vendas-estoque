@@ -600,3 +600,18 @@ summary .edit-hint { float: right; font-size: 13px; color: var(--muted); font-we
 @media (max-width: 860px) {
   .conv-layout { grid-template-columns: 1fr; }
 }
+.comm-how ol { margin: 8px 0 6px; padding-left: 20px; display: grid; gap: 4px; }
+.comm-tabs { margin: 0 0 14px; }
+.comm-timeline { list-style: none; margin: 10px 0 0; padding: 0 0 0 18px; border-left: 2px solid var(--border); display: grid; gap: 14px; }
+.comm-timeline > li { position: relative; padding: 4px 0 4px 6px; }
+.comm-timeline > li::before { content: ""; position: absolute; left: -26px; top: 9px; width: 12px; height: 12px; border-radius: 50%; background: var(--surface); border: 2px solid var(--border); }
+.comm-timeline > li.current::before { background: var(--text); border-color: var(--text); }
+.comm-timeline > li.highlight { background: var(--surface-2); border-radius: var(--radius-sm); padding: 10px 12px; }
+.comm-timeline p { margin: 4px 0; }
+.comm-timeline-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.comm-people { display: grid; grid-template-columns: minmax(240px, 1fr) minmax(0, 1.4fr); gap: 24px; align-items: start; }
+.comm-people > .comm-list > li { padding: 10px; }
+.comm-person { border-left: 1px solid var(--border); padding-left: 24px; }
+.comm-person h3 { margin-top: 0; }
+.comm-add { margin-top: 14px; }
+@media (max-width: 860px) { .comm-people { grid-template-columns: 1fr; } .comm-person { border-left: 0; padding-left: 0; } }

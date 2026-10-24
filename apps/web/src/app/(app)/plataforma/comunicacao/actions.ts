@@ -1,7 +1,15 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { getNetsGuidanceVersion, improvementViewer, proposeNetsGuidance, revertNetsGuidance, saveNetsGuidance } from "@erp/core";
+import {
+  getNetsGuidanceVersion,
+  improvementViewer,
+  platformAddPersonNote,
+  platformRemovePersonNote,
+  proposeNetsGuidance,
+  revertNetsGuidance,
+  saveNetsGuidance,
+} from "@erp/core";
 import { currentActor } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { toFormState } from "@/lib/actions";
@@ -43,5 +51,17 @@ export async function versionAction(id: number) {
 export async function revertAction(id: number, base: number | null) {
   const r = await run(async () => revertNetsGuidance(db(), await viewer(), id, base));
   if (r.ok) revalidate();
+  return r;
+}
+
+export async function addNoteAction(organizationId: string, userId: string, body: string, replaces?: number) {
+  const r = await run(async () => platformAddPersonNote(db(), await viewer(), organizationId, userId, body, replaces));
+  if (r.ok) revalidatePath("/plataforma/comunicacao");
+  return r;
+}
+
+export async function removeNoteAction(id: number) {
+  const r = await run(async () => platformRemovePersonNote(db(), await viewer(), id));
+  if (r.ok) revalidatePath("/plataforma/comunicacao");
   return r;
 }

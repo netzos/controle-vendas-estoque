@@ -1,14 +1,20 @@
-import { getOrganization, getTelegramStatus, listUserOrganizations } from "@erp/core";
+import { getOrganization, getTelegramStatus, listUserOrganizations, myPersonNotes } from "@erp/core";
 import { requirePermission } from "@/lib/auth";
 import { query } from "@/lib/actions";
 import { db } from "@/lib/db";
 import { ConnectTelegram, DisconnectTelegram, TelegramButton, TelegramOrganizations } from "./forms";
+import { MyNotes } from "./my-notes";
 
 export const metadata = { title: "Telegram" };
 
 export default async function TelegramPage() {
   const actor = await requirePermission("nets.use");
-  const [status, org, organizations] = await Promise.all([getTelegramStatus(db(), actor), query(getOrganization, {}), listUserOrganizations(db(), actor.userId)]);
+  const [status, org, organizations, notes] = await Promise.all([
+    getTelegramStatus(db(), actor),
+    query(getOrganization, {}),
+    listUserOrganizations(db(), actor.userId),
+    actor.platformView ? Promise.resolve([]) : myPersonNotes(db(), actor),
+  ]);
   const link = status.link;
   const here = link?.organizationId === actor.organizationId;
   const fmt = new Intl.DateTimeFormat("pt-BR", { timeZone: org.timezone, dateStyle: "short", timeStyle: "short" });
@@ -52,6 +58,13 @@ export default async function TelegramPage() {
           <h2>Em qual empresa a Netz trabalha no Telegram</h2>
           <p className="muted">Tudo o que você pedir no Telegram vale para a empresa marcada. Troque aqui, ou no Telegram enviando /empresa.</p>
           <TelegramOrganizations organizations={organizations} activeId={link.organizationId} />
+        </section>
+      )}
+      {!actor.platformView && (
+        <section className="card">
+          <h2>O que a Netz aprendeu sobre você</h2>
+          <p className="muted">A Netz vai sentindo o seu jeito nas conversas (mais detalhes ou menos, se gosta de ser lembrada das coisas) e se adapta. Aqui você vê o que ela anotou e tira o que não quiser.</p>
+          <MyNotes notes={notes.filter((n) => n.active).map((n) => ({ id: n.id, body: n.body, source: n.source, at: fmt.format(n.createdAt) }))} />
         </section>
       )}
     </>
