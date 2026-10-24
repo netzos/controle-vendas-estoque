@@ -106,3 +106,9 @@ As melhorias de **como o agente conversa** ficam separadas das melhorias do sist
 2. **Manual de comunicação** (banco, `nets_guidance`): tom, tamanho das respostas, proatividade. Uma versão por alteração, nada é apagado. A Netz lê a mais nova antes de cada resposta; sem versão salva vale `NETS_MANUAL_DEFAULT`.
 3. **Pedidos de ajuste**: pedidos de melhoria com módulo `comunicacao`. Chegam pela tela Melhorias ou pela própria Netz (`registrar_melhoria` com `module: "comunicacao"`) quando alguém reclama do jeito dela falar.
 4. **Plataforma › Comunicação da Netz** (`/plataforma/comunicacao`, só o administrador): manual atual, "Pedir uma mudança" (a IA reescreve só o necessário), antes e depois linha a linha, aprovar, histórico com restaurar, pedidos de ajuste com "Preparar mudança" e as regras fixas e ferramentas para consulta. Aprovar uma mudança ligada a um pedido marca o pedido como publicado, com link para a versão.
+
+### Parte 2: jeito de cada pessoa, histórico e prova de leitura
+
+- **Jeito de cada pessoa** (`nets_person_notes`): a Netz anota com `anotar_jeito` o que percebe de como cada pessoa gosta de ser atendida (organização, ritmo, se gosta de ser lembrada ou cobrada) e lê as notas ativas antes de cada resposta, acima do manual. Nota substituída ou tirada fica no histórico. O administrador vê, corrige e anota em Plataforma › Comunicação da Netz › Jeito de cada pessoa; a própria pessoa vê e tira em Ajustes › Telegram.
+- **Prova de leitura**: cada resposta grava em `nets_messages.guidance_version` a versão do manual que leu (0 = texto padrão), no painel e no Telegram (os dois passam por `processNetsTurn`).
+- **Histórico**: linha do tempo de todas as versões, inclusive a 0, com quem, quando, por quê, pedido ligado, quantas respostas leram (painel/Telegram), "O que mudou" em relação à anterior e restaurar.

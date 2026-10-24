@@ -40,6 +40,7 @@ export * from "./modules/nets/service.ts";
 export * from "./modules/nets/clean.ts";
 export * from "./modules/nets/deliveries.ts";
 export * from "./modules/nets/guidance.ts";
+export * from "./modules/nets/person.ts";
 export * from "./modules/nets/voice.ts";
 export * from "./modules/telegram/api.ts";
 export * from "./modules/telegram/service.ts";

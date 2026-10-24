@@ -11,7 +11,8 @@ import { cleanReply } from "./clean.ts";
 import { currentNetsManual } from "./guidance.ts";
 import { NETS_RULES } from "./instructions.ts";
 import { listNetsDeliveries } from "./deliveries.ts";
-import { DELIVERIES_TOOL, IMPROVEMENT_COMPLEMENT_TOOL, IMPROVEMENT_LIST_TOOL, IMPROVEMENT_TOOL, netsTools, type NetsTool } from "./tools.ts";
+import { activePersonNotes, agentNotePerson, personNotesText } from "./person.ts";
+import { DELIVERIES_TOOL, IMPROVEMENT_COMPLEMENT_TOOL, IMPROVEMENT_LIST_TOOL, IMPROVEMENT_TOOL, netsTools, PERSON_NOTE_TOOL, type NetsTool } from "./tools.ts";
 
 // Netz: o agente global. A conversa fica no banco; cada mensagem da pessoa é
 // respondida fora da requisição (processNetsTurn). Consultas rodam na hora;
@@ -217,7 +218,7 @@ function historyText(r: Row): string {
   return `${r.body}\n\n[Ação proposta: ${r.action.title} — ${STATUS_NOTE[r.actionStatus ?? "expired"]}${result}]`;
 }
 
-async function systemPrompt(tx: Tx, actor: Actor): Promise<Anthropic.Beta.BetaTextBlockParam[]> {
+async function systemPrompt(tx: Tx, actor: Actor): Promise<{ blocks: Anthropic.Beta.BetaTextBlockParam[]; version: number }> {
   const { rows } = await tx.query<{ name: string; today: string; now: string; timezone: string }>(
     `SELECT name, timezone, to_char(now() AT TIME ZONE timezone, 'YYYY-MM-DD') AS today, to_char(now() AT TIME ZONE timezone, 'HH24:MI') AS now
        FROM controle_vendas_estoque.organizations WHERE id = $1`,
@@ -227,10 +228,15 @@ async function systemPrompt(tx: Tx, actor: Actor): Promise<Anthropic.Beta.BetaTe
   const who = actor.isOwner ? "dona/dono da empresa" : `perfil ${actor.roleKey}`;
   // O manual de comunicação muda pela Plataforma; a versão mais nova vale já na próxima mensagem.
   const manual = await currentNetsManual(tx);
-  return [
-    { type: "text", text: `${NETS_RULES}\n\n# Manual de comunicação\n\n${manual.body}`, cache_control: { type: "ephemeral" } },
-    { type: "text", text: `Empresa: ${org.name}. Pessoa: ${actor.userName} (${who}). Hoje: ${org.today}, ${org.now} (${org.timezone}).${CHANNEL_NOTE[actor.channel] ?? ""}` },
-  ];
+  const notes = await activePersonNotes(tx, actor.organizationId, actor.userId);
+  return {
+    // Versão 0 = texto padrão do código. Fica gravada na mensagem: prova de que a resposta leu o manual.
+    version: manual.id ?? 0,
+    blocks: [
+      { type: "text", text: `${NETS_RULES}\n\n# Manual de comunicação\n\n${manual.body}`, cache_control: { type: "ephemeral" } },
+      { type: "text", text: `Empresa: ${org.name}. Pessoa: ${actor.userName} (${who}). Hoje: ${org.today}, ${org.now} (${org.timezone}).${CHANNEL_NOTE[actor.channel] ?? ""}\n\n${personNotesText(notes)}` },
+    ],
+  };
 }
 
 const CHANNEL_NOTE: Partial<Record<Channel, string>> = {
@@ -251,6 +257,14 @@ async function runTool(db: Db, actor: Actor, tools: NetsTool[], block: Anthropic
     }
   }
   if (block.name === IMPROVEMENT_LIST_TOOL) return { content: serialize(await agentListImprovements(db, actor)) };
+  if (block.name === PERSON_NOTE_TOOL) {
+    try {
+      const n = await agentNotePerson(db, actor, input as Parameters<typeof agentNotePerson>[2]);
+      return { content: `Anotado (nota #${n.id}). Não precisa avisar a pessoa; só siga isso daqui para frente.` };
+    } catch (err) {
+      return { content: err instanceof AppError ? err.message : "Não foi possível anotar.", isError: true };
+    }
+  }
   if (block.name === DELIVERIES_TOOL) return { content: serialize(await listNetsDeliveries(db, actor, Number(input.limit) || 10)) };
   if (block.name === IMPROVEMENT_COMPLEMENT_TOOL) {
     try {
@@ -324,7 +338,9 @@ export async function processNetsTurn(
           ORDER BY created_at DESC, role ASC LIMIT $4`,
         [owner.organizationId, owner.userId, trigger.id, HISTORY],
       );
-      return { history: rows.reverse(), system: await systemPrompt(tx, actor) };
+      const prompt = await systemPrompt(tx, actor);
+      await tx.query("UPDATE controle_vendas_estoque.nets_messages SET guidance_version = $2 WHERE id = $1", [trigger.id, prompt.version]);
+      return { history: rows.reverse(), system: prompt.blocks };
     });
     const messages: Anthropic.Beta.BetaMessageParam[] = [];
     for (const r of history) {

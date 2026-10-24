@@ -40,6 +40,7 @@ export const IMPROVEMENT_TOOL = "registrar_melhoria";
 export const IMPROVEMENT_LIST_TOOL = "listar_melhorias";
 export const IMPROVEMENT_COMPLEMENT_TOOL = "complementar_melhoria";
 export const DELIVERIES_TOOL = "ver_mensagens_entregues";
+export const PERSON_NOTE_TOOL = "anotar_jeito";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyService = ServiceDefinition<z.ZodType, any>;
@@ -166,15 +167,30 @@ const deliveriesTool: Anthropic.Beta.BetaTool = {
   },
 };
 
+const personNoteTool: Anthropic.Beta.BetaTool = {
+  name: PERSON_NOTE_TOOL,
+  description:
+    "Anota algo sobre o jeito desta pessoa gostar de ser atendida (organização, ritmo, quanto detalhe quer, se gosta de ser lembrada ou cobrada, tom). " +
+    "A anotação aparece para você em todas as próximas conversas com ela. Use substitui com o número da nota quando uma anotação antiga mudou. Roda na hora, sem confirmação.",
+  input_schema: {
+    type: "object",
+    properties: {
+      observacao: { type: "string", minLength: 3, maxLength: 500, description: "Uma frase sobre o jeito da pessoa e o que fazer com isso. Ex.: \"Prefere respostas bem curtas; não oferecer cadastros extras.\"" },
+      substitui: { type: "integer", description: "Número (#) da nota que esta atualiza, se for o caso." },
+    },
+    required: ["observacao"],
+  },
+};
+
 /** Ferramentas que esta pessoa pode usar, sempre na mesma ordem (cache). */
 export function netsTools(actor: Actor): { tools: NetsTool[]; definitions: Anthropic.Beta.BetaTool[] } {
   const tools = TOOLS.filter((t) => !t.service.permission || can(actor, t.service.permission));
-  return { tools, definitions: [...tools.map((t) => t.definition), improvementTool, improvementListTool, improvementComplementTool, deliveriesTool] };
+  return { tools, definitions: [...tools.map((t) => t.definition), improvementTool, improvementListTool, improvementComplementTool, deliveriesTool, personNoteTool] };
 }
 
 /** Todas as ferramentas da Netz, para a tela da Plataforma (cada pessoa só recebe as permitidas). */
 export function netsToolCatalog(): Array<{ name: string; description: string }> {
-  return [...TOOLS.map((t) => t.definition), improvementTool, improvementListTool, improvementComplementTool, deliveriesTool].map((d) => ({
+  return [...TOOLS.map((t) => t.definition), improvementTool, improvementListTool, improvementComplementTool, deliveriesTool, personNoteTool].map((d) => ({
     name: d.name,
     description: d.description ?? "",
   }));

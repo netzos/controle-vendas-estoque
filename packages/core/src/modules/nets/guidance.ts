@@ -66,18 +66,50 @@ export async function netsGuidanceOverview(db: Db, viewer: ImprovementViewer) {
     return { current, versions: rows };
   });
   const requests = await listImprovements(db, viewer, { module: "comunicacao" });
-  return { current, defaultBody: NETS_MANUAL_DEFAULT, versions, requests, rules: NETS_RULES, tools: netsToolCatalog() };
+  const reads = await guidanceReads(db, viewer);
+  return { current, defaultBody: NETS_MANUAL_DEFAULT, versions, requests, reads, rules: NETS_RULES, tools: netsToolCatalog() };
 }
 
+export interface GuidanceReads {
+  /** Respostas que leram esta versão, por canal. */
+  web: number;
+  telegram: number;
+  total: number;
+  lastAt: Date | null;
+}
+
+/** Quantas respostas da Netz leram cada versão do manual (0 = texto padrão). */
+async function guidanceReads(db: Db, viewer: ImprovementViewer): Promise<Record<number, GuidanceReads>> {
+  const { rows } = await asViewer(db, viewer, (tx) =>
+    tx.query<{ version: string; channel: string; reads: number; lastAt: Date }>(
+      `SELECT version::text AS version, channel, reads, last_at AS "lastAt" FROM controle_vendas_estoque.platform_nets_guidance_reads($1)`,
+      [viewer.userId],
+    ),
+  );
+  const out: Record<number, GuidanceReads> = {};
+  for (const r of rows) {
+    const v = (out[Number(r.version)] ??= { web: 0, telegram: 0, total: 0, lastAt: null });
+    if (r.channel === "telegram") v.telegram += r.reads;
+    else v.web += r.reads;
+    v.total += r.reads;
+    if (!v.lastAt || r.lastAt > v.lastAt) v.lastAt = r.lastAt;
+  }
+  return out;
+}
+
+/** Uma versão e o texto da anterior (para mostrar o que mudou). A versão 0 é o texto padrão. */
 export async function getNetsGuidanceVersion(db: Db, viewer: ImprovementViewer, id: number) {
   assertDeveloper(viewer);
+  if (id === 0) return { id: 0, body: NETS_MANUAL_DEFAULT, previous: null as string | null };
   return asViewer(db, viewer, async (tx) => {
-    const { rows } = await tx.query<{ id: number; body: string; by: string; at: Date }>(
-      "SELECT id::int AS id, body, created_by_name AS by, created_at AS at FROM controle_vendas_estoque.nets_guidance WHERE id = $1",
+    const { rows } = await tx.query<{ id: number; body: string; previous: string | null }>(
+      `SELECT g.id::int AS id, g.body,
+              (SELECT p.body FROM controle_vendas_estoque.nets_guidance p WHERE p.id < g.id ORDER BY p.id DESC LIMIT 1) AS previous
+         FROM controle_vendas_estoque.nets_guidance g WHERE g.id = $1`,
       [id],
     );
     if (!rows[0]) throw notFound("Versão");
-    return rows[0];
+    return { ...rows[0], previous: rows[0].previous ?? NETS_MANUAL_DEFAULT };
   });
 }
 
@@ -121,7 +153,7 @@ export async function saveNetsGuidance(db: Db, viewer: ImprovementViewer, raw: z
 /** Volta a uma versão anterior: grava uma versão nova com aquele texto. */
 export async function revertNetsGuidance(db: Db, viewer: ImprovementViewer, id: number, base: number | null) {
   const old = await getNetsGuidanceVersion(db, viewer, id);
-  return saveNetsGuidance(db, viewer, { body: old.body, base, source: "revert", note: `Volta à versão ${id}` });
+  return saveNetsGuidance(db, viewer, { body: old.body, base, source: "revert", note: id === 0 ? "Volta ao texto inicial do sistema" : `Volta à versão ${id}` });
 }
 
 const PROPOSE_SYSTEM = `Você edita o manual de comunicação da Netz, a assistente de IA do netzsales (sistema de vendas e estoque para pequenas empresas de qualquer ramo). O manual diz como a Netz conversa com as pessoas; regras de segurança e de ferramentas ficam fora dele e não mudam aqui.
