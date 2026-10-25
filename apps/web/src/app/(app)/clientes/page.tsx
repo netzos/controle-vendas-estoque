@@ -70,7 +70,7 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
           <p className="muted">{params.q ? "Nenhum cliente encontrado." : "Nenhum cliente cadastrado ainda."}</p>
         ) : (
           <div className="table-wrap">
-            <table>
+            <table className="cards">
               <thead>
                 <tr><th>Nome</th><th>CPF/CNPJ</th><th>Telefone</th><th>Cidade</th><th>Situação</th><th></th></tr>
               </thead>
@@ -78,10 +78,10 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
                 {shown.map((c) => (
                   <tr key={c.id} className="clickable">
                     <td><Link href={`/clientes?id=${c.id}`}>{c.name}</Link></td>
-                    <td>{documentLabel(c.document)}</td>
-                    <td>{c.phone}</td>
-                    <td>{[c.city, c.state].filter(Boolean).join(" / ")}</td>
-                    <td><span className={`tag ${c.status === "active" ? "ok" : "off"}`}>{c.status === "active" ? "Ativo" : "Inativo"}</span></td>
+                    <td data-label="CPF/CNPJ" className="sm-hide">{documentLabel(c.document)}</td>
+                    <td data-label="Telefone">{c.phone}</td>
+                    <td data-label="Cidade" className="sm-hide">{[c.city, c.state].filter(Boolean).join(" / ")}</td>
+                    <td data-label="Situação"><span className={`tag ${c.status === "active" ? "ok" : "off"}`}>{c.status === "active" ? "Ativo" : "Inativo"}</span></td>
                     <td><Link className="button secondary small" href={`/clientes?id=${c.id}`}>{canManage ? "Editar" : "Abrir"}</Link></td>
                   </tr>
                 ))}

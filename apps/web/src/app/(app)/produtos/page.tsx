@@ -81,7 +81,7 @@ export default async function ProductsPage({
           </section>
         )}
         {can(actor, "costs.view") && (
-          <p className="muted"><Link href="/custos/obtencao">Partes do custo (frete, embalagem...) ficam em Custos › Custo de obtenção.</Link></p>
+          <p className="muted"><Link href="/custos/obtencao">Partes do custo (frete, embalagem...) ficam em Dinheiro › Custo de obtenção.</Link></p>
         )}
         {canManage && (
           <section className="card">
@@ -125,7 +125,7 @@ export default async function ProductsPage({
           <p className="muted">{params.q || params.categoria ? "Nenhum produto encontrado." : "Nenhum produto cadastrado ainda."}</p>
         ) : (
           <div className="table-wrap">
-            <table>
+            <table className="cards">
               <thead>
                 <tr>
                   <th>Produto</th><th>Código</th><th>Categoria</th><th>Unid.</th>
@@ -152,20 +152,20 @@ export default async function ProductsPage({
                           </div>
                         </div>
                       </td>
-                      <td>{p.sku}</td>
-                      <td>{p.categoryName}</td>
-                      <td>{p.unitCode}</td>
-                      <td className="num">{money(p.salePrice)}</td>
-                      <td className="num">{money(p.costPrice)}</td>
-                      <td className="num">{margin === null ? "—" : `${quantity(margin.toFixed(1), 1)}%`}</td>
-                      <td className="num">
+                      <td data-label="Código" className="sm-hide">{p.sku}</td>
+                      <td data-label="Categoria" className="sm-hide">{p.categoryName}</td>
+                      <td data-label="Unid." className="sm-hide">{p.unitCode}</td>
+                      <td data-label="Preço" className="num">{money(p.salePrice)}</td>
+                      <td data-label="Custo" className="num sm-hide">{money(p.costPrice)}</td>
+                      <td data-label="Margem" className="num">{margin === null ? "—" : `${quantity(margin.toFixed(1), 1)}%`}</td>
+                      <td data-label="Estoque" className="num">
                         {p.trackStock ? (
                           <span className={Number(p.stockQty) <= 0 ? "qty-out" : Number(p.stockQty) <= Number(p.minStock) ? "warn-text" : ""}>{quantity(p.stockQty)}</span>
                         ) : (
                           <span className="muted">—</span>
                         )}
                       </td>
-                      <td><span className={`tag ${p.status === "active" ? "ok" : "off"}`}>{p.status === "active" ? "Ativo" : "Inativo"}</span></td>
+                      <td data-label="Situação"><span className={`tag ${p.status === "active" ? "ok" : "off"}`}>{p.status === "active" ? "Ativo" : "Inativo"}</span></td>
                       <td><Link className="button secondary small" href={`/produtos?id=${p.id}`}>{canManage ? "Editar" : "Abrir"}</Link></td>
                     </tr>
                   );

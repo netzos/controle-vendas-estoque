@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import type { NavGroup, NavItem } from "@/lib/navigation";
 import { BRAND_NAME } from "@/lib/brand";
@@ -8,6 +9,8 @@ import { Icon } from "./icons";
 import { LogoMark } from "./logo";
 
 const matches = (item: NavItem, pathname: string) => (item.href === "/" ? pathname === "/" : pathname.startsWith(item.href));
+const inGroup = (group: NavGroup, pathname: string) => (group.hub !== undefined && pathname === group.hub) || group.items.some((i) => matches(i, pathname));
+const entry = (group: NavGroup) => group.hub ?? group.items[0]!.href;
 
 export function Shell({
   navigation,
@@ -23,8 +26,13 @@ export function Shell({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
-  const current = navigation.find((g) => g.items.some((i) => matches(i, pathname)));
+  const current = navigation.find((g) => inGroup(g, pathname));
   const initials = user.name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join("");
+  // No celular, a barra de baixo mostra só as tarefas do dia; o resto fica em "Mais".
+  const [moreOpen, setMoreOpen] = useState(false);
+  useEffect(() => setMoreOpen(false), [pathname]);
+  const more = navigation.filter((g) => !g.mobile);
+  const tabs = current && !current.hub && current.items.length > 1 ? current.items : null;
 
   return (
     <div className="shell">
@@ -34,11 +42,25 @@ export function Shell({
         </Link>
         <nav className="rail-nav">
           {navigation.map((group) => (
-            <Link key={group.label} href={group.items[0]!.href} className={`rail-item${group === current ? " active" : ""}`}>
+            <Link
+              key={group.label}
+              href={entry(group)}
+              className={`rail-item${group.primary ? " primary" : ""}${group === current ? " active" : ""}${group.mobile ? "" : " desk-only"}`}
+            >
               <Icon name={group.icon} />
               <span>{group.short}</span>
             </Link>
           ))}
+          <button
+            type="button"
+            className={`rail-item mobile-only${moreOpen || (current && !current.mobile) ? " active" : ""}`}
+            aria-expanded={moreOpen}
+            aria-controls="mais"
+            onClick={() => setMoreOpen((o) => !o)}
+          >
+            <Icon name="menu" />
+            <span>Mais</span>
+          </button>
         </nav>
         <div className="rail-foot">
           <Link href="/conta/senha" className="rail-user" title={user.name}>
@@ -53,6 +75,30 @@ export function Shell({
           </form>
         </div>
       </aside>
+      {moreOpen && (
+        <div className="more-sheet" id="mais" role="dialog" aria-label="Mais opções">
+          <button type="button" className="more-backdrop" aria-label="Fechar" onClick={() => setMoreOpen(false)} />
+          <div className="more-panel">
+            <nav>
+              {more.map((group) => (
+                <Link key={group.label} href={entry(group)} className={group === current ? "active" : ""}>
+                  <Icon name={group.icon} />
+                  <span>{group.label}</span>
+                </Link>
+              ))}
+            </nav>
+            <div className="more-foot">
+              <Link href="/conta/senha">
+                <span className="avatar small">{initials}</span>
+                <span>{user.name}</span>
+              </Link>
+              <form action={logout}>
+                <button type="submit" className="secondary small">Sair</button>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="main">
         <header className="topbar">
           <div className="brand-name">
@@ -62,14 +108,17 @@ export function Shell({
           {topbar}
         </header>
         <main className="content">
-          {current && current.items.length > 1 && (
-            <nav className="tabs" aria-label={current.label}>
-              {current.items.map((item) => (
-                <Link key={item.href} href={item.href} className={matches(item, pathname) && !current.items.some((o) => o !== item && o.href.length > item.href.length && matches(o, pathname)) ? "active" : ""}>
+          {tabs && (
+            <nav className="tabs" aria-label={current!.label}>
+              {tabs.map((item) => (
+                <Link key={item.href} href={item.href} className={matches(item, pathname) && !tabs.some((o) => o !== item && o.href.length > item.href.length && matches(o, pathname)) ? "active" : ""}>
                   {item.label}
                 </Link>
               ))}
             </nav>
+          )}
+          {current?.hub && pathname !== current.hub && (
+            <p className="back-link"><Link href={current.hub}>← {current.short}</Link></p>
           )}
           {children}
         </main>

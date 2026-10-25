@@ -87,7 +87,7 @@ export default async function SuppliersPage({ searchParams }: { searchParams: Pr
           <p className="muted">{params.q ? "Nenhum fornecedor encontrado." : "Nenhum fornecedor cadastrado ainda."}</p>
         ) : (
           <div className="table-wrap">
-            <table>
+            <table className="cards">
               <thead>
                 <tr><th>Nome</th><th>CPF/CNPJ</th><th>Contato</th><th>WhatsApp</th><th className="num">Prazo</th><th>Cidade</th><th>Situação</th><th></th></tr>
               </thead>
@@ -95,12 +95,12 @@ export default async function SuppliersPage({ searchParams }: { searchParams: Pr
                 {shown.map((c) => (
                   <tr key={c.id} className="clickable">
                     <td><Link href={`/fornecedores?id=${c.id}`}>{c.name}</Link></td>
-                    <td>{documentLabel(c.document)}</td>
-                    <td>{c.contactName}{c.contactName && c.email ? <small className="muted">{c.email}</small> : !c.contactName ? c.email : null}</td>
-                    <td>{c.whatsapp ? <a href={whatsappLink(c.whatsapp)} target="_blank" rel="noreferrer">{whatsappLabel(c.whatsapp)}</a> : c.phone}</td>
-                    <td className="num">{c.leadTimeDays == null ? "—" : `${c.leadTimeDays}d`}</td>
-                    <td>{[c.city, c.state].filter(Boolean).join(" / ")}</td>
-                    <td><span className={`tag ${c.status === "active" ? "ok" : "off"}`}>{c.status === "active" ? "Ativo" : "Inativo"}</span></td>
+                    <td data-label="CPF/CNPJ" className="sm-hide">{documentLabel(c.document)}</td>
+                    <td data-label="Contato">{c.contactName}{c.contactName && c.email ? <small className="muted">{c.email}</small> : !c.contactName ? c.email : null}</td>
+                    <td data-label="WhatsApp">{c.whatsapp ? <a href={whatsappLink(c.whatsapp)} target="_blank" rel="noreferrer">{whatsappLabel(c.whatsapp)}</a> : c.phone}</td>
+                    <td data-label="Prazo" className="num sm-hide">{c.leadTimeDays == null ? "—" : `${c.leadTimeDays}d`}</td>
+                    <td data-label="Cidade" className="sm-hide">{[c.city, c.state].filter(Boolean).join(" / ")}</td>
+                    <td data-label="Situação"><span className={`tag ${c.status === "active" ? "ok" : "off"}`}>{c.status === "active" ? "Ativo" : "Inativo"}</span></td>
                     <td><Link className="button secondary small" href={`/fornecedores?id=${c.id}`}>{canManage ? "Editar" : "Abrir"}</Link></td>
                   </tr>
                 ))}

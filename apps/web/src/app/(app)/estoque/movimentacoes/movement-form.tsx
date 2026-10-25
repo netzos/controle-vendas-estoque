@@ -28,7 +28,7 @@ export function MovementForm({
   const current = KINDS.find((k) => k.key === kind)!;
   const product = products.find((p) => p.id === productId);
 
-  if (products.length === 0) return <p className="chart-empty">Nenhum produto com controle de estoque. Ative em Catálogo › Produtos.</p>;
+  if (products.length === 0) return <p className="chart-empty">Nenhum produto com controle de estoque. Ative em Produtos.</p>;
 
   return (
     <form action={action}>

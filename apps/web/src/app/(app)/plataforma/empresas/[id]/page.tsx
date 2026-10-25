@@ -85,7 +85,7 @@ export default async function OrganizationDetailPage({ params }: { params: Promi
               <>
                 <input type="hidden" name="join" value="1" />
                 <button type="submit">Entrar para dar suporte</button>
-                <span className="muted">Você entra como Administrador; a empresa vê isso em Ajustes › Usuários.</span>
+                <span className="muted">Você entra como Administrador; a empresa vê isso em Ajustes › Equipe.</span>
               </>
             )}
           </form>
