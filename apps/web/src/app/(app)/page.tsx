@@ -22,17 +22,16 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const period = PERIODS.find((p) => p.key === params.periodo) ?? PERIODS[0]!;
   const canSales = can(actor, "sales.view");
   const canStock = can(actor, "stock.view");
-  const canCosts = can(actor, "costs.view");
-  const telegramReady = can(actor, "nets.use") && telegramConfigured() && !actor.platformView;
+  const features = await enabledFeatures(db(), actor.organizationId);
+  const canCosts = features.has("costs") && can(actor, "costs.view");
+  const telegramReady = can(actor, "nets.use") && telegramConfigured() && !actor.platformView && features.has("telegram");
   const [org, dash, stock, steps, telegramPending] = await Promise.all([
     query(getOrganization, {}),
     canSales ? query(salesDashboard, { period: period.key }) : null,
     canStock ? query(stockOverview, {}) : null,
-    can(actor, "deliveries.view") ? query(stepCounts, {}) : null,
+    features.has("deliveries") && can(actor, "deliveries.view") ? query(stepCounts, {}) : null,
     // Cartão de boas-vindas da Netz no Telegram até a pessoa ligar a conta.
-    telegramReady
-      ? Promise.all([enabledFeatures(db(), actor.organizationId), telegramOrganizationOf(db(), actor.userId)]).then(([f, linkedTo]) => f.has("telegram") && !linkedTo)
-      : false,
+    telegramReady ? telegramOrganizationOf(db(), actor.userId).then((linkedTo) => !linkedTo) : false,
   ]);
   const timeFmt = new Intl.DateTimeFormat("pt-BR", { timeZone: org.timezone, hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" });
   const alerts = stock?.rows.filter((r) => r.status === "out" || r.status === "low").sort((a, b) => Number(a.stockQty) - Number(b.stockQty)) ?? [];
@@ -154,6 +153,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
               />
             </section>
 
+{features.has("deliveries") && (
             <section className="card">
               <div className="card-head"><h2>Retirada x entrega</h2></div>
               {(() => {
@@ -175,6 +175,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
                 );
               })()}
             </section>
+            )}
 
             <section className="card">
               <div className="card-head"><h2>Formas de pagamento</h2></div>

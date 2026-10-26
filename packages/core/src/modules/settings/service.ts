@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { AppError } from "../../errors.ts";
 import { defineService } from "../../service.ts";
+import { COMPANY_FEATURES, isCompanyFeatureKey, SETTING_PREFIX } from "../../features.ts";
 
 // Configurações gerais da organização. Cada chave tem schema e valor padrão;
 // as fases seguintes registram as suas aqui (vendas, estoque, IA...).
@@ -84,5 +85,27 @@ export const updateSettings = defineService({
       changed.push(key);
     }
     return { changed };
+  },
+});
+
+export const setCompanyFeature = defineService({
+  name: "settings.feature",
+  description: "Liga ou desliga um recurso opcional da empresa (entregas, item na troca, custos, campos personalizados)",
+  permission: "settings.update",
+  risk: 3,
+  input: z.object({ key: z.string(), enabled: z.boolean() }),
+  async handler({ tx, actor, audit, emit }, input) {
+    if (!isCompanyFeatureKey(input.key)) throw new AppError("invalid_input", "Recurso desconhecido.");
+    const feature = COMPANY_FEATURES.find((f) => f.key === input.key)!;
+    const key = SETTING_PREFIX + input.key;
+    await tx.query(
+      `INSERT INTO controle_vendas_estoque.organization_settings (organization_id, key, value, updated_by, updated_at)
+       VALUES ($1, $2, $3, $4, now())
+       ON CONFLICT (organization_id, key) DO UPDATE SET value = EXCLUDED.value, updated_by = EXCLUDED.updated_by, updated_at = now()`,
+      [actor.organizationId, key, JSON.stringify(input.enabled), actor.userId],
+    );
+    await audit({ action: "settings.update", entityType: "setting", entityId: key, summary: `${feature.label} ${input.enabled ? "ligado" : "desligado"}`, after: input.enabled });
+    await emit("settings.updated", { key }, { type: "setting", id: key });
+    return { key: input.key, enabled: input.enabled };
   },
 });

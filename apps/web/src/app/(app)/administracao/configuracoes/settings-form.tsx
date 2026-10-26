@@ -5,7 +5,7 @@ import type { SettingValues } from "@erp/core";
 import { Field, FormMessage, SubmitButton } from "@/components/form";
 import { updateSettingsAction } from "./actions";
 
-export function SettingsForm({ values, readOnly }: { values: SettingValues; readOnly: boolean }) {
+export function SettingsForm({ values, readOnly, deliveries }: { values: SettingValues; readOnly: boolean; deliveries: boolean }) {
   const [state, action] = useActionState(updateSettingsAction, null);
   return (
     <form action={action}>
@@ -27,7 +27,7 @@ export function SettingsForm({ values, readOnly }: { values: SettingValues; read
             </select>
           </Field>
         </div>
-        <Field
+        {deliveries ? <Field
           label="Como a venda chega ao cliente, por padrão"
           name="sales.default_fulfillment"
           state={state}
@@ -37,7 +37,7 @@ export function SettingsForm({ values, readOnly }: { values: SettingValues; read
             <option value="pickup">Retirada no local</option>
             <option value="delivery">Entrega</option>
           </select>
-        </Field>
+        </Field> : <input type="hidden" name="sales.default_fulfillment" value={values["sales.default_fulfillment"]} />}
         {!readOnly && <div className="actions"><SubmitButton>Salvar</SubmitButton></div>}
       </fieldset>
     </form>

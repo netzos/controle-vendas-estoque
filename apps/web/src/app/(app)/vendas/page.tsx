@@ -1,7 +1,8 @@
 import Link from "next/link";
-import { can, FULFILLMENTS, getOrganization, getSale, getSaleFollowup, listSales, listStepTypes, orgDate, PAYMENT_LABELS } from "@erp/core";
+import { can, enabledFeatures, FULFILLMENTS, getOrganization, getSale, getSaleFollowup, listSales, listStepTypes, orgDate, PAYMENT_LABELS } from "@erp/core";
 import { requirePermission } from "@/lib/auth";
 import { query } from "@/lib/actions";
+import { db } from "@/lib/db";
 import { money, quantity } from "@/lib/format";
 import { CancelSaleForm } from "./cancel-form";
 import { AddStepsForm, StepRow } from "../entregas/steps";
@@ -11,12 +12,13 @@ export const metadata = { title: "Vendas" };
 export default async function SalesPage({ searchParams }: { searchParams: Promise<{ q?: string; id?: string }> }) {
   const actor = await requirePermission("sales.view");
   const params = await searchParams;
-  const [org, sales, selected] = await Promise.all([
+  const [org, sales, selected, features] = await Promise.all([
     query(getOrganization, {}),
     query(listSales, { search: params.q || undefined }),
     params.id ? query(getSale, { id: params.id }).catch(() => null) : null,
+    enabledFeatures(db(), actor.organizationId),
   ]);
-  const seesSteps = can(actor, "deliveries.view");
+  const seesSteps = features.has("deliveries") && can(actor, "deliveries.view");
   const [followup, today, stepTypes] = selected && seesSteps
     ? await Promise.all([query(getSaleFollowup, { saleId: selected.id }), query(orgDate, {}), query(listStepTypes, {})])
     : [null, "", []];

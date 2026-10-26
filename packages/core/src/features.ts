@@ -1,17 +1,46 @@
-import type { Db } from "@erp/db";
+import type { Db, Tx } from "@erp/db";
 import { setTenant, withTenant, withTransaction } from "@erp/db";
 import { recordAudit } from "./audit.ts";
 import { AppError, forbidden, notFound } from "./errors.ts";
 
-// Liberações: partes do sistema que o administrador da plataforma liga ou
-// desliga por empresa. Sem escolha gravada, vale defaultOn. Uma novidade entra
-// aqui com defaultOn: false e só aparece para quem for liberado.
+// Duas camadas, como as Liberações do NetzOS:
+// 1. Liberações: o administrador da plataforma diz o que cada empresa PODE usar.
+//    Sem escolha gravada, vale defaultOn. Uma novidade entra com defaultOn: false.
+// 2. Recursos (Ajustes › Recursos): a própria empresa liga só o que faz sentido
+//    para o negócio dela. Os que têm `company` aparecem lá. Empresa nova nasce
+//    com a escolha gravada (company.defaultOn); empresa antiga, sem escolha
+//    gravada, segue como era (ligado). O básico de vender não tem botão.
 export const FEATURES = [
-  { key: "costs", label: "Custos", description: "Painel de custos, custo de obtenção e tipos de custo.", defaultOn: true },
-  { key: "deliveries", label: "Entregas e etapas", description: "Entregas e etapas depois da venda (instalação, montagem...).", defaultOn: true },
+  {
+    key: "deliveries",
+    label: "Entregas e serviços depois da venda",
+    description: "Entregas e etapas depois da venda (instalação, montagem...).",
+    defaultOn: true,
+    company: { defaultOn: false, hint: "Para quem entrega em casa, instala ou monta. Abre a escolha Retirada ou Entrega na venda e a página Entregas e serviços." },
+  },
+  {
+    key: "trade_in",
+    label: "Receber item na troca",
+    description: "O cliente dá um item como parte do pagamento (carro de entrada, celular usado).",
+    defaultOn: true,
+    company: { defaultOn: false, hint: "O item recebido entra no estoque com o valor da troca como custo. Aparece o botão \"Recebeu um item na troca\" na venda." },
+  },
+  {
+    key: "costs",
+    label: "Custos e lucro real",
+    description: "Painel de custos, custo de obtenção e tipos de custo.",
+    defaultOn: true,
+    company: { defaultOn: false, hint: "Lance aluguel, frete, mão de obra e veja quanto sobra de verdade depois de todos os gastos." },
+  },
+  {
+    key: "custom_fields",
+    label: "Campos personalizados",
+    description: "Campos extras no cadastro dos produtos.",
+    defaultOn: true,
+    company: { defaultOn: false, hint: "Informações a mais em cada produto, como cor, tamanho ou número de série." },
+  },
   { key: "netz", label: "Netz no painel", description: "O balão da assistente em todas as telas.", defaultOn: true },
   { key: "telegram", label: "Telegram", description: "Conversar com a Netz pelo Telegram.", defaultOn: true },
-  { key: "custom_fields", label: "Campos personalizados", description: "Campos extras no cadastro dos produtos.", defaultOn: true },
 ] as const;
 
 export type FeatureKey = (typeof FEATURES)[number]["key"];
@@ -39,18 +68,86 @@ function effective(defaults: Defaults, rows: Array<{ feature_key: string; enable
   return new Set(FEATURES.filter((f) => chosen.get(f.key) ?? defaultOf(defaults, f.key)).map((f) => f.key));
 }
 
-/** Partes liberadas para a empresa. */
-export async function enabledFeatures(db: Db, organizationId: string): Promise<Set<FeatureKey>> {
-  const [defaults, rows] = await Promise.all([
-    featureDefaults(db),
-    withTenant(db, { organizationId, userId: null }, async (tx) =>
-      (await tx.query<{ feature_key: string; enabled: boolean }>(
-        "SELECT feature_key, enabled FROM controle_vendas_estoque.organization_features WHERE organization_id = $1",
-        [organizationId],
-      )).rows,
+export const SETTING_PREFIX = "features.";
+
+type CompanyFeature = Extract<(typeof FEATURES)[number], { company: unknown }>;
+export type CompanyFeatureKey = CompanyFeature["key"];
+export const COMPANY_FEATURES = FEATURES.filter((f): f is CompanyFeature => "company" in f);
+
+export function isCompanyFeatureKey(key: string): key is CompanyFeatureKey {
+  return COMPANY_FEATURES.some((f) => f.key === key);
+}
+
+/** O que a empresa escolheu ligar. Sem escolha gravada (empresa de antes dos Recursos), fica ligado. */
+function companyAllows(chosen: Map<string, unknown>, key: FeatureKey): boolean {
+  const v = chosen.get(SETTING_PREFIX + key);
+  return typeof v === "boolean" ? v : true;
+}
+
+/** Empresa nova: grava a escolha inicial de cada recurso (só o básico ligado). */
+export async function seedCompanyFeatures(tx: Tx, organizationId: string): Promise<void> {
+  await tx.query(
+    `INSERT INTO controle_vendas_estoque.organization_settings (organization_id, key, value)
+     SELECT $1, k, v FROM unnest($2::text[], $3::jsonb[]) AS t(k, v)`,
+    [organizationId, COMPANY_FEATURES.map((f) => SETTING_PREFIX + f.key), COMPANY_FEATURES.map((f) => JSON.stringify(f.company.defaultOn))],
+  );
+}
+
+interface FeatureState {
+  /** Liberadas pela plataforma. */
+  available: Set<FeatureKey>;
+  /** Liberadas e ligadas pela empresa: o que vale nas telas e nos serviços. */
+  enabled: Set<FeatureKey>;
+}
+
+async function featureState(tx: Tx, defaults: Defaults, organizationId: string): Promise<FeatureState> {
+  const [platform, company] = await Promise.all([
+    tx.query<{ feature_key: string; enabled: boolean }>(
+      "SELECT feature_key, enabled FROM controle_vendas_estoque.organization_features WHERE organization_id = $1",
+      [organizationId],
+    ),
+    tx.query<{ key: string; value: unknown }>(
+      "SELECT key, value FROM controle_vendas_estoque.organization_settings WHERE organization_id = $1 AND key LIKE 'features.%'",
+      [organizationId],
     ),
   ]);
-  return effective(defaults, rows);
+  const available = effective(defaults, platform.rows);
+  const chosen = new Map(company.rows.map((r) => [r.key, r.value]));
+  return { available, enabled: new Set([...available].filter((k) => companyAllows(chosen, k))) };
+}
+
+/** Partes que valem para a empresa: liberadas pela plataforma e ligadas pela empresa. */
+export async function enabledFeatures(db: Db, organizationId: string): Promise<Set<FeatureKey>> {
+  const defaults = await featureDefaults(db);
+  return (await withTenant(db, { organizationId, userId: null }, (tx) => featureState(tx, defaults, organizationId))).enabled;
+}
+
+/** Dentro de um serviço: a parte vale para a empresa atual? */
+export async function featureEnabled(tx: Tx, organizationId: string, key: FeatureKey): Promise<boolean> {
+  const { rows } = await tx.query<{ feature_key: string; enabled: boolean }>(
+    "SELECT feature_key, enabled FROM controle_vendas_estoque.platform_feature_defaults",
+  );
+  const defaults: Defaults = new Map(rows.map((r) => [r.feature_key, r.enabled]));
+  return (await featureState(tx, defaults, organizationId)).enabled.has(key);
+}
+
+export interface CompanyFeatureChoice {
+  key: CompanyFeatureKey;
+  label: string;
+  hint: string;
+  enabled: boolean;
+}
+
+/** Recursos que a empresa pode ligar e desligar em Ajustes (só os liberados pela plataforma). */
+export async function companyFeatureChoices(db: Db, organizationId: string): Promise<CompanyFeatureChoice[]> {
+  const defaults = await featureDefaults(db);
+  const state = await withTenant(db, { organizationId, userId: null }, (tx) => featureState(tx, defaults, organizationId));
+  return COMPANY_FEATURES.filter((f) => state.available.has(f.key)).map((f) => ({
+    key: f.key,
+    label: f.label,
+    hint: f.company.hint,
+    enabled: state.enabled.has(f.key),
+  }));
 }
 
 async function assertDeveloper(db: Db, userId: string) {

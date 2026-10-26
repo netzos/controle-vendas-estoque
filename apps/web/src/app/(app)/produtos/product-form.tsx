@@ -15,6 +15,9 @@ export interface ProductFormOptions {
   /** Etapas da lista da empresa (Etapas depois da venda). */
   stepNames: string[];
   canEditPrice: boolean;
+  /** Recursos ligados em Ajustes. Desligado, o valor guardado segue escondido no formulário. */
+  deliveries: boolean;
+  customFieldsOn: boolean;
 }
 
 // Campo personalizado no formulário; o nome "cf_<chave>" volta para a action.
@@ -187,7 +190,11 @@ export function ProductForm({ product, options }: { product?: Product; options: 
           </Field>
         )}
       </div>
-      {custom.length > 0 && (
+      {!options.customFieldsOn && custom.map((f) => {
+        const v = product?.customValues[f.key];
+        return v == null || v === false ? null : <input key={f.id} type="hidden" name={`cf_${f.key}`} value={v === true ? "on" : String(v)} />;
+      })}
+      {options.customFieldsOn && custom.length > 0 && (
         <>
           <h3 className="form-section">Informações do item</h3>
           <div className="grid-3">
@@ -196,6 +203,9 @@ export function ProductForm({ product, options }: { product?: Product; options: 
           {custom.filter((f) => f.fieldType === "boolean").map((f) => <CustomInput key={f.id} field={f} value={product?.customValues[f.key]} state={state} />)}
         </>
       )}
+      {!options.deliveries ? (
+        <input type="hidden" name="afterSaleSteps" value={JSON.stringify(product?.afterSaleSteps ?? [])} />
+      ) : (<>
       <h3 className="form-section">Depois da venda</h3>
       <p className="muted small-text">
         O que ainda acontece depois de vender este item, como entrega, instalação ou montagem. Cada venda dele já nasce com essas etapas
@@ -205,6 +215,7 @@ export function ProductForm({ product, options }: { product?: Product; options: 
       <p className="muted small-text">
         Falta uma etapa? Crie e ajuste prazo, responsável e custo padrão em <a href="/etapas">Etapas depois da venda</a>.
       </p>
+      </>)}
       <Field label="Descrição" name="description" state={state}>
         <textarea id="description" name="description" defaultValue={product?.description ?? ""} maxLength={2000} rows={2} />
       </Field>
