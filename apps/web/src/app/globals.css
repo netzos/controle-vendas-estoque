@@ -757,3 +757,10 @@ summary .edit-hint { float: right; font-size: 13px; color: var(--muted); font-we
 .open-box { padding: 14px 16px; border-radius: 16px; background: #fff8ec; border: 1px solid #f3dcb2; margin-bottom: 12px; }
 .open-box p { margin: 0 0 10px; }
 @media (max-width: 640px) { .pay-list li { grid-template-columns: 1fr auto; } .pay-list li .muted { grid-column: 1 / -1; order: 3; font-size: 12.5px; } }
+
+/* Comissões */
+.segmented span.active { padding: 7px 14px; border-radius: 10px; background: var(--accent); color: #fff; font-weight: 500; white-space: nowrap; font-size: 14px; }
+.inline-form { display: flex; align-items: center; gap: 6px; }
+.inline-form input[name="rate"] { width: 64px; padding: 6px 8px; }
+.bar-track { height: 4px; margin-top: 6px; background: var(--surface-2); border-radius: 4px; overflow: hidden; max-width: 160px; }
+.bar-track span { display: block; height: 100%; background: var(--accent); }

@@ -44,8 +44,11 @@ export default async function CostsPage({ searchParams }: { searchParams: Promis
     <>
       <div className="page-header dash-header">
         <div>
-          <h1>Custos</h1>
-          <p>Tudo o que custa para vender e o lucro que sobra de verdade.</p>
+          <h1>Lucro real</h1>
+          <p>
+            Os gastos da empresa (luz, aluguel, frete, salários) e o lucro que sobra de verdade depois deles.
+            O custo de cada produto fica em <Link href="/custos/obtencao">Custo de cada produto</Link>.
+          </p>
         </div>
         <div className="dash-actions">
           <nav className="segmented" aria-label="Período">
@@ -133,13 +136,13 @@ export default async function CostsPage({ searchParams }: { searchParams: Promis
         ) : (
           <div className="table-wrap">
             <table>
-              <thead><tr><th>Data</th><th>Tipo</th><th>Descrição</th><th>Ligado a</th><th className="num">Valor</th><th>Por</th>{canManage && <th />}</tr></thead>
+              <thead><tr><th>Data</th><th>Custo</th><th>Grupo</th><th>Ligado a</th><th className="num">Valor</th><th>Por</th>{canManage && <th />}</tr></thead>
               <tbody>
                 {costs.map((c) => (
                   <tr key={c.id}>
                     <td>{dateLabel(c.incurredOn)}</td>
-                    <td>{c.costTypeName}</td>
-                    <td className="muted">{c.description}</td>
+                    <td>{c.description || c.costTypeName}</td>
+                    <td className="muted">{c.costTypeName}</td>
                     <td>
                       {[
                         c.saleNumber ? <Link key="s" href={`/vendas?id=${c.saleId}`}>Venda nº {c.saleNumber}</Link> : null,

@@ -33,7 +33,7 @@ describe("recursos da empresa (Ajustes › Recursos)", () => {
     const on = await enabledFeatures(t.app, owner.organizationId);
     assert.deepEqual([...on].sort(), ["netz", "telegram"]);
     const choices = await companyFeatureChoices(t.app, owner.organizationId);
-    assert.deepEqual(choices.map((c) => [c.key, c.enabled]), [["deliveries", false], ["trade_in", false], ["costs", false], ["custom_fields", false]]);
+    assert.deepEqual(choices.map((c) => [c.key, c.enabled]), [["deliveries", false], ["trade_in", false], ["costs", false], ["custom_fields", false], ["commissions", false]]);
   });
 
   it("com o recurso desligado, a venda recusa troca e entrega", async () => {
@@ -64,7 +64,7 @@ describe("recursos da empresa (Ajustes › Recursos)", () => {
       "SELECT key, value FROM controle_vendas_estoque.organization_settings WHERE organization_id = $1 AND key LIKE 'features.%'",
       [b.organizationId],
     );
-    assert.equal(rows.rows.length, 4);
+    assert.equal(rows.rows.length, 5);
     await t.owner.query("DELETE FROM controle_vendas_estoque.organization_settings WHERE organization_id = $1 AND key LIKE 'features.%'", [b.organizationId]);
     assert.ok((await enabledFeatures(t.app, b.organizationId)).has("trade_in"));
   });

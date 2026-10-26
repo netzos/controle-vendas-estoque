@@ -13,11 +13,8 @@ export function CostForm({ types, products, suppliers, today }: { types: Option[
     <form action={action} key={state?.ok ? String(Math.random()) : "form"}>
       <FormMessage state={state} />
       <div className="grid-3">
-        <Field label="Tipo" name="costTypeId" state={state}>
-          <select id="costTypeId" name="costTypeId" required defaultValue="">
-            <option value="" disabled>Escolha</option>
-            {types.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-          </select>
+        <Field label="Custo" name="description" state={state} hint="O nome do gasto, do jeito que você fala.">
+          <input id="description" name="description" required maxLength={300} placeholder="Ex.: Conta de luz de outubro" />
         </Field>
         <Field label="Valor (R$)" name="amount" state={state}>
           <input id="amount" name="amount" inputMode="decimal" required placeholder="0,00" />
@@ -25,10 +22,13 @@ export function CostForm({ types, products, suppliers, today }: { types: Option[
         <Field label="Data" name="incurredOn" state={state}>
           <input id="incurredOn" name="incurredOn" type="date" defaultValue={today} max={today} />
         </Field>
-        <Field label="Descrição" name="description" state={state}>
-          <input id="description" name="description" maxLength={300} placeholder="Ex.: diária do apanhador" />
+        <Field label="Grupo" name="costTypeId" state={state} hint="Para somar gastos parecidos (Aluguel, Frete, Energia...).">
+          <select id="costTypeId" name="costTypeId" required defaultValue="">
+            <option value="" disabled>Escolha</option>
+            {types.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+          </select>
         </Field>
-        <Field label="Produto (opcional)" name="productId" state={state} hint="Para saber quanto cada produto custa de verdade.">
+        <Field label="Só de um produto? (opcional)" name="productId" state={state} hint="Ex.: frete que veio só com um produto. Gastos da empresa toda ficam sem produto.">
           <select id="productId" name="productId" defaultValue="">
             <option value="">—</option>
             {products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
@@ -65,7 +65,7 @@ export function CostTypeForm({ type }: { type?: CostType }) {
       {type && <input type="hidden" name="id" value={type.id} />}
       <div className="grid-2">
         <Field label="Nome" name="name" state={state}>
-          <input id={`${p}name`} name="name" defaultValue={type?.name} required maxLength={60} placeholder="Ex.: Aluguel da máquina" />
+          <input id={`${p}name`} name="name" defaultValue={type?.name} required maxLength={60} placeholder="Ex.: Energia, Aluguel, Frete" />
         </Field>
         {type && (
           <Field label="Situação" name="status" state={state}>
@@ -93,7 +93,7 @@ export function CostPartForm({ products, types, today, productId }: { products: 
             {products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
         </Field>
-        <Field label="Parte do custo" name="costTypeId" state={state} hint="Ex.: Mão de obra, Combustível, Embalagem.">
+        <Field label="Parte do custo" name="costTypeId" state={state} hint="Ex.: Matéria-prima, Mão de obra, Embalagem.">
           <select id="costTypeId" name="costTypeId" required defaultValue="">
             <option value="" disabled>Escolha</option>
             {types.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
@@ -106,7 +106,7 @@ export function CostPartForm({ products, types, today, productId }: { products: 
           <input id="validFrom" name="validFrom" type="date" defaultValue={today} max={today} />
         </Field>
         <Field label="Observação" name="notes" state={state}>
-          <input id="notes" name="notes" maxLength={300} placeholder="Ex.: safra de outubro" />
+          <input id="notes" name="notes" maxLength={300} placeholder="Ex.: novo preço do fornecedor" />
         </Field>
       </div>
       <div className="actions"><SubmitButton>Salvar valor</SubmitButton></div>

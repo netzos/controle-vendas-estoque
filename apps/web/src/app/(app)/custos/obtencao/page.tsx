@@ -5,7 +5,7 @@ import { query } from "@/lib/actions";
 import { money } from "@/lib/format";
 import { CostPartForm } from "../forms";
 
-export const metadata = { title: "Custo de obtenção" };
+export const metadata = { title: "Custo de cada produto" };
 
 const dateLabel = (d: string) => d.split("-").reverse().join("/");
 
@@ -19,9 +19,9 @@ export default async function ObtainingCostsPage({ searchParams }: { searchParam
   return (
     <>
       <div className="page-header">
-        <h1>Custo de obtenção</h1>
+        <h1>Custo de cada produto</h1>
         <p>
-          Quanto custa para ter cada produto, separado em partes (ex.: lata de açaí = apanhador + combustível + embalagem).
+          Quanto custa para ter cada produto, separado em partes (ex.: camiseta = tecido + costura + estampa).
           A soma vira o custo do produto. Quando um valor muda, o anterior fica guardado e as vendas antigas não mudam.
         </p>
       </div>

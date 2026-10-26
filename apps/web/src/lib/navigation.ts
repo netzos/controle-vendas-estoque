@@ -95,13 +95,14 @@ export const NAVIGATION: NavGroup[] = [
     items: [{ label: "Clientes", href: "/clientes", permission: "customers.view", phase: 2 }],
   },
   {
-    label: "Dinheiro",
-    short: "Dinheiro",
-    hint: "Quanto sobra de verdade",
+    label: "Financeiro",
+    short: "Financeiro",
+    hint: "Gastos, custo de cada produto, comissões e quanto sobra de verdade",
     icon: "wallet",
     items: [
-      { label: "Lucro e custos", href: "/custos", permission: "costs.view", feature: "costs", phase: 2 },
-      { label: "Custo de obtenção", href: "/custos/obtencao", permission: "costs.view", feature: "costs", phase: 2 },
+      { label: "Lucro real", href: "/custos", permission: "costs.view", feature: "costs", phase: 2 },
+      { label: "Custo de cada produto", href: "/custos/obtencao", permission: "costs.view", feature: "costs", phase: 2 },
+      { label: "Comissões", href: "/comissoes", permission: "commissions.view", feature: "commissions", phase: 2 },
       { label: "A receber", href: "/financeiro/receber", phase: 5 },
       { label: "A pagar", href: "/financeiro/pagar", phase: 5 },
     ],
@@ -124,7 +125,7 @@ export const NAVIGATION: NavGroup[] = [
       { label: "Unidades de medida", href: "/unidades", permission: "products.view", phase: 2, section: "Listas usadas nos cadastros", description: "Unidade, kg, lata, litro…" },
       { label: "Campos personalizados", href: "/campos-personalizados", permission: "products.view", feature: "custom_fields", phase: 2, section: "Listas usadas nos cadastros", description: "Informações extras nos produtos" },
       { label: "Etapas depois da venda", href: "/etapas", permission: "deliveries.view", feature: "deliveries", phase: 2, section: "Listas usadas nos cadastros", description: "Entrega, instalação, montagem: prazos e custos padrão" },
-      { label: "Tipos de custo", href: "/custos/tipos", permission: "costs.view", feature: "costs", phase: 2, section: "Listas usadas nos cadastros", description: "Aluguel, frete, comissão…" },
+      { label: "Grupos de custo", href: "/custos/tipos", permission: "costs.view", feature: "costs", phase: 2, section: "Listas usadas nos cadastros", description: "Aluguel, frete, energia…" },
       // O dia a dia do Telegram é o botão do topo; aqui ficam a ligação e o Desligar.
       { label: "Meu Telegram", href: "/assistente/telegram", permission: "nets.use", feature: "telegram", phase: 2, section: "Netz e melhorias", description: "Ligar ou desligar a Netz no seu Telegram" },
       { label: "Pedir uma melhoria", href: "/melhorias", phase: 1, section: "Netz e melhorias", description: "Falta algo? Peça aqui e a equipe netzsales responde" },
