@@ -12,7 +12,7 @@ import { currentNetsManual } from "./guidance.ts";
 import { NETS_RULES } from "./instructions.ts";
 import { listNetsDeliveries } from "./deliveries.ts";
 import { activePersonNotes, agentNotePerson, personNotesText } from "./person.ts";
-import { DELIVERIES_TOOL, IMPROVEMENT_COMPLEMENT_TOOL, IMPROVEMENT_LIST_TOOL, IMPROVEMENT_TOOL, netsTools, PERSON_NOTE_TOOL, type NetsTool } from "./tools.ts";
+import { BATCH_LIMIT, BATCH_TOOL, DELIVERIES_TOOL, IMPROVEMENT_COMPLEMENT_TOOL, IMPROVEMENT_LIST_TOOL, IMPROVEMENT_TOOL, netsTools, PERSON_NOTE_TOOL, type NetsTool } from "./tools.ts";
 
 // Netz: o agente global. A conversa fica no banco; cada mensagem da pessoa é
 // respondida fora da requisição (processNetsTurn). Consultas rodam na hora;
@@ -22,7 +22,7 @@ export const NETS_MODEL = "claude-opus-5-5";
 export const NETS_DAILY_LIMIT = 200;
 const MAX_STEPS = 12;
 const RESULT_LIMIT = 15000;
-const HISTORY = 40;
+const HISTORY = 30;
 
 export type NetsActionStatus = "pending" | "running" | "done" | "failed" | "cancelled" | "expired";
 
@@ -31,6 +31,8 @@ export interface NetsAction {
   service: string;
   title: string;
   input: Record<string, unknown>;
+  /** Lote: a mesma ação para cada item (propor_lote). */
+  items?: Record<string, unknown>[];
 }
 
 export interface NetsMessage {
@@ -184,8 +186,14 @@ export async function decideNetsAction(db: Db, actor: Actor, raw: z.input<typeof
   let result: string;
   try {
     if (!tool) throw forbidden("Você não tem mais permissão para esta ação.");
-    // A chave de idempotência impede repetir a ação num clique duplo.
-    result = serialize(await runService(db, tool.service, actor, claimed.input, { idempotencyKey: `nets:${input.id}` }));
+    if (claimed.items) {
+      const r = await runBatch(db, actor, tool, input.id, claimed.items);
+      if (r.feitos === 0) status = "failed";
+      result = serialize(r);
+    } else {
+      // A chave de idempotência impede repetir a ação num clique duplo.
+      result = serialize(await runService(db, tool.service, actor, claimed.input, { idempotencyKey: `nets:${input.id}` }));
+    }
   } catch (err) {
     status = "failed";
     result = err instanceof AppError ? err.message : "Erro inesperado ao executar a ação.";
@@ -211,16 +219,18 @@ const STATUS_NOTE: Record<NetsActionStatus, string> = {
   expired: "ficou sem resposta",
 };
 
-function historyText(r: Row): string {
-  if (r.role === "user") return `${r.context ? `[Tela: ${r.context}]\n` : ""}${r.body}`;
+// A hora vai em cada mensagem (e não no topo) para o histórico não mudar de
+// um minuto para o outro: assim a conversa já enviada sai do cache, bem mais barata.
+function historyText(r: Row, clock: Intl.DateTimeFormat): string {
+  if (r.role === "user") return `[${clock.format(r.createdAt)}] ${r.context ? `[Tela: ${r.context}]\n` : ""}${r.body}`;
   if (!r.action) return r.body;
-  const result = r.actionResult ? `; resultado: ${clip(r.actionResult, 3000)}` : "";
+  const result = r.actionResult ? `; resultado: ${clip(r.actionResult, 1500)}` : "";
   return `${r.body}\n\n[Ação proposta: ${r.action.title} — ${STATUS_NOTE[r.actionStatus ?? "expired"]}${result}]`;
 }
 
-async function systemPrompt(tx: Tx, actor: Actor): Promise<{ blocks: Anthropic.Beta.BetaTextBlockParam[]; version: number }> {
-  const { rows } = await tx.query<{ name: string; today: string; now: string; timezone: string }>(
-    `SELECT name, timezone, to_char(now() AT TIME ZONE timezone, 'YYYY-MM-DD') AS today, to_char(now() AT TIME ZONE timezone, 'HH24:MI') AS now
+async function systemPrompt(tx: Tx, actor: Actor): Promise<{ blocks: Anthropic.Beta.BetaTextBlockParam[]; version: number; timezone: string }> {
+  const { rows } = await tx.query<{ name: string; today: string; timezone: string }>(
+    `SELECT name, timezone, to_char(now() AT TIME ZONE timezone, 'YYYY-MM-DD') AS today
        FROM controle_vendas_estoque.organizations WHERE id = $1`,
     [actor.organizationId],
   );
@@ -232,9 +242,12 @@ async function systemPrompt(tx: Tx, actor: Actor): Promise<{ blocks: Anthropic.B
   return {
     // Versão 0 = texto padrão do código. Fica gravada na mensagem: prova de que a resposta leu o manual.
     version: manual.id ?? 0,
+    timezone: org.timezone,
     blocks: [
-      { type: "text", text: `${NETS_RULES}\n\n# Manual de comunicação\n\n${manual.body}`, cache_control: { type: "ephemeral" } },
-      { type: "text", text: `Empresa: ${org.name}. Pessoa: ${actor.userName} (${who}). Hoje: ${org.today}, ${org.now} (${org.timezone}).${CHANNEL_NOTE[actor.channel] ?? ""}\n\n${personNotesText(notes)}` },
+      // Ferramentas + regras + manual: igual para a pessoa o dia todo. Cache de 1 hora,
+      // porque no Telegram a pessoa costuma demorar mais de 5 minutos entre mensagens.
+      { type: "text", text: `${NETS_RULES}\n\n# Manual de comunicação\n\n${manual.body}`, cache_control: { type: "ephemeral", ttl: "1h" } },
+      { type: "text", text: `Empresa: ${org.name}. Pessoa: ${actor.userName} (${who}). Hoje: ${org.today} (${org.timezone}); a hora de cada mensagem vem no começo dela, entre colchetes.${CHANNEL_NOTE[actor.channel] ?? ""}\n\n${personNotesText(notes)}` },
     ],
   };
 }
@@ -274,6 +287,7 @@ async function runTool(db: Db, actor: Actor, tools: NetsTool[], block: Anthropic
       return { content: err instanceof AppError ? err.message : "Não foi possível complementar a melhoria.", isError: true };
     }
   }
+  if (block.name === BATCH_TOOL) return proposeBatch(tools, input, proposed);
   const tool = tools.find((t) => t.name === block.name);
   if (!tool) return { content: "Ferramenta indisponível para esta pessoa.", isError: true };
   const { _resumo, ...args } = input;
@@ -290,6 +304,46 @@ async function runTool(db: Db, actor: Actor, tools: NetsTool[], block: Anthropic
   } catch (err) {
     return { content: err instanceof AppError ? err.message : "Erro inesperado na ferramenta.", isError: true };
   }
+}
+
+function proposeBatch(tools: NetsTool[], input: Record<string, unknown>, proposed: boolean): ToolOutcome {
+  const tool = tools.find((t) => t.name === input.ferramenta && !t.read);
+  if (!tool) return { content: "Ferramenta indisponível para lote (use uma que muda dados e que a pessoa pode usar).", isError: true };
+  if (proposed) return { content: "Já existe uma ação esperando confirmação neste turno. Proponha uma ação por vez.", isError: true };
+  const raw = Array.isArray(input.itens) ? input.itens : [];
+  if (raw.length === 0 || raw.length > BATCH_LIMIT) return { content: `Mande de 1 a ${BATCH_LIMIT} itens.`, isError: true };
+  const items: Record<string, unknown>[] = [];
+  const problems: string[] = [];
+  raw.forEach((item, i) => {
+    const { _resumo, ...args } = (item && typeof item === "object" ? item : {}) as Record<string, unknown>;
+    try {
+      parseInput(tool.service.input, args);
+      items.push(args);
+    } catch (err) {
+      problems.push(`item ${i + 1}: ${err instanceof AppError ? err.message : "dados inválidos"}`);
+    }
+  });
+  if (problems.length) return { content: `Corrija antes de propor:\n${problems.slice(0, 10).join("\n")}`, isError: true };
+  const title = typeof input._resumo === "string" && input._resumo.trim() ? input._resumo.trim().slice(0, 300) : `${tool.service.description} (${items.length} itens)`;
+  return {
+    content: `Proposta pronta: um cartão só para os ${items.length} itens. Termine a resposta dizendo o que vai acontecer; não diga que já foi feito.`,
+    action: { tool: tool.name, service: tool.service.name, title, input: {}, items },
+  };
+}
+
+/** Roda o lote confirmado item por item; um erro não para os outros. */
+async function runBatch(db: Db, actor: Actor, tool: NetsTool, messageId: string, items: Record<string, unknown>[]) {
+  let ok = 0;
+  const falhas: Array<{ item: number; erro: string }> = [];
+  for (const [i, item] of items.entries()) {
+    try {
+      await runService(db, tool.service, actor, item, { idempotencyKey: `nets:${messageId}:${i}` });
+      ok++;
+    } catch (err) {
+      falhas.push({ item: i + 1, erro: err instanceof AppError ? err.message : "erro inesperado" });
+    }
+  }
+  return { total: items.length, feitos: ok, falhas };
 }
 
 /**
@@ -331,7 +385,7 @@ export async function processNetsTurn(
   }
 
   try {
-    const { history, system } = await asUser(db, owner, async (tx) => {
+    const { history, system, timezone } = await asUser(db, owner, async (tx) => {
       const { rows } = await tx.query<Row>(
         `SELECT ${COLUMNS} FROM controle_vendas_estoque.nets_messages
           WHERE organization_id = $1 AND user_id = $2 AND created_at <= (SELECT created_at FROM controle_vendas_estoque.nets_messages WHERE id = $3)
@@ -340,12 +394,13 @@ export async function processNetsTurn(
       );
       const prompt = await systemPrompt(tx, actor);
       await tx.query("UPDATE controle_vendas_estoque.nets_messages SET guidance_version = $2 WHERE id = $1", [trigger.id, prompt.version]);
-      return { history: rows.reverse(), system: prompt.blocks };
+      return { history: rows.reverse(), system: prompt.blocks, timezone: prompt.timezone };
     });
+    const clock = new Intl.DateTimeFormat("pt-BR", { timeZone: timezone, day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
     const messages: Anthropic.Beta.BetaMessageParam[] = [];
     for (const r of history) {
       if (messages.length === 0 && r.role !== "user") continue;
-      messages.push({ role: r.role, content: historyText(r) });
+      messages.push({ role: r.role, content: historyText(r, clock) });
     }
     if (trigger.role === "assistant") {
       const ok = trigger.actionStatus === "done";
@@ -374,6 +429,9 @@ export async function processNetsTurn(
           model: NETS_MODEL,
           max_tokens: 16000,
           output_config: { effort: "medium" },
+          // Cache automático até a última mensagem: o próximo passo e a próxima
+          // mensagem pagam só o que é novo.
+          cache_control: { type: "ephemeral" },
           system,
           tools: definitions,
           messages,

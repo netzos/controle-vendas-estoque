@@ -5,6 +5,7 @@ import type Anthropic from "@anthropic-ai/sdk";
 import {
   AppError,
   decideNetsAction,
+  listCustomers,
   listNetsMessages,
   listProducts,
   listUnits,
@@ -69,6 +70,40 @@ async function say(actor: Actor, text: string, model: NetsModel, context?: strin
 }
 
 describe("Netz", () => {
+  it("lista colada vira um cartão só e cada pedido usa o cache", async () => {
+    const nomes = ["Lote Ana", "Lote Bruno", "Lote Carla"];
+    const s = script(
+      [
+        { type: "text", text: "Vou cadastrar os 3 de uma vez." },
+        { type: "tool_use", name: "propor_lote", input: { _resumo: "Cadastrar 3 clientes", ferramenta: "customers_create", itens: nomes.map((name) => ({ name })) } },
+      ],
+      [{ type: "text", text: "Confirme no cartão." }],
+    );
+    const reply = await say(owner, nomes.join("\n"), s.model);
+    assert.equal(reply.action!.title, "Cadastrar 3 clientes");
+    // Hora na própria mensagem (o topo não muda) e cache até a última mensagem.
+    assert.match(JSON.stringify(s.requests[0]!.messages[0]), /^\{"role":"user","content":"\[\d\d\/\d\d,? \d\d:\d\d\]/);
+    assert.deepEqual(s.requests[0]!.cache_control, { type: "ephemeral" });
+    assert.ok(!JSON.stringify(s.requests[0]!.system).match(/\d\d:\d\d/));
+    assert.equal((await runService(t.app, listCustomers, owner, { search: "Lote" })).length, 0);
+
+    assert.deepEqual(await decideNetsAction(t.app, owner, { id: reply.id, decision: "confirm" }), { status: "done", queued: true });
+    assert.equal((await runService(t.app, listCustomers, owner, { search: "Lote" })).length, 3);
+    const c = script([{ type: "text", text: "Pronto, 3 clientes." }]);
+    await processNetsTurn(t.app, { organizationId: owner.organizationId, userId: owner.userId, messageId: reply.id }, { model: c.model });
+    assert.match(JSON.stringify(c.requests[0]!.messages.at(-2)), /feitos.{0,6}3/);
+  });
+
+  it("lote com item inválido volta para a Netz corrigir", async () => {
+    const s = script(
+      [{ type: "tool_use", name: "propor_lote", input: { _resumo: "x", ferramenta: "customers_create", itens: [{ name: "Ok" }, { name: "" }] } }],
+      [{ type: "text", text: "O segundo está sem nome." }],
+    );
+    const reply = await say(owner, "cadastra", s.model);
+    assert.equal(reply.action, null);
+    assert.match(JSON.stringify(s.requests[1]!.messages.at(-1)), /item 2/);
+  });
+
   it("sem a chave, responde que ainda não está ligada", async () => {
     delete process.env.ANTHROPIC_API_KEY;
     const r = await postNetsMessage(t.app, owner, { requestId: randomUUID(), text: "oi" });
