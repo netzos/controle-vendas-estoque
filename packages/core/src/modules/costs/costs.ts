@@ -404,7 +404,7 @@ export const listObtainingCosts = defineService({
 
 export const setCostPart = defineService({
   name: "costs.obtaining.set",
-  description: "Muda uma parte do custo de obtenção de um produto a partir de uma data (ex.: apanhador agora custa R$ 12 por lata). Guarda o histórico e atualiza o custo do produto.",
+  description: "Muda uma parte do custo de obtenção de um produto a partir de uma data (ex.: a embalagem agora custa R$ 1,20 por unidade). Guarda o histórico e atualiza o custo do produto.",
   permission: "costs.manage",
   risk: 3,
   input: z.object({

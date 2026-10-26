@@ -39,6 +39,13 @@ export const FEATURES = [
     defaultOn: true,
     company: { defaultOn: false, hint: "Informações a mais em cada produto, como cor, tamanho ou número de série." },
   },
+  {
+    key: "commissions",
+    label: "Comissões de vendedores",
+    description: "Taxa de comissão por vendedor, ranking e repasses.",
+    defaultOn: true,
+    company: { defaultOn: false, hint: "Cada vendedor ganha uma porcentagem do que vendeu. Mostra o ranking, quanto cada um tem a receber e guarda os repasses." },
+  },
   { key: "netz", label: "Netz no painel", description: "O balão da assistente em todas as telas.", defaultOn: true },
   { key: "telegram", label: "Telegram", description: "Conversar com a Netz pelo Telegram.", defaultOn: true },
 ] as const;

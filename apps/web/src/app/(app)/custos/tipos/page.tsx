@@ -4,7 +4,7 @@ import { Notice, RemoveRecord } from "@/components/remove-record";
 import { query } from "@/lib/actions";
 import { CostTypeForm } from "../forms";
 
-export const metadata = { title: "Tipos de custo" };
+export const metadata = { title: "Grupos de custo" };
 
 export default async function CostTypesPage({ searchParams }: { searchParams: Promise<{ aviso?: string }> }) {
   const actor = await requirePermission("costs.view");
@@ -13,13 +13,13 @@ export default async function CostTypesPage({ searchParams }: { searchParams: Pr
   return (
     <>
       <div className="page-header">
-        <h1>Tipos de custo</h1>
+        <h1>Grupos de custo</h1>
         <p>Como o seu negócio separa os gastos: entrega, mão de obra, combustível, embalagem. As etapas depois da venda usam o tipo com o mesmo nome.</p>
       </div>
       <Notice text={(await searchParams).aviso} />
       {canManage && (
         <section className="card">
-          <h2>Novo tipo</h2>
+          <h2>Novo grupo</h2>
           <CostTypeForm />
         </section>
       )}

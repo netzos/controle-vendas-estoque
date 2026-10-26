@@ -10,7 +10,7 @@ import { setFeatureAction } from "./actions";
 /** Onde configurar cada recurso depois de ligado. */
 const CONFIGURE: Record<string, { href: string; label: string } | undefined> = {
   deliveries: { href: "/etapas", label: "Configurar etapas" },
-  costs: { href: "/custos/tipos", label: "Tipos de custo" },
+  costs: { href: "/custos/tipos", label: "Grupos de custo" },
   custom_fields: { href: "/campos-personalizados", label: "Criar campos" },
 };
 

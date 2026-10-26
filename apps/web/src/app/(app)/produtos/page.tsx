@@ -92,7 +92,7 @@ export default async function ProductsPage({
           </section>
         )}
         {features.has("costs") && can(actor, "costs.view") && (
-          <p className="muted"><Link href="/custos/obtencao">Partes do custo (frete, embalagem...) ficam em Dinheiro › Custo de obtenção.</Link></p>
+          <p className="muted"><Link href="/custos/obtencao">Partes do custo (frete, embalagem...) ficam em Financeiro › Custo de cada produto.</Link></p>
         )}
         {canManage && (
           <section className="card">

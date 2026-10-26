@@ -44,6 +44,6 @@ export async function setCostPartAction(_: FormState, form: FormData): Promise<F
       validFrom: optional(form, "validFrom") ?? undefined,
       notes: optional(form, "notes"),
     },
-    { successMessage: "Custo de obtenção atualizado. O custo do produto já mudou.", revalidate: "/custos/obtencao" },
+    { successMessage: "Custo do produto atualizado.", revalidate: "/custos/obtencao" },
   );
 }

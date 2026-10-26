@@ -12,6 +12,7 @@ import * as parties from "../catalog/parties.ts";
 import * as products from "../catalog/products.ts";
 import * as supplierProducts from "../catalog/supplier-products.ts";
 import * as costs from "../costs/costs.ts";
+import * as commissions from "../commissions/commissions.ts";
 import * as organizations from "../organizations/service.ts";
 import * as followups from "../sales/followups.ts";
 import * as sales from "../sales/sales.ts";
@@ -36,7 +37,7 @@ const EXCLUDED = new Set([
 ]);
 
 // Consultas rodam na hora; o resto vira proposta para a pessoa confirmar.
-const READ = /\.(list|get|overview|dashboard|counts|movements)$/;
+const READ = /\.(list|get|overview|dashboard|counts|movements|panel)$/;
 
 export const IMPROVEMENT_TOOL = "registrar_melhoria";
 export const IMPROVEMENT_LIST_TOOL = "listar_melhorias";
@@ -74,7 +75,7 @@ function trim(node: unknown): unknown {
 
 const ALL: AnyService[] = [
   organizations, settings, audit, members, roles, parties, products, customFields, images, remove, supplierProducts,
-  movements, sales, followups, costs,
+  movements, sales, followups, costs, commissions,
 ]
   .flatMap((m) => Object.values(m))
   .filter(isService)
