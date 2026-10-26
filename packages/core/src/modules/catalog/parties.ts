@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { Tx } from "@erp/db";
 import { AppError, notFound } from "../../errors.ts";
 import { defineService } from "../../service.ts";
+import { MAX_IMAGE_BYTES, sniff } from "./images.ts";
 import { daysField, documentField, emailField, optionalText, stateField, statusField, whatsappField, zipField } from "./fields.ts";
 
 // Clientes e fornecedores. Não são apagados: são desativados, para que vendas
@@ -14,11 +15,26 @@ export interface Customer {
   document: string | null;
   email: string | null;
   phone: string | null;
+  zipCode: string | null;
+  street: string | null;
+  streetNumber: string | null;
+  complement: string | null;
+  district: string | null;
   city: string | null;
   state: string | null;
   notes: string | null;
   status: "active" | "inactive";
+  /** Muda a cada foto nova; null = sem foto. */
+  photoId: string | null;
   createdAt: Date;
+}
+
+/** Endereço em uma linha: "Rua A, 10 - apto 2 - Centro, Belém/PA - CEP 66000-000". */
+export function addressLine(a: Pick<Customer, "street" | "streetNumber" | "complement" | "district" | "city" | "state" | "zipCode">): string {
+  const street = [a.street, a.streetNumber].filter(Boolean).join(", ");
+  const place = [a.city, a.state].filter(Boolean).join("/");
+  const zip = a.zipCode ? `CEP ${a.zipCode.replace(/^(\d{5})(\d{3})$/, "$1-$2")}` : "";
+  return [street, a.complement, a.district].filter(Boolean).join(" - ") + (place ? `${street || a.district ? ", " : ""}${place}` : "") + (zip ? ` - ${zip}` : "");
 }
 
 export interface Supplier {
@@ -43,7 +59,8 @@ export interface Supplier {
   createdAt: Date;
 }
 
-const CUSTOMER_COLUMNS = `id, kind, name, document, email, phone, city, state, notes, status, created_at AS "createdAt"`;
+const CUSTOMER_COLUMNS = `id, kind, name, document, email, phone, zip_code AS "zipCode", street, street_number AS "streetNumber",
+  complement, district, city, state, notes, status, photo_id AS "photoId", created_at AS "createdAt"`;
 const SUPPLIER_COLUMNS = `id, name, trade_name AS "tradeName", document, email, phone, contact_name AS "contactName",
   whatsapp, zip_code AS "zipCode", street, street_number AS "streetNumber", complement, district,
   city, state, lead_time_days AS "leadTimeDays", notes, status, created_at AS "createdAt"`;
@@ -87,6 +104,11 @@ const customerFields = z.object({
   document: documentField,
   email: emailField,
   phone: optionalText(30),
+  zipCode: zipField,
+  street: optionalText(160),
+  streetNumber: optionalText(20),
+  complement: optionalText(80),
+  district: optionalText(80),
   city: optionalText(80),
   state: stateField,
   notes: optionalText(2000),
@@ -120,10 +142,12 @@ export const createCustomer = defineService({
   async handler({ tx, actor, audit, emit }, input) {
     await assertDocumentFree(tx, "customers", input.document);
     const { rows } = await tx.query<Customer>(
-      `INSERT INTO controle_vendas_estoque.customers (organization_id, kind, name, document, email, phone, city, state, notes)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING ${CUSTOMER_COLUMNS}`,
+      `INSERT INTO controle_vendas_estoque.customers
+         (organization_id, kind, name, document, email, phone, city, state, notes, zip_code, street, street_number, complement, district)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING ${CUSTOMER_COLUMNS}`,
       [actor.organizationId, input.kind, input.name, input.document ?? null, input.email ?? null, input.phone ?? null,
-        input.city ?? null, input.state ?? null, input.notes ?? null],
+        input.city ?? null, input.state ?? null, input.notes ?? null, input.zipCode ?? null, input.street ?? null,
+        input.streetNumber ?? null, input.complement ?? null, input.district ?? null],
     );
     const customer = rows[0]!;
     await audit({ action: "customer.create", entityType: "customer", entityId: customer.id, summary: `Cliente ${customer.name} cadastrado`, after: customer });
@@ -145,18 +169,77 @@ export const updateCustomer = defineService({
     await assertDocumentFree(tx, "customers", input.document, input.id);
     const { rows } = await tx.query<Customer>(
       `UPDATE controle_vendas_estoque.customers SET kind = $2, name = $3, document = $4, email = $5, phone = $6,
-              city = $7, state = $8, notes = $9, status = $10
+              city = $7, state = $8, notes = $9, status = $10, zip_code = $11, street = $12, street_number = $13,
+              complement = $14, district = $15
         WHERE id = $1 RETURNING ${CUSTOMER_COLUMNS}`,
       [input.id, input.kind, input.name, input.document ?? null, input.email ?? null, input.phone ?? null,
-        input.city ?? null, input.state ?? null, input.notes ?? null, input.status],
+        input.city ?? null, input.state ?? null, input.notes ?? null, input.status, input.zipCode ?? null, input.street ?? null,
+        input.streetNumber ?? null, input.complement ?? null, input.district ?? null],
     );
     const after = rows[0]!;
-    const fields = changed(current, after, ["kind", "name", "document", "email", "phone", "city", "state", "notes", "status"]);
+    const fields = changed(current, after, ["kind", "name", "document", "email", "phone", "zipCode", "street", "streetNumber", "complement", "district", "city", "state", "notes", "status"]);
     if (fields.length > 0) {
       await audit({ action: "customer.update", entityType: "customer", entityId: after.id, summary: `Cliente ${after.name} alterado`, before: current, after });
       await emit("customer.updated", { customerId: after.id, fields }, { type: "customer", id: after.id });
     }
     return after;
+  },
+});
+
+// Foto do cliente ----------------------------------------------------------------
+
+export const setCustomerPhoto = defineService({
+  name: "customers.photo.set",
+  description: "Coloca ou troca a foto de um cliente",
+  permission: "customers.manage",
+  risk: 2,
+  input: z.object({ customerId: z.string().uuid(), data: z.instanceof(Uint8Array) }),
+  async handler({ tx, audit }, input) {
+    if (input.data.byteLength === 0) throw new AppError("invalid_input", "Arquivo vazio.");
+    if (input.data.byteLength > MAX_IMAGE_BYTES) throw new AppError("invalid_input", "Foto muito grande. O limite é 2 MB.");
+    const contentType = sniff(input.data);
+    if (!contentType) throw new AppError("invalid_input", "Formato não aceito. Envie JPG, PNG ou WebP.");
+    const { rows } = await tx.query<{ name: string; photoId: string }>(
+      `UPDATE controle_vendas_estoque.customers SET photo = $2, photo_type = $3, photo_id = gen_random_uuid()
+        WHERE id = $1 RETURNING name, photo_id AS "photoId"`,
+      [input.customerId, Buffer.from(input.data), contentType],
+    );
+    if (!rows[0]) throw notFound("Cliente");
+    await audit({ action: "customer.photo", entityType: "customer", entityId: input.customerId, summary: `Foto de ${rows[0].name} atualizada` });
+    return { photoId: rows[0].photoId };
+  },
+});
+
+export const removeCustomerPhoto = defineService({
+  name: "customers.photo.remove",
+  description: "Tira a foto de um cliente",
+  permission: "customers.manage",
+  risk: 2,
+  input: z.object({ customerId: z.string().uuid() }),
+  async handler({ tx, audit }, input) {
+    const { rows } = await tx.query<{ name: string }>(
+      "UPDATE controle_vendas_estoque.customers SET photo = NULL, photo_type = NULL, photo_id = NULL WHERE id = $1 RETURNING name",
+      [input.customerId],
+    );
+    if (!rows[0]) throw notFound("Cliente");
+    await audit({ action: "customer.photo", entityType: "customer", entityId: input.customerId, summary: `Foto de ${rows[0].name} removida` });
+    return { ok: true };
+  },
+});
+
+export const getCustomerPhoto = defineService({
+  name: "customers.photo.get",
+  description: "Devolve o arquivo da foto de um cliente",
+  permission: "customers.view",
+  risk: 1,
+  input: z.object({ photoId: z.string().uuid() }),
+  async handler({ tx }, input) {
+    const { rows } = await tx.query<{ contentType: string; data: Buffer }>(
+      `SELECT photo_type AS "contentType", photo AS data FROM controle_vendas_estoque.customers WHERE photo_id = $1 AND photo IS NOT NULL`,
+      [input.photoId],
+    );
+    if (!rows[0]) throw notFound("Foto");
+    return rows[0];
   },
 });
 

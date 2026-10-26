@@ -3,7 +3,9 @@
 import { useActionState } from "react";
 import type { Customer } from "@erp/core";
 import { Field, FormMessage, SubmitButton } from "@/components/form";
-import { documentLabel } from "@/lib/format";
+import { AddressFields } from "@/components/address-fields";
+import { PhotoPicker } from "@/components/photo-picker";
+import { documentLabel, zipLabel } from "@/lib/format";
 import { createCustomerAction, updateCustomerAction } from "./actions";
 
 export function CustomerForm({ customer }: { customer?: Customer }) {
@@ -12,11 +14,12 @@ export function CustomerForm({ customer }: { customer?: Customer }) {
     <form action={action}>
       <FormMessage state={state} />
       {customer && <input type="hidden" name="id" value={customer.id} />}
+      <PhotoPicker name="photo" round current={customer?.photoId ? `/clientes/foto/${customer.photoId}` : null} />
       <div className="grid-3">
         <Field label="Tipo" name="kind" state={state}>
           <select id="kind" name="kind" defaultValue={customer?.kind ?? "person"}>
             <option value="person">Pessoa física</option>
-            <option value="company">Empresa</option>
+            <option value="company">Pessoa jurídica</option>
           </select>
         </Field>
         <Field label="Nome" name="name" state={state}>
@@ -31,12 +34,6 @@ export function CustomerForm({ customer }: { customer?: Customer }) {
         <Field label="E-mail" name="email" state={state}>
           <input id="email" name="email" type="email" defaultValue={customer?.email ?? ""} maxLength={160} />
         </Field>
-        <Field label="Cidade" name="city" state={state}>
-          <input id="city" name="city" defaultValue={customer?.city ?? ""} maxLength={80} />
-        </Field>
-        <Field label="UF" name="state" state={state}>
-          <input id="state" name="state" defaultValue={customer?.state ?? ""} maxLength={2} placeholder="SP" />
-        </Field>
         {customer && (
           <Field label="Situação" name="status" state={state}>
             <select id="status" name="status" defaultValue={customer.status}>
@@ -46,6 +43,11 @@ export function CustomerForm({ customer }: { customer?: Customer }) {
           </Field>
         )}
       </div>
+      <h3 className="form-section">Endereço</h3>
+      <AddressFields
+        state={state}
+        initial={customer ? { ...customer, zipCode: zipLabel(customer.zipCode) } as never : undefined}
+      />
       <Field label="Observações" name="notes" state={state}>
         <textarea id="notes" name="notes" defaultValue={customer?.notes ?? ""} maxLength={2000} rows={3} />
       </Field>

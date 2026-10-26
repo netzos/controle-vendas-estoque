@@ -5,6 +5,7 @@ import type { Category, CustomField, Product, Supplier, Unit } from "@erp/core";
 import { ITEM_TYPES, type ItemType } from "@erp/core/labels";
 import { Field, FormMessage, SubmitButton } from "@/components/form";
 import { decimalInput } from "@/lib/format";
+import { PhotoPicker } from "@/components/photo-picker";
 import { createProductAction, updateProductAction } from "./actions";
 
 export interface ProductFormOptions {
@@ -130,6 +131,7 @@ export function ProductForm({ product, options }: { product?: Product; options: 
           </button>
         ))}
       </div>
+      {!product && <PhotoPicker name="photo" />}
       <div className="grid-3">
         <Field label="Nome" name="name" state={state}>
           <input id="name" name="name" defaultValue={product?.name} required maxLength={160} placeholder="Ex.: Açaí 500 ml" />

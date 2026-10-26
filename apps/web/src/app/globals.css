@@ -706,3 +706,16 @@ summary .edit-hint { float: right; font-size: 13px; color: var(--muted); font-we
 .switch:hover:not(:disabled) { background: var(--muted); }
 .switch[aria-checked="true"]:hover:not(:disabled) { background: var(--accent-hover); }
 @media (max-width: 640px) { .feature-list { grid-template-columns: 1fr; } }
+
+/* Foto opcional nos formulários (cliente, produto novo). */
+.photo-picker .label { font-weight: 500; font-size: 14px; }
+.photo-picker-row { display: flex; align-items: center; gap: 14px; margin-top: 6px; }
+.photo-slot { width: 84px; height: 84px; padding: 0; border-radius: 16px; border: 1.5px dashed var(--border); background: var(--surface-2); color: var(--muted); font-size: 28px; overflow: hidden; display: grid; place-items: center; }
+.photo-slot.round { border-radius: 50%; }
+.photo-slot img { width: 100%; height: 100%; object-fit: cover; }
+.photo-picker-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.address-fields .grid-city { display: grid; grid-template-columns: 1fr 72px; gap: 12px; }
+.avatar-photo { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; flex: none; }
+.avatar-photo.big { width: 72px; height: 72px; }
+.thumb.empty.round { border-radius: 50%; }
+.page-header.with-thumb { display: flex; align-items: center; gap: 16px; }

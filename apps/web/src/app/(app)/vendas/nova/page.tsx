@@ -1,4 +1,4 @@
-import { can, enabledFeatures, getSettings, listCustomers, listProducts, listStepTypes, orgDate } from "@erp/core";
+import { addressLine, can, enabledFeatures, getSettings, listCustomers, listProducts, listStepTypes, orgDate } from "@erp/core";
 import { requirePermission } from "@/lib/auth";
 import { query } from "@/lib/actions";
 import { db } from "@/lib/db";
@@ -29,7 +29,7 @@ export default async function NewSalePage() {
         today={today}
         defaultFulfillment={settings["sales.default_fulfillment"]}
         stepDefaults={stepTypes.map((t) => ({ name: t.name, days: t.defaultDays, responsible: t.defaultResponsible, cost: t.defaultCost }))}
-        customers={customers.map((c) => ({ id: c.id, name: c.name }))}
+        customers={customers.map((c) => ({ id: c.id, name: c.name, address: addressLine(c), phone: c.phone ?? "" }))}
         products={products.map((p) => ({
           id: p.id,
           name: p.name,

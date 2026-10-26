@@ -3,6 +3,7 @@
 import { useActionState } from "react";
 import type { Supplier } from "@erp/core";
 import { Field, FormMessage, SubmitButton } from "@/components/form";
+import { AddressFields } from "@/components/address-fields";
 import { documentLabel, whatsappLabel, zipLabel } from "@/lib/format";
 import { createSupplierAction, updateSupplierAction } from "./actions";
 
@@ -39,28 +40,8 @@ export function SupplierForm({ supplier }: { supplier?: Supplier }) {
         </Field>
       </div>
       <h3 className="form-section">Endereço</h3>
+      <AddressFields state={state} initial={supplier ? ({ ...supplier, zipCode: zipLabel(supplier.zipCode) } as never) : undefined} />
       <div className="grid-3">
-        <Field label="CEP" name="zipCode" state={state}>
-          <input id="zipCode" name="zipCode" defaultValue={zipLabel(supplier?.zipCode ?? null)} inputMode="numeric" maxLength={9} />
-        </Field>
-        <Field label="Rua" name="street" state={state}>
-          <input id="street" name="street" defaultValue={supplier?.street ?? ""} maxLength={160} />
-        </Field>
-        <Field label="Número" name="streetNumber" state={state}>
-          <input id="streetNumber" name="streetNumber" defaultValue={supplier?.streetNumber ?? ""} maxLength={20} />
-        </Field>
-        <Field label="Complemento" name="complement" state={state}>
-          <input id="complement" name="complement" defaultValue={supplier?.complement ?? ""} maxLength={80} />
-        </Field>
-        <Field label="Bairro" name="district" state={state}>
-          <input id="district" name="district" defaultValue={supplier?.district ?? ""} maxLength={80} />
-        </Field>
-        <Field label="Cidade" name="city" state={state}>
-          <input id="city" name="city" defaultValue={supplier?.city ?? ""} maxLength={80} />
-        </Field>
-        <Field label="UF" name="state" state={state}>
-          <input id="state" name="state" defaultValue={supplier?.state ?? ""} maxLength={2} placeholder="PA" />
-        </Field>
         {supplier && (
           <Field label="Situação" name="status" state={state}>
             <select id="status" name="status" defaultValue={supplier.status}>

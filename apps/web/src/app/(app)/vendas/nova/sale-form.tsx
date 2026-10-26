@@ -46,7 +46,8 @@ export function SaleForm({
   defaultFulfillment,
 }: {
   products: PosProduct[];
-  customers: { id: string; name: string }[];
+  /** Endereço e telefone do cadastro preenchem a entrega quando o cliente é escolhido. */
+  customers: { id: string; name: string; address: string; phone: string }[];
   canChangePrice: boolean;
   canTradeIn: boolean;
   canManageSteps: boolean;
@@ -300,7 +301,15 @@ export function SaleForm({
         <div className="grid-2">
           <div className="field">
             <label htmlFor="customerId">Cliente (opcional)</label>
-            <select id="customerId" name="customerId" defaultValue="">
+            <select
+              id="customerId"
+              name="customerId"
+              defaultValue=""
+              onChange={(e) => {
+                const c = customers.find((x) => x.id === e.target.value);
+                if (c) setAfter((a) => ({ ...a, address: a.address || c.address, recipient: a.recipient || c.name, phone: a.phone || c.phone }));
+              }}
+            >
               <option value="">Consumidor</option>
               {customers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>

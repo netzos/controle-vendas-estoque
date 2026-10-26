@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { can, listCustomers } from "@erp/core";
+import { addressLine, can, listCustomers } from "@erp/core";
 import { requirePermission } from "@/lib/auth";
 import { query } from "@/lib/actions";
 import { documentLabel } from "@/lib/format";
@@ -21,14 +21,18 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
     return (
       <>
         <p><Link href="/clientes">← Clientes</Link></p>
-        <div className="page-header">
-          <h1>{selected.name}</h1>
-          <p><span className={`tag ${selected.status === "active" ? "ok" : "off"}`}>{selected.status === "active" ? "Ativo" : "Inativo"}</span></p>
+        <div className="page-header with-thumb">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          {selected.photoId && <img className="avatar-photo big" src={`/clientes/foto/${selected.photoId}`} alt="" />}
+          <div>
+            <h1>{selected.name}</h1>
+            <p><span className={`tag ${selected.status === "active" ? "ok" : "off"}`}>{selected.status === "active" ? "Ativo" : "Inativo"}</span></p>
+          </div>
         </div>
         <section className="card">
           <h2>Dados do cliente</h2>
           {canManage ? <CustomerForm key={selected.id} customer={selected} /> : (
-            <p className="muted">{[documentLabel(selected.document), selected.phone, [selected.city, selected.state].filter(Boolean).join(" / ")].filter(Boolean).join(" · ") || "Sem outros dados."}</p>
+            <p className="muted">{[documentLabel(selected.document), selected.phone, addressLine(selected)].filter(Boolean).join(" · ") || "Sem outros dados."}</p>
           )}
         </section>
         {canManage && (
@@ -77,7 +81,17 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
               <tbody>
                 {shown.map((c) => (
                   <tr key={c.id} className="clickable">
-                    <td><Link href={`/clientes?id=${c.id}`}>{c.name}</Link></td>
+                    <td>
+                      <div className="with-thumb">
+                        {c.photoId ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img className="avatar-photo" src={`/clientes/foto/${c.photoId}`} alt="" loading="lazy" />
+                        ) : (
+                          <span className="thumb empty round">{c.name[0]}</span>
+                        )}
+                        <Link href={`/clientes?id=${c.id}`}>{c.name}</Link>
+                      </div>
+                    </td>
                     <td data-label="CPF/CNPJ" className="sm-hide">{documentLabel(c.document)}</td>
                     <td data-label="Telefone">{c.phone}</td>
                     <td data-label="Cidade" className="sm-hide">{[c.city, c.state].filter(Boolean).join(" / ")}</td>
