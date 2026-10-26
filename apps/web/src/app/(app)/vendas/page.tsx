@@ -1,20 +1,21 @@
 import Link from "next/link";
-import { can, enabledFeatures, FULFILLMENTS, getOrganization, getSale, getSaleFollowup, listSales, listStepTypes, orgDate, PAYMENT_LABELS } from "@erp/core";
+import { can, enabledFeatures, FULFILLMENTS, PAYMENT_STATUS_LABELS, getOrganization, getSale, getSaleFollowup, listSales, listStepTypes, orgDate, PAYMENT_LABELS } from "@erp/core";
 import { requirePermission } from "@/lib/auth";
 import { query } from "@/lib/actions";
 import { db } from "@/lib/db";
 import { money, quantity } from "@/lib/format";
 import { CancelSaleForm } from "./cancel-form";
+import { ReceivePaymentForm } from "./receive-form";
 import { AddStepsForm, StepRow } from "../entregas/steps";
 
 export const metadata = { title: "Vendas" };
 
-export default async function SalesPage({ searchParams }: { searchParams: Promise<{ q?: string; id?: string }> }) {
+export default async function SalesPage({ searchParams }: { searchParams: Promise<{ q?: string; id?: string; receber?: string }> }) {
   const actor = await requirePermission("sales.view");
   const params = await searchParams;
   const [org, sales, selected, features] = await Promise.all([
     query(getOrganization, {}),
-    query(listSales, { search: params.q || undefined }),
+    query(listSales, { search: params.q || undefined, openPayment: params.receber === "1" }),
     params.id ? query(getSale, { id: params.id }).catch(() => null) : null,
     enabledFeatures(db(), actor.organizationId),
   ]);
@@ -36,10 +37,15 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
         <section className="card">
           <div className="card-head">
             <h2>Venda nº {selected.number}</h2>
-            <span className={`tag ${selected.status === "completed" ? "ok" : "off"}`}>{selected.status === "completed" ? "Concluída" : "Cancelada"}</span>
+            <span>
+              {selected.status === "completed" && selected.paymentStatus !== "paid" && (
+                <span className={`tag pay-tag ${selected.paymentStatus}`}>{PAYMENT_STATUS_LABELS[selected.paymentStatus]}</span>
+              )}{" "}
+              <span className={`tag ${selected.status === "completed" ? "ok" : "off"}`}>{selected.status === "completed" ? "Concluída" : "Cancelada"}</span>
+            </span>
           </div>
           <p className="muted">
-            {fmt.format(selected.soldAt)} · {PAYMENT_LABELS[selected.paymentMethod]} · {FULFILLMENTS[selected.fulfillment]} · {selected.customerName ?? "Consumidor"} · por {selected.userName}
+            {fmt.format(selected.soldAt)} · {FULFILLMENTS[selected.fulfillment]} · {selected.customerName ?? "Consumidor"} · por {selected.userName}
           </p>
           <div className="table-wrap">
             <table>
@@ -82,10 +88,34 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
               Subtotal {money(selected.subtotal)}
               {Number(selected.discount) > 0 && ` · desconto ${money(selected.discount)}`}
               {Number(selected.deliveryFee) > 0 && ` · frete ${money(selected.deliveryFee)}`}
-              {Number(selected.tradeInTotal) > 0 && ` · troca ${money(selected.tradeInTotal)} · pago em ${PAYMENT_LABELS[selected.paymentMethod].toLowerCase()} ${money(Number(selected.total) - Number(selected.tradeInTotal))}`}
+              {Number(selected.tradeInTotal) > 0 && ` · troca ${money(selected.tradeInTotal)}`}
             </span>
             <span className="cart-grand">{money(selected.total)}</span>
           </div>
+          <h3 className="form-section">Pagamento</h3>
+          {selected.payments.length === 0 ? (
+            <p className="muted">Nada recebido ainda.</p>
+          ) : (
+            <ul className="pay-list">
+              {selected.payments.map((p) => (
+                <li key={p.id}>
+                  <span>{PAYMENT_LABELS[p.method]}{p.notes ? <small className="muted"> · {p.notes}</small> : null}</span>
+                  <span className="muted">{fmt.format(p.paidAt)} · {p.userName.split(" ")[0]}</span>
+                  <strong>{money(p.amount)}</strong>
+                </li>
+              ))}
+            </ul>
+          )}
+          {(() => {
+            const open = Number(selected.total) - Number(selected.tradeInTotal) - Number(selected.paidTotal);
+            if (selected.status !== "completed" || open <= 0.004) return null;
+            return (
+              <div className="open-box">
+                <p><b>Falta receber {money(open)}</b> de {money(Number(selected.total) - Number(selected.tradeInTotal))}.</p>
+                {can(actor, "sales.receive") && <ReceivePaymentForm saleId={selected.id} open={open.toFixed(2)} />}
+              </div>
+            );
+          })()}
           {followup && (
             <>
               <h3 className="form-section">Depois da venda</h3>
@@ -107,12 +137,17 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
         <div className="list-toolbar">
           <form>
             <input type="search" name="q" defaultValue={params.q ?? ""} placeholder="Buscar pelo número ou pelo cliente" aria-label="Buscar vendas" />
+            {params.receber === "1" && <input type="hidden" name="receber" value="1" />}
             <button type="submit" className="secondary">Buscar</button>
           </form>
+          <nav className="segmented" aria-label="Filtro de pagamento">
+            <Link href="/vendas" className={params.receber === "1" ? "" : "active"}>Todas</Link>
+            <Link href="/vendas?receber=1" className={params.receber === "1" ? "active" : ""}>Falta receber</Link>
+          </nav>
           {can(actor, "sales.create") && <Link className="button" href="/vendas/nova">+ Nova venda</Link>}
         </div>
         {sales.length === 0 ? (
-          <p className="muted">{params.q ? "Nenhuma venda encontrada." : "Nenhuma venda registrada ainda."}</p>
+          <p className="muted">{params.receber === "1" ? "Nenhuma venda com pagamento em aberto." : params.q ? "Nenhuma venda encontrada." : "Nenhuma venda registrada ainda."}</p>
         ) : (
           <div className="table-wrap">
             <table className="cards">
@@ -125,7 +160,15 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
                     <td data-label="Nº"><Link href={`/vendas?id=${s.id}`}>{s.number}</Link></td>
                     <td data-label="Data">{fmt.format(s.soldAt)}</td>
                     <td data-label="Cliente">{s.customerName ?? <span className="muted">Consumidor</span>}</td>
-                    <td data-label="Pagamento">{PAYMENT_LABELS[s.paymentMethod]}</td>
+                    <td data-label="Pagamento">
+                      {s.status === "completed" && s.paymentStatus !== "paid" ? (
+                        <span className={`tag pay-tag ${s.paymentStatus}`}>
+                          {s.paymentStatus === "partial" ? `Parcial · falta ${money(Number(s.total) - Number(s.tradeInTotal) - Number(s.paidTotal))}` : "A receber"}
+                        </span>
+                      ) : (
+                        PAYMENT_LABELS[s.paymentMethod]
+                      )}
+                    </td>
                     <td data-label="Itens" className="num sm-hide">{s.itemCount}</td>
                     <td data-label="Total" className="num"><strong className={s.status === "cancelled" ? "strike muted" : ""}>{money(s.total)}</strong></td>
                     <td data-label="Situação"><span className={`tag ${s.status === "completed" ? "ok" : "off"}`}>{s.status === "completed" ? "Concluída" : "Cancelada"}</span></td>

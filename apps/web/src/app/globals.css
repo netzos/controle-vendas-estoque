@@ -740,3 +740,20 @@ summary .edit-hint { float: right; font-size: 13px; color: var(--muted); font-we
 .telegram-logo:hover:not(:disabled) { background: var(--surface-2); }
 .telegram-logo svg { width: 26px; height: 26px; }
 .telegram-dot { position: absolute; top: 1px; right: 1px; width: 10px; height: 10px; border-radius: 50%; background: #dc2626; border: 2px solid var(--surface); }
+
+/* Venda: pagamento dividido ou parcial. */
+.link-button { background: none; border: 0; padding: 4px 0; color: var(--text); font-weight: 600; font-size: 13.5px; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; align-self: flex-start; }
+.link-button:hover { background: none; color: var(--muted); }
+.split-pay { display: flex; flex-direction: column; gap: 10px; padding: 14px; border: 1px solid var(--border); border-radius: 16px; background: var(--surface-2); margin: 6px 0 12px; }
+.split-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+.split-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.split-row select { flex: 1 1 120px; }
+.split-row input { flex: 1 1 110px; min-width: 0; }
+.split-sum { margin: 0; }
+.pay-tag.partial { background: #fff4e0; color: #9a5b00; }
+.pay-tag.pending { background: #fdecec; color: #b42318; }
+.pay-list { list-style: none; padding: 0; margin: 0 0 10px; display: flex; flex-direction: column; gap: 8px; }
+.pay-list li { display: grid; grid-template-columns: 1fr auto auto; gap: 12px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border); }
+.open-box { padding: 14px 16px; border-radius: 16px; background: #fff8ec; border: 1px solid #f3dcb2; margin-bottom: 12px; }
+.open-box p { margin: 0 0 10px; }
+@media (max-width: 640px) { .pay-list li { grid-template-columns: 1fr auto; } .pay-list li .muted { grid-column: 1 / -1; order: 3; font-size: 12.5px; } }

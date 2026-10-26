@@ -36,6 +36,7 @@ export const PERMISSIONS = [
   { key: "sales.cancel", module: "comercial", description: "Cancelar vendas", risk: 4 },
   { key: "sales.change_price", module: "comercial", description: "Mudar o preço de um item na hora da venda", risk: 3 },
   { key: "sales.trade_in", module: "comercial", description: "Aceitar item na troca como parte do pagamento", risk: 3 },
+  { key: "sales.receive", module: "comercial", description: "Registrar o recebimento do que falta pagar de uma venda", risk: 3 },
   { key: "stock.view", module: "estoque", description: "Ver estoque, movimentações e o painel do estoque", risk: 1 },
   { key: "stock.manage", module: "estoque", description: "Lançar entradas, saídas e ajustes de estoque", risk: 3 },
   { key: "costs.view", module: "custos", description: "Ver custos, custo de obtenção e lucro real", risk: 1 },
@@ -78,8 +79,8 @@ const VIEW_ONLY = PERMISSIONS.filter((p) => p.risk === 1).map((p) => p.key);
 export const SYSTEM_ROLES: readonly SystemRole[] = [
   { key: "owner", name: "Proprietário", description: "Acesso total à empresa", permissions: "all" },
   { key: "admin", name: "Administrador", description: "Administra a empresa, usuários e configurações", permissions: "all" },
-  { key: "sales", name: "Vendedor", description: "Opera vendas e clientes", permissions: ["organization.view", "branches.view", "customers.view", "customers.manage", "products.view", "sales.view", "sales.create", "stock.view", "deliveries.view", "deliveries.manage", "nets.use"] },
-  { key: "finance", name: "Financeiro", description: "Opera contas a pagar e a receber", permissions: ["organization.view", "branches.view", "customers.view", "suppliers.view", "products.view", "sales.view", "stock.view", "costs.view", "costs.manage", "deliveries.view", "nets.use"] },
+  { key: "sales", name: "Vendedor", description: "Opera vendas e clientes", permissions: ["organization.view", "branches.view", "customers.view", "customers.manage", "products.view", "sales.view", "sales.create", "sales.receive", "stock.view", "deliveries.view", "deliveries.manage", "nets.use"] },
+  { key: "finance", name: "Financeiro", description: "Opera contas a pagar e a receber", permissions: ["organization.view", "branches.view", "customers.view", "suppliers.view", "products.view", "sales.view", "sales.receive", "stock.view", "costs.view", "costs.manage", "deliveries.view", "nets.use"] },
   { key: "stock", name: "Estoquista", description: "Opera estoque e recebimentos", permissions: ["organization.view", "branches.view", "suppliers.view", "suppliers.manage", "products.view", "products.manage", "stock.view", "stock.manage", "deliveries.view", "deliveries.manage", "nets.use"] },
   { key: "viewer", name: "Consulta", description: "Apenas consulta", permissions: VIEW_ONLY },
 ];
