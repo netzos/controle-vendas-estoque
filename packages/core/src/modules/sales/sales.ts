@@ -30,6 +30,23 @@ export interface SaleTradeIn {
   notes: string | null;
 }
 
+export type PaymentStatus = "paid" | "partial" | "pending";
+
+export const PAYMENT_STATUS_LABELS: Record<PaymentStatus, string> = {
+  paid: "Pago",
+  partial: "Pagamento parcial",
+  pending: "A receber",
+};
+
+export interface SalePayment {
+  id: string;
+  method: PaymentMethod;
+  amount: string;
+  paidAt: Date;
+  notes: string | null;
+  userName: string;
+}
+
 export interface SaleItem {
   id: string;
   productId: string;
@@ -54,6 +71,9 @@ export interface Sale {
   discount: string;
   total: string;
   tradeInTotal: string;
+  /** Quanto já foi recebido em dinheiro, Pix, cartão... (sem a troca). */
+  paidTotal: string;
+  paymentStatus: PaymentStatus;
   deliveryFee: string;
   fulfillment: Fulfillment;
   followupStatus: "open" | "done" | "cancelled" | null;
@@ -68,7 +88,8 @@ export interface Sale {
 
 const SALE_COLUMNS = `s.id, s.number, s.customer_id AS "customerId", c.name AS "customerName", s.status,
   s.payment_method AS "paymentMethod", s.subtotal::text AS subtotal, s.discount::text AS discount, s.total::text AS total,
-  s.trade_in_total::text AS "tradeInTotal", s.delivery_fee::text AS "deliveryFee", s.fulfillment,
+  s.trade_in_total::text AS "tradeInTotal", s.paid_total::text AS "paidTotal", s.payment_status AS "paymentStatus",
+  s.delivery_fee::text AS "deliveryFee", s.fulfillment,
   (SELECT f.status FROM controle_vendas_estoque.sale_followups f WHERE f.sale_id = s.id) AS "followupStatus", s.cost_total::text AS "costTotal", s.notes, s.sold_at AS "soldAt", u.name AS "userName",
   (SELECT count(*) FROM controle_vendas_estoque.sale_items i WHERE i.sale_id = s.id)::int AS "itemCount",
   s.cancelled_at AS "cancelledAt", s.cancel_reason AS "cancelReason"`;
@@ -90,7 +111,13 @@ export const createSale = defineService({
   risk: 3,
   input: z.object({
     customerId: uuidOrNull,
-    paymentMethod: z.enum(["cash", "pix", "credit", "debit", "other"]),
+    // Pago de uma forma só, tudo na hora. Para dividir ou deixar parte para
+    // depois, use payments (o que não for pago fica a receber).
+    paymentMethod: z.enum(["cash", "pix", "credit", "debit", "other"]).optional(),
+    payments: z
+      .array(z.object({ method: z.enum(["cash", "pix", "credit", "debit", "other"]), amount: decimalField(2, "Valor pago") }))
+      .max(10)
+      .optional(),
     discount: decimalField(2, "Desconto").default("0"),
     notes: optionalText(1000),
     items: z
@@ -222,18 +249,36 @@ export const createSale = defineService({
       throw new AppError("invalid_input", "O valor da troca passa do valor da venda. Registre a diferença como compra.");
     }
 
+    // Recebimentos: o que não for pago agora fica a receber (pagamento parcial).
+    const toPayCents = Math.round((Number(subtotal) - Number(input.discount) + Number(fee) - tradeTotal) * 100);
+    if (!input.payments && !input.paymentMethod) throw new AppError("invalid_input", "Escolha a forma de pagamento.");
+    const payments = (input.payments ?? (toPayCents > 0 ? [{ method: input.paymentMethod!, amount: (toPayCents / 100).toFixed(2) }] : []))
+      .filter((p) => Number(p.amount) > 0);
+    const paidCents = payments.reduce((a, p) => a + Math.round(Number(p.amount) * 100), 0);
+    if (paidCents > toPayCents) throw new AppError("invalid_input", "O valor pago passa do total da venda.");
+    const paymentStatus: PaymentStatus = paidCents >= toPayCents ? "paid" : paidCents > 0 ? "partial" : "pending";
+    // Forma principal: a de maior valor (a venda antiga só tinha uma).
+    const mainMethod = [...payments].sort((a, b) => Number(b.amount) - Number(a.amount))[0]?.method ?? input.paymentMethod ?? "other";
+
     // Número sequencial por empresa, sem buracos por concorrência.
     await tx.query("SELECT pg_advisory_xact_lock(hashtext('sales:' || $1))", [actor.organizationId]);
     const { rows } = await tx.query<{ id: string; number: number; total: string }>(
       `INSERT INTO controle_vendas_estoque.sales
-         (organization_id, number, customer_id, payment_method, subtotal, discount, total, cost_total, notes, created_by, trade_in_total, delivery_fee, fulfillment)
+         (organization_id, number, customer_id, payment_method, subtotal, discount, total, cost_total, notes, created_by, trade_in_total, delivery_fee, fulfillment,
+          paid_total, payment_status)
        VALUES ($1, (SELECT coalesce(max(number), 0) + 1 FROM controle_vendas_estoque.sales WHERE organization_id = $1),
-               $2, $3, $4, $5, $4::numeric - $5::numeric + $10::numeric, $6, $7, $8, $9, $10, $11)
+               $2, $3, $4, $5, $4::numeric - $5::numeric + $10::numeric, $6, $7, $8, $9, $10, $11, $12, $13)
        RETURNING id, number, total::text AS total`,
-      [actor.organizationId, input.customerId ?? null, input.paymentMethod, subtotal, input.discount, cost, input.notes ?? null, actor.userId,
-        tradeTotal.toFixed(2), fee, fulfillment],
+      [actor.organizationId, input.customerId ?? null, mainMethod, subtotal, input.discount, cost, input.notes ?? null, actor.userId,
+        tradeTotal.toFixed(2), fee, fulfillment, (paidCents / 100).toFixed(2), paymentStatus],
     );
-    const sale = rows[0]!;
+    const sale = { ...rows[0]!, paymentStatus, paidTotal: (paidCents / 100).toFixed(2), toPay: (toPayCents / 100).toFixed(2) };
+    for (const p of payments) {
+      await tx.query(
+        `INSERT INTO controle_vendas_estoque.sale_payments (organization_id, sale_id, method, amount, created_by) VALUES ($1, $2, $3, $4, $5)`,
+        [actor.organizationId, sale.id, p.method, p.amount, actor.userId],
+      );
+    }
 
     for (const l of lines) {
       await tx.query(
@@ -293,7 +338,7 @@ export const createSale = defineService({
       action: "sale.create",
       entityType: "sale",
       entityId: sale.id,
-      summary: `Venda nº ${sale.number} de R$ ${sale.total}${tradeTotal > 0 ? ` (R$ ${tradeTotal.toFixed(2)} em troca)` : ""}`,
+      summary: `Venda nº ${sale.number} de R$ ${sale.total}${tradeTotal > 0 ? ` (R$ ${tradeTotal.toFixed(2)} em troca)` : ""}${paymentStatus !== "paid" ? ` · falta receber R$ ${((toPayCents - paidCents) / 100).toFixed(2)}` : ""}`,
       after: { ...sale, items: lines.length, tradeIns: input.tradeIns.length },
     });
     await emit("sale.created", { saleId: sale.id, number: sale.number, total: sale.total }, { type: "sale", id: sale.id });
@@ -334,19 +379,70 @@ export const cancelSale = defineService({
   },
 });
 
+export const receiveSalePayment = defineService({
+  name: "sales.receive",
+  description: "Registra o recebimento de uma parte ou do restante de uma venda com pagamento parcial ou a receber",
+  permission: "sales.receive",
+  risk: 3,
+  input: z.object({
+    saleId: z.string().uuid(),
+    method: z.enum(["cash", "pix", "credit", "debit", "other"]),
+    amount: decimalField(2, "Valor recebido"),
+    notes: optionalText(300),
+  }),
+  async handler({ tx, actor, audit, emit }, input) {
+    const { rows } = await tx.query<{ number: number; status: string; open: string }>(
+      `SELECT number, status, (total - trade_in_total - paid_total)::text AS open
+         FROM controle_vendas_estoque.sales WHERE id = $1 FOR UPDATE`,
+      [input.saleId],
+    );
+    const sale = rows[0];
+    if (!sale) throw notFound("Venda");
+    if (sale.status === "cancelled") throw new AppError("conflict", `A venda nº ${sale.number} está cancelada.`);
+    const open = Math.round(Number(sale.open) * 100);
+    const amount = Math.round(Number(input.amount) * 100);
+    if (open <= 0) throw new AppError("conflict", `A venda nº ${sale.number} já está paga.`);
+    if (amount <= 0) throw new AppError("invalid_input", "Informe o valor recebido.");
+    if (amount > open) throw new AppError("invalid_input", `Falta receber só R$ ${(open / 100).toFixed(2).replace(".", ",")} desta venda.`);
+    await tx.query(
+      `INSERT INTO controle_vendas_estoque.sale_payments (organization_id, sale_id, method, amount, notes, created_by) VALUES ($1, $2, $3, $4, $5, $6)`,
+      [actor.organizationId, input.saleId, input.method, (amount / 100).toFixed(2), input.notes ?? null, actor.userId],
+    );
+    const status: PaymentStatus = amount === open ? "paid" : "partial";
+    await tx.query(
+      "UPDATE controle_vendas_estoque.sales SET paid_total = paid_total + $2::numeric, payment_status = $3 WHERE id = $1",
+      [input.saleId, (amount / 100).toFixed(2), status],
+    );
+    await audit({
+      action: "sale.receive",
+      entityType: "sale",
+      entityId: input.saleId,
+      summary: `Recebido R$ ${(amount / 100).toFixed(2)} (${PAYMENT_LABELS[input.method]}) da venda nº ${sale.number}${status === "paid" ? ", quitada" : ""}`,
+    });
+    await emit("sale.payment_received", { saleId: input.saleId, amount: (amount / 100).toFixed(2), status }, { type: "sale", id: input.saleId });
+    return { saleId: input.saleId, number: sale.number, paymentStatus: status, stillOpen: ((open - amount) / 100).toFixed(2) };
+  },
+});
+
 export const listSales = defineService({
   name: "sales.list",
   description: "Lista as vendas mais recentes, com busca pelo número ou pelo cliente",
   permission: "sales.view",
   risk: 1,
-  input: z.object({ search: z.string().trim().max(100).optional(), limit: z.number().int().min(1).max(500).default(100) }),
+  input: z.object({
+    search: z.string().trim().max(100).optional(),
+    // Só as que ainda têm algo a receber (pagamento parcial ou a receber).
+    openPayment: z.boolean().default(false),
+    limit: z.number().int().min(1).max(500).default(100),
+  }),
   async handler({ tx }, input) {
     const term = input.search?.replace(/^n[ºo°]?\s*/i, "") ?? "";
     const { rows } = await tx.query<Sale>(
       `SELECT ${SALE_COLUMNS} FROM ${SALE_FROM}
         WHERE ($1 = '' OR s.number::text = $1 OR lower(c.name) LIKE '%' || lower($1) || '%')
+          AND (NOT $3 OR (s.payment_status <> 'paid' AND s.status = 'completed'))
         ORDER BY s.sold_at DESC LIMIT $2`,
-      [term, input.limit],
+      [term, input.limit, input.openPayment],
     );
     return rows;
   },
@@ -380,7 +476,14 @@ export const getSale = defineService({
         WHERE t.sale_id = $1 ORDER BY t.created_at`,
       [input.id],
     );
-    return { ...rows[0], items: items.rows, tradeIns: tradeIns.rows };
+    const payments = await tx.query<SalePayment>(
+      `SELECT p.id, p.method, p.amount::text AS amount, p.paid_at AS "paidAt", p.notes, u.name AS "userName"
+         FROM controle_vendas_estoque.sale_payments p
+         JOIN controle_vendas_estoque.users u ON u.id = p.created_by
+        WHERE p.sale_id = $1 ORDER BY p.paid_at, p.created_at`,
+      [input.id],
+    );
+    return { ...rows[0], items: items.rows, tradeIns: tradeIns.rows, payments: payments.rows };
   },
 });
 
@@ -398,6 +501,8 @@ export interface SalesDashboard {
   series: { label: string; revenue: string; count: number }[];
   topProducts: { productId: string; name: string; unitCode: string; quantity: string; revenue: string; share: number }[];
   payments: { method: PaymentMethod | "trade_in"; revenue: string; count: number }[];
+  /** Vendas com pagamento parcial ou a receber (qualquer data). */
+  receivable: { amount: string; count: number };
   hours: { hour: number; revenue: string; count: number }[];
   recent: Sale[];
 }
@@ -486,16 +591,24 @@ export const salesDashboard = defineService({
       [start, end],
     );
 
-    // A parte paga com item na troca aparece separada da forma de pagamento.
+    // Recebido por forma de pagamento (vendas do período, inclusive pagamento
+    // dividido). A parte paga com item na troca aparece separada.
     const payments = await tx.query<{ method: PaymentMethod | "trade_in"; revenue: string; count: number }>(
-      `SELECT method, sum(amount)::text AS revenue, count(*)::int AS count FROM (
-         SELECT payment_method AS method, total - trade_in_total AS amount FROM controle_vendas_estoque.sales
-          WHERE status = 'completed' AND sold_at >= $1 AND sold_at < $2 AND total > trade_in_total
+      `SELECT method, sum(amount)::text AS revenue, count(DISTINCT sale_id)::int AS count FROM (
+         SELECT p.method, p.amount, p.sale_id FROM controle_vendas_estoque.sale_payments p
+           JOIN controle_vendas_estoque.sales s ON s.id = p.sale_id
+          WHERE s.status = 'completed' AND s.sold_at >= $1 AND s.sold_at < $2
          UNION ALL
-         SELECT 'trade_in', trade_in_total FROM controle_vendas_estoque.sales
+         SELECT 'trade_in', trade_in_total, id FROM controle_vendas_estoque.sales
           WHERE status = 'completed' AND sold_at >= $1 AND sold_at < $2 AND trade_in_total > 0
        ) x GROUP BY method ORDER BY sum(amount) DESC`,
       [start, end],
+    );
+
+    // Tudo o que ainda falta receber, de qualquer data.
+    const open = await tx.query<{ amount: string; count: number }>(
+      `SELECT coalesce(sum(total - trade_in_total - paid_total), 0)::text AS amount, count(*)::int AS count
+         FROM controle_vendas_estoque.sales WHERE status = 'completed' AND payment_status <> 'paid'`,
     );
 
     const hours = await tx.query<{ hour: number; revenue: string; count: number }>(
@@ -528,6 +641,7 @@ export const salesDashboard = defineService({
       series: series.rows,
       topProducts: top.rows.map((r) => ({ ...r, share: base > 0 ? Math.round((Number(r.revenue) / base) * 100) : 0 })),
       payments: payments.rows,
+      receivable: open.rows[0]!,
       hours: hours.rows,
       recent: recent.rows,
     } satisfies SalesDashboard;

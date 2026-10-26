@@ -59,6 +59,8 @@ export function SaleForm({
   const [search, setSearch] = useState("");
   const [cart, setCart] = useState<Record<string, string>>({});
   const [payment, setPayment] = useState<string>("pix");
+  // Pagamento dividido em várias formas, ou só uma parte agora (o resto fica a receber).
+  const [split, setSplit] = useState<{ key: number; method: string; amount: string }[] | null>(null);
   const [discount, setDiscount] = useState("");
   // Preço negociado por item; vazio = preço do cadastro.
   const [prices, setPrices] = useState<Record<string, string>>({});
@@ -81,6 +83,7 @@ export function SaleForm({
       setWay(canManageSteps ? defaultFulfillment : "pickup");
       setDiscount("");
       setSearch("");
+      setSplit(null);
     }
   }, [state]);
 
@@ -107,6 +110,11 @@ export function SaleForm({
   const total = Math.max(subtotal - toNumber(discount), 0) + fee;
   const tradeTotal = trades.reduce((a, t) => a + toNumber(t.value), 0);
   const toPay = total - tradeTotal;
+  const splitPaid = (split ?? []).reduce((a, p) => a + toNumber(p.amount), 0);
+  const splitOpen = Math.round((Math.max(toPay, 0) - splitPaid) * 100) / 100;
+  const setSplitRow = (key: number, patch: Partial<{ method: string; amount: string }>) =>
+    setSplit((rows) => (rows ?? []).map((r) => (r.key === key ? { ...r, ...patch } : r)));
+  const startSplit = () => setSplit([{ key: Date.now(), method: payment, amount: "" }]);
   const tracked = products.filter((p) => p.trackStock);
   const draftOf = (n: string): StepDraft => stepDrafts[n] ?? { scheduledFor: "", responsible: "", cost: "" };
   const setDraft = (n: string, patch: Partial<StepDraft>) => setStepDrafts((d) => ({ ...d, [n]: { ...draftOf(n), ...patch } }));
@@ -128,7 +136,11 @@ export function SaleForm({
           return changed ? { productId: l.product.id, quantity: l.qty, unitPrice: prices[l.product.id] } : { productId: l.product.id, quantity: l.qty };
         }),
       )} />
-      <input type="hidden" name="paymentMethod" value={payment} />
+      {split ? (
+        <input type="hidden" name="payments" value={JSON.stringify(split.filter((p) => toNumber(p.amount) > 0).map((p) => ({ method: p.method, amount: p.amount })))} />
+      ) : (
+        <input type="hidden" name="paymentMethod" value={payment} />
+      )}
       <input type="hidden" name="fulfillment" value={way} />
       {hasAfter && (
         <input
@@ -290,13 +302,54 @@ export function SaleForm({
           </details>
         )}
 
-        <div className="pay-options" role="radiogroup" aria-label="Forma de pagamento">
-          {PAYMENTS.map((p) => (
-            <button type="button" key={p.key} role="radio" aria-checked={payment === p.key} className={payment === p.key ? "active" : ""} onClick={() => setPayment(p.key)}>
-              {p.label}
-            </button>
-          ))}
-        </div>
+        {!split ? (
+          <>
+            <div className="pay-options" role="radiogroup" aria-label="Forma de pagamento">
+              {PAYMENTS.map((p) => (
+                <button type="button" key={p.key} role="radio" aria-checked={payment === p.key} className={payment === p.key ? "active" : ""} onClick={() => setPayment(p.key)}>
+                  {p.label}
+                </button>
+              ))}
+            </div>
+            <button type="button" className="link-button" onClick={startSplit}>Dividir em mais de uma forma ou pagar só uma parte</button>
+          </>
+        ) : (
+          <div className="split-pay">
+            <div className="split-head">
+              <strong>Pagamento dividido</strong>
+              <button type="button" className="link-button" onClick={() => setSplit(null)}>Pagar tudo de uma forma</button>
+            </div>
+            {split.map((row, i) => (
+              <div className="split-row" key={row.key}>
+                <select aria-label="Forma de pagamento" value={row.method} onChange={(e) => setSplitRow(row.key, { method: e.target.value })}>
+                  {PAYMENTS.map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}
+                </select>
+                <input
+                  aria-label="Valor pago nesta forma"
+                  inputMode="decimal"
+                  placeholder={splitOpen > 0 ? splitOpen.toFixed(2).replace(".", ",") : "0,00"}
+                  value={row.amount}
+                  onChange={(e) => setSplitRow(row.key, { amount: e.target.value })}
+                />
+                {splitOpen > 0 && !row.amount && (
+                  <button type="button" className="secondary small" onClick={() => setSplitRow(row.key, { amount: splitOpen.toFixed(2).replace(".", ",") })}>Resto</button>
+                )}
+                {split.length > 1 && (
+                  <button type="button" className="secondary small" aria-label="Tirar esta forma" onClick={() => setSplit((rows) => (rows ?? []).filter((r) => r.key !== row.key))}>×</button>
+                )}
+                {i === split.length - 1 && split.length < 5 && splitOpen > 0 && row.amount && (
+                  <button type="button" className="secondary small" onClick={() => setSplit((rows) => [...(rows ?? []), { key: Date.now(), method: "cash", amount: "" }])}>+ Outra forma</button>
+                )}
+              </div>
+            ))}
+            <p className={`split-sum${splitOpen < 0 ? " warn-text" : ""}`}>
+              Pago agora <b>{money(splitPaid)}</b>
+              {splitOpen > 0 && <> · falta <b>{money(splitOpen)}</b></>}
+            </p>
+            {splitOpen > 0 && <p className="muted small-text">O que faltar fica como <b>pagamento parcial</b>. Você recebe o resto depois, na ficha da venda.</p>}
+            {splitOpen < 0 && <p className="warn-text small-text">O valor pago passa do total da venda.</p>}
+          </div>
+        )}
 
         <div className="grid-2">
           <div className="field">

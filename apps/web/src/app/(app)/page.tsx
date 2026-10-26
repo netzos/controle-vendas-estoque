@@ -44,6 +44,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const needs: { href: string; text: string; action: string; tone: "bad" | "warn" }[] = [];
   if (steps && steps.late > 0) needs.push({ href: "/entregas?filtro=late", text: `${plural(steps.late, "entrega ou serviço atrasado", "entregas ou serviços atrasados")}`, action: "Resolver", tone: "bad" });
   if (steps && steps.today > 0) needs.push({ href: "/entregas?filtro=today", text: `${plural(steps.today, "entrega ou serviço", "entregas ou serviços")} para hoje`, action: "Ver", tone: "warn" });
+  if (dash && dash.receivable.count > 0) needs.push({ href: "/vendas?receber=1", text: `${money(dash.receivable.amount)} para receber em ${plural(dash.receivable.count, "venda", "vendas")}`, action: "Ver", tone: "warn" });
   if (owed > 0) needs.push({ href: "/estoque?filtro=zerados", text: `${plural(owed, "produto vendido por encomenda", "produtos vendidos por encomenda")}, falta pedir ao fornecedor`, action: "Ver", tone: "bad" });
   if (out > 0) needs.push({ href: "/estoque?filtro=zerados", text: `${plural(out, "produto zerado", "produtos zerados")}`, action: "Repor", tone: "bad" });
   if (low > 0) needs.push({ href: "/estoque?filtro=baixo", text: `${plural(low, "produto abaixo do mínimo", "produtos abaixo do mínimo")}`, action: "Repor", tone: "warn" });
