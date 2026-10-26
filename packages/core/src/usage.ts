@@ -26,11 +26,14 @@ export interface AiUsage {
   output_tokens?: number | null;
   cache_read_input_tokens?: number | null;
   cache_creation_input_tokens?: number | null;
+  /** Parte da gravação em cache que dura 1 hora (custa 2x a entrada, em vez de 1,25x). */
+  cache_creation?: { ephemeral_1h_input_tokens?: number | null } | null;
 }
 
 /** Soma o uso de várias respostas do modelo (um turno da Netz pode ter vários passos). */
-export function addAiUsage(total: Required<{ [K in keyof AiUsage]: number }>, u: AiUsage | null | undefined) {
+export function addAiUsage(total: ReturnType<typeof emptyAiUsage>, u: AiUsage | null | undefined) {
   if (!u) return total;
+  total.cache_creation.ephemeral_1h_input_tokens += u.cache_creation?.ephemeral_1h_input_tokens ?? 0;
   total.input_tokens += u.input_tokens ?? 0;
   total.output_tokens += u.output_tokens ?? 0;
   total.cache_read_input_tokens += u.cache_read_input_tokens ?? 0;
@@ -39,17 +42,19 @@ export function addAiUsage(total: Required<{ [K in keyof AiUsage]: number }>, u:
 }
 
 export function emptyAiUsage() {
-  return { input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 };
+  return { input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, cache_creation: { ephemeral_1h_input_tokens: 0 } };
 }
 
 export function aiCostUsd(model: string, u: AiUsage): number {
   const p = AI_PRICES[model] ?? AI_PRICES[model.replace(/-\d{8}$/, "")];
   if (!p) return 0;
+  const write1h = Math.min(u.cache_creation?.ephemeral_1h_input_tokens ?? 0, u.cache_creation_input_tokens ?? 0);
   return (
     ((u.input_tokens ?? 0) * p.input +
       (u.output_tokens ?? 0) * p.output +
       (u.cache_read_input_tokens ?? 0) * p.cacheRead +
-      (u.cache_creation_input_tokens ?? 0) * p.cacheWrite) /
+      ((u.cache_creation_input_tokens ?? 0) - write1h) * p.cacheWrite +
+      write1h * p.input * 2) /
     1_000_000
   );
 }

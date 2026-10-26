@@ -44,6 +44,8 @@ export const IMPROVEMENT_LIST_TOOL = "listar_melhorias";
 export const IMPROVEMENT_COMPLEMENT_TOOL = "complementar_melhoria";
 export const DELIVERIES_TOOL = "ver_mensagens_entregues";
 export const PERSON_NOTE_TOOL = "anotar_jeito";
+export const BATCH_TOOL = "propor_lote";
+export const BATCH_LIMIT = 200;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyService = ServiceDefinition<z.ZodType, any>;
@@ -185,15 +187,49 @@ const personNoteTool: Anthropic.Beta.BetaTool = {
   },
 };
 
+// Lista colada pela pessoa (clientes, produtos...) vira um cartão só, em vez
+// de um cartão e uma resposta da IA por item.
+function batchTool(writable: string[]): Anthropic.Beta.BetaTool {
+  return {
+    name: BATCH_TOOL,
+    description:
+      `Propõe a mesma ação para vários itens de uma vez (ex.: cadastrar uma lista de clientes, produtos ou fornecedores que a pessoa colou). Um único cartão confirma tudo. ` +
+      `Use sempre que houver 2 ou mais itens, em vez de propor um por um. Até ${BATCH_LIMIT} itens. (muda dados: vira proposta para a pessoa confirmar)`,
+    input_schema: {
+      type: "object",
+      properties: {
+        _resumo: { type: "string", maxLength: 300, description: "Uma frase dizendo o que vai acontecer. Ex.: \"Cadastrar 25 clientes da lista\"." },
+        ferramenta: { type: "string", enum: writable, description: "A ferramenta que roda em cada item." },
+        itens: {
+          type: "array",
+          minItems: 1,
+          maxItems: BATCH_LIMIT,
+          items: { type: "object" },
+          description: "Os dados de cada item, com os mesmos campos da ferramenta (sem _resumo). Leve todos os dados que a pessoa mandou de cada um.",
+        },
+      },
+      required: ["_resumo", "ferramenta", "itens"],
+    },
+  };
+}
+
 /** Ferramentas que esta pessoa pode usar, sempre na mesma ordem (cache). */
 export function netsTools(actor: Actor): { tools: NetsTool[]; definitions: Anthropic.Beta.BetaTool[] } {
   const tools = TOOLS.filter((t) => !t.service.permission || can(actor, t.service.permission));
-  return { tools, definitions: [...tools.map((t) => t.definition), improvementTool, improvementListTool, improvementComplementTool, deliveriesTool, personNoteTool] };
+  const writable = tools.filter((t) => !t.read).map((t) => t.name);
+  return {
+    tools,
+    definitions: [
+      ...tools.map((t) => t.definition),
+      ...(writable.length ? [batchTool(writable)] : []),
+      improvementTool, improvementListTool, improvementComplementTool, deliveriesTool, personNoteTool,
+    ],
+  };
 }
 
 /** Todas as ferramentas da Netz, para a tela da Plataforma (cada pessoa só recebe as permitidas). */
 export function netsToolCatalog(): Array<{ name: string; description: string }> {
-  return [...TOOLS.map((t) => t.definition), improvementTool, improvementListTool, improvementComplementTool, deliveriesTool, personNoteTool].map((d) => ({
+  return [...TOOLS.map((t) => t.definition), batchTool(TOOLS.filter((t) => !t.read).map((t) => t.name)), improvementTool, improvementListTool, improvementComplementTool, deliveriesTool, personNoteTool].map((d) => ({
     name: d.name,
     description: d.description ?? "",
   }));
