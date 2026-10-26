@@ -41,3 +41,13 @@ describe("cliente com endereço completo e foto", () => {
     assert.equal((await runService(t.app, listCustomers, owner, { search: "Maria" }))[0]!.photoId, null);
   });
 });
+
+describe("painel do estoque", () => {
+  it("monta 30 dias de entradas e saídas, curva ABC e últimas movimentações", async () => {
+    const { stockDashboard } = await import("../src/index.ts");
+    const dash = await runService(t.app, stockDashboard, owner, {});
+    assert.equal(dash.flow.length, 30);
+    assert.deepEqual(dash.abc.map((c) => c.cls), ["A", "B", "C"]);
+    assert.ok(Array.isArray(dash.recent));
+  });
+});
