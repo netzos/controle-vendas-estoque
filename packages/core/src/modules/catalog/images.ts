@@ -18,7 +18,7 @@ export interface ProductImage {
   bytes: number;
 }
 
-function sniff(data: Uint8Array): "image/jpeg" | "image/png" | "image/webp" | null {
+export function sniff(data: Uint8Array): "image/jpeg" | "image/png" | "image/webp" | null {
   if (data[0] === 0xff && data[1] === 0xd8 && data[2] === 0xff) return "image/jpeg";
   if (data[0] === 0x89 && data[1] === 0x50 && data[2] === 0x4e && data[3] === 0x47) return "image/png";
   const ascii = (a: number, b: number) => String.fromCharCode(...data.subarray(a, b));

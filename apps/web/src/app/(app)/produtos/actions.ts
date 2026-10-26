@@ -1,7 +1,10 @@
 "use server";
 
-import { createProduct, updateProduct } from "@erp/core";
-import { optional, perform, str, type FormState } from "@/lib/actions";
+import { revalidatePath } from "next/cache";
+import { addProductImage, createProduct, runService, updateProduct } from "@erp/core";
+import { currentActor } from "@/lib/auth";
+import { db } from "@/lib/db";
+import { optional, perform, str, toFormState, type FormState } from "@/lib/actions";
 
 function jsonList(form: FormData, name: string): string[] {
   try {
@@ -35,7 +38,19 @@ function fields(form: FormData) {
 }
 
 export async function createProductAction(_: FormState, form: FormData): Promise<FormState> {
-  return perform(createProduct, { ...fields(form), initialStock: str(form, "initialStock") }, { successMessage: "Produto cadastrado.", revalidate: "/produtos" });
+  try {
+    const actor = await currentActor();
+    const product = await runService(db(), createProduct, actor, { ...fields(form), initialStock: str(form, "initialStock") });
+    // Foto opcional escolhida já no cadastro (reduzida no navegador); as outras entram na ficha.
+    const photo = form.get("photo");
+    if (photo instanceof Blob && photo.size > 0) {
+      await runService(db(), addProductImage, actor, { productId: product.id, data: new Uint8Array(await photo.arrayBuffer()) });
+    }
+  } catch (err) {
+    return toFormState(err);
+  }
+  revalidatePath("/produtos");
+  return { ok: true, message: "Produto cadastrado." };
 }
 
 export async function updateProductAction(_: FormState, form: FormData): Promise<FormState> {

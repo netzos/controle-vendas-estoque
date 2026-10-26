@@ -263,3 +263,89 @@ export const stockOverview = defineService({
     } satisfies StockOverview;
   },
 });
+
+// Painel do estoque em tempo real ---------------------------------------------------
+
+export interface StockDashboard {
+  /** Últimos 30 dias, por dia: valor (a custo) que entrou e que saiu. */
+  flow: { day: string; label: string; inValue: string; outValue: string }[];
+  flowTotals: { inValue: string; outValue: string; inQty: string; outQty: string };
+  /** Valor parado em estoque (a custo) por categoria. */
+  byCategory: { name: string; value: string; products: number }[];
+  /** Curva ABC das vendas de 30 dias: A = 80% do faturamento, B = 15%, C = o resto. */
+  abc: { cls: "A" | "B" | "C"; products: number; revenue: string }[];
+  /** Movimentações mais recentes, de qualquer tipo. */
+  recent: { id: string; productName: string; unitCode: string; kind: string; quantity: string; createdAt: Date; userName: string }[];
+}
+
+export const stockDashboard = defineService({
+  name: "stock.dashboard",
+  description: "Painel do estoque: entradas e saídas por dia, valor por categoria, curva ABC e últimas movimentações",
+  permission: "stock.view",
+  risk: 1,
+  input: z.object({}),
+  async handler({ tx }) {
+    const tz = (await tx.query<{ tz: string }>(
+      "SELECT timezone AS tz FROM controle_vendas_estoque.organizations WHERE id = controle_vendas_estoque.current_org()",
+    )).rows[0]!.tz;
+    const flow = await tx.query<{ day: string; label: string; inValue: string; outValue: string; inQty: string; outQty: string }>(
+      `WITH days AS (
+         SELECT d::date AS day FROM generate_series((now() AT TIME ZONE $1)::date - 29, (now() AT TIME ZONE $1)::date, interval '1 day') d
+       ), m AS (
+         SELECT (m.created_at AT TIME ZONE $1)::date AS day, m.quantity, m.quantity * coalesce(m.unit_cost, p.cost_price) AS value
+           FROM controle_vendas_estoque.stock_movements m
+           JOIN controle_vendas_estoque.products p ON p.id = m.product_id
+          WHERE m.created_at >= now() - interval '31 days'
+       )
+       SELECT to_char(days.day, 'YYYY-MM-DD') AS day, to_char(days.day, 'DD/MM') AS label,
+              round(coalesce(sum(m.value) FILTER (WHERE m.quantity > 0), 0), 2)::text AS "inValue",
+              round(coalesce(-sum(m.value) FILTER (WHERE m.quantity < 0), 0), 2)::text AS "outValue",
+              coalesce(sum(m.quantity) FILTER (WHERE m.quantity > 0), 0)::text AS "inQty",
+              coalesce(-sum(m.quantity) FILTER (WHERE m.quantity < 0), 0)::text AS "outQty"
+         FROM days LEFT JOIN m ON m.day = days.day
+        GROUP BY days.day ORDER BY days.day`,
+      [tz],
+    );
+    const sum = (k: "inValue" | "outValue" | "inQty" | "outQty", digits: number) => flow.rows.reduce((a, r) => a + Number(r[k]), 0).toFixed(digits);
+
+    const byCategory = await tx.query<{ name: string; value: string; products: number }>(
+      `SELECT coalesce(c.name, 'Sem categoria') AS name, round(sum(greatest(p.stock_qty, 0) * p.cost_price), 2)::text AS value, count(*)::int AS products
+         FROM controle_vendas_estoque.products p
+         LEFT JOIN controle_vendas_estoque.categories c ON c.id = p.category_id
+        WHERE p.status = 'active' AND p.track_stock
+        GROUP BY 1 HAVING sum(greatest(p.stock_qty, 0) * p.cost_price) > 0 ORDER BY sum(greatest(p.stock_qty, 0) * p.cost_price) DESC LIMIT 8`,
+    );
+
+    const abc = await tx.query<{ cls: "A" | "B" | "C"; products: number; revenue: string }>(
+      `WITH r AS (
+         SELECT i.product_id, sum(i.total) AS revenue
+           FROM controle_vendas_estoque.sale_items i
+           JOIN controle_vendas_estoque.sales s ON s.id = i.sale_id AND s.status = 'completed'
+          WHERE s.sold_at >= now() - interval '30 days'
+          GROUP BY i.product_id
+       ), ranked AS (
+         SELECT revenue, sum(revenue) OVER (ORDER BY revenue DESC, product_id ROWS UNBOUNDED PRECEDING) - revenue AS before, sum(revenue) OVER () AS total FROM r
+       )
+       SELECT CASE WHEN before < total * 0.8 THEN 'A' WHEN before < total * 0.95 THEN 'B' ELSE 'C' END AS cls,
+              count(*)::int AS products, round(sum(revenue), 2)::text AS revenue
+         FROM ranked GROUP BY 1 ORDER BY 1`,
+    );
+
+    const recent = await tx.query<StockDashboard["recent"][number]>(
+      `SELECT m.id, p.name AS "productName", u.code AS "unitCode", m.kind, m.quantity::text AS quantity, m.created_at AS "createdAt", us.name AS "userName"
+         FROM controle_vendas_estoque.stock_movements m
+         JOIN controle_vendas_estoque.products p ON p.id = m.product_id
+         JOIN controle_vendas_estoque.units u ON u.id = p.unit_id
+         JOIN controle_vendas_estoque.users us ON us.id = m.created_by
+        ORDER BY m.created_at DESC LIMIT 8`,
+    );
+
+    return {
+      flow: flow.rows.map(({ inQty: _a, outQty: _b, ...r }) => r),
+      flowTotals: { inValue: sum("inValue", 2), outValue: sum("outValue", 2), inQty: sum("inQty", 3), outQty: sum("outQty", 3) },
+      byCategory: byCategory.rows,
+      abc: (["A", "B", "C"] as const).map((cls) => abc.rows.find((r) => r.cls === cls) ?? { cls, products: 0, revenue: "0" }),
+      recent: recent.rows,
+    } satisfies StockDashboard;
+  },
+});

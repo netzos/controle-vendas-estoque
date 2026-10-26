@@ -30,6 +30,8 @@ const EXCLUDED = new Set([
   "roles.delete",
   "products.images.add",
   "products.images.get",
+  "customers.photo.set",
+  "customers.photo.get",
   "organization.today",
 ]);
 

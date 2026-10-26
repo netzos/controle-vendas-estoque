@@ -1,9 +1,10 @@
 import Link from "next/link";
-import { can, stockOverview, type StockStatus } from "@erp/core";
+import { can, getOrganization, MOVEMENT_LABELS, stockDashboard, stockOverview, type MovementKind, type StockStatus } from "@erp/core";
 import { requirePermission } from "@/lib/auth";
 import { query } from "@/lib/actions";
 import { money, quantity } from "@/lib/format";
-import { Kpi } from "@/components/charts";
+import { BarChart, Kpi, RankList } from "@/components/charts";
+import { AutoRefresh } from "@/components/auto-refresh";
 
 export const metadata = { title: "Painel do estoque" };
 
@@ -26,7 +27,12 @@ const days = (n: number | null) => (n == null ? "—" : n >= 365 ? "+1 ano" : `$
 export default async function StockPage({ searchParams }: { searchParams: Promise<{ filtro?: string }> }) {
   const actor = await requirePermission("stock.view");
   const params = await searchParams;
-  const { kpis, rows } = await query(stockOverview, {});
+  const [{ kpis, rows }, dash, org] = await Promise.all([query(stockOverview, {}), query(stockDashboard, {}), query(getOrganization, {})]);
+  const timeFmt = new Intl.DateTimeFormat("pt-BR", { timeZone: org.timezone, day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+  // Acaba logo: ainda tem saldo, mas no ritmo dos últimos 30 dias não passa de uma semana.
+  const endingSoon = rows.filter((r) => Number(r.stockQty) > 0 && r.coverageDays != null && r.coverageDays <= 7).sort((a, b) => a.coverageDays! - b.coverageDays!).slice(0, 6);
+  const abcTotal = dash.abc.reduce((a, c) => a + Number(c.revenue), 0);
+  const maxCategory = Math.max(...dash.byCategory.map((c) => Number(c.value)), 0);
   const filter = FILTERS.find((f) => f.key === (params.filtro ?? "")) ?? FILTERS[0]!;
   const shown = rows.filter((r) => filter.match(r.status));
   const maxValue = Math.max(...rows.map((r) => Number(r.costValue)), 0);
@@ -36,7 +42,7 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
       <div className="page-header dash-header">
         <div>
           <h1>Estoque</h1>
-          <p>Quanto tem de cada produto e por quantos dias ainda dá, no ritmo de vendas dos últimos 30 dias.</p>
+          <p>Quanto tem de cada produto e por quantos dias ainda dá, no ritmo de vendas dos últimos 30 dias. <AutoRefresh /></p>
         </div>
         {can(actor, "stock.manage") && (
           <div className="dash-actions">
@@ -63,6 +69,91 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
         <Link href="/estoque?filtro=parados" className="kpi link">
           <span className="kpi-label">Parados</span><span className="kpi-value">{kpis.idleCount}</span><span className="kpi-foot">sem venda em 30 dias</span>
         </Link>
+      </div>
+
+      <div className="dash-grid spaced">
+        <section className="card span-2">
+          <div className="card-head">
+            <h2>Saídas por dia (30 dias)</h2>
+            <span className="muted">entrou {money(dash.flowTotals.inValue)} · saiu {money(dash.flowTotals.outValue)}</span>
+          </div>
+          <BarChart
+            data={dash.flow.map((d) => ({ label: d.label, value: Number(d.outValue), detail: Number(d.inValue) > 0 ? `entrou ${money(d.inValue)}` : undefined }))}
+            format={money}
+            emptyText="Nenhuma saída nos últimos 30 dias."
+          />
+          <p className="muted small-text">Valor a preço de custo do que saiu (vendas e saídas manuais). Passe o dedo ou o mouse para ver o que entrou no dia.</p>
+        </section>
+
+        <section className="card">
+          <div className="card-head"><h2>Acaba em até 7 dias</h2></div>
+          <RankList
+            emptyText="Nenhum produto acabando nesta semana."
+            rows={endingSoon.map((r) => ({
+              key: r.id,
+              label: r.name,
+              value: days(r.coverageDays),
+              sub: `${quantity(r.stockQty)} ${r.unitCode} · vende ${quantity(r.avgDaily)}/dia`,
+              ratio: 1 - r.coverageDays! / 7,
+            }))}
+          />
+        </section>
+
+        <section className="card">
+          <div className="card-head"><h2>Dinheiro parado por categoria</h2></div>
+          <RankList
+            emptyText="Nada em estoque ainda."
+            rows={dash.byCategory.map((c) => ({
+              key: c.name,
+              label: c.name,
+              value: money(c.value),
+              sub: `${c.products} ${c.products === 1 ? "produto" : "produtos"}`,
+              ratio: maxCategory ? Number(c.value) / maxCategory : 0,
+            }))}
+          />
+        </section>
+
+        <section className="card">
+          <div className="card-head"><h2>Curva ABC (30 dias)</h2></div>
+          {abcTotal === 0 ? (
+            <p className="chart-empty">Sem vendas nos últimos 30 dias.</p>
+          ) : (
+            <ul className="abc">
+              {dash.abc.map((c) => (
+                <li key={c.cls}>
+                  <span className={`abc-cls ${c.cls}`}>{c.cls}</span>
+                  <div>
+                    <strong>{c.products} {c.products === 1 ? "produto" : "produtos"}</strong>
+                    <span className="muted">{Math.round((Number(c.revenue) / abcTotal) * 100)}% do faturamento · {money(c.revenue)}</span>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+          <p className="muted small-text">A são os que mais vendem: nunca deixe faltar. C vendem pouco: compre com cuidado.</p>
+        </section>
+
+        <section className="card">
+          <div className="card-head">
+            <h2>Últimas movimentações</h2>
+            <Link href="/estoque/movimentacoes" className="muted">Ver todas</Link>
+          </div>
+          {dash.recent.length === 0 ? (
+            <p className="chart-empty">Nenhuma movimentação ainda.</p>
+          ) : (
+            <ul className="feed">
+              {dash.recent.map((m) => (
+                <li key={m.id}>
+                  <span className={`feed-qty ${Number(m.quantity) > 0 ? "in" : "out"}`}>{Number(m.quantity) > 0 ? "+" : "−"}{quantity(String(Math.abs(Number(m.quantity))))} {m.unitCode}</span>
+                  <div>
+                    <strong>{m.productName}</strong>
+                    <span className="muted">{MOVEMENT_LABELS[m.kind as MovementKind] ?? m.kind} · {timeFmt.format(m.createdAt)} · {m.userName.split(" ")[0]}</span>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
       </div>
 
       <section className="card">
