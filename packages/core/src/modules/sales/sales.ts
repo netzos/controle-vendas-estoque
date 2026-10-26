@@ -7,6 +7,7 @@ import { decimalField, optionalText, uuidOrNull } from "../catalog/fields.ts";
 import { applyMovement, averageCost } from "../stock/movements.ts";
 import { DELIVERY_STEP, ORDER_STEP, type Fulfillment } from "../../labels.ts";
 import { cancelFollowup, followupInput, insertFollowup } from "./followups.ts";
+import { featureEnabled } from "../../features.ts";
 
 export type PaymentMethod = "cash" | "pix" | "credit" | "debit" | "other";
 
@@ -187,6 +188,14 @@ export const createSale = defineService({
     const { subtotal, cost } = totals.rows[0]!;
     if (Number(input.discount) > Number(subtotal)) throw new AppError("invalid_input", "O desconto é maior que o valor da venda.");
 
+    // Recursos opcionais que a empresa liga em Ajustes › Recursos.
+    if (input.tradeIns.length > 0 && !(await featureEnabled(tx, actor.organizationId, "trade_in"))) {
+      throw new AppError("invalid_input", "Receber item na troca está desligado. Ligue em Ajustes › Recursos.");
+    }
+    const deliveriesOn = await featureEnabled(tx, actor.organizationId, "deliveries");
+    if (!deliveriesOn && (input.fulfillment === "delivery" || input.followup)) {
+      throw new AppError("invalid_input", "Entregas e serviços depois da venda estão desligados. Ligue em Ajustes › Recursos.");
+    }
     if (input.tradeIns.length > 0 && !can(actor, "sales.trade_in")) {
       throw new AppError("forbidden", "Você não tem permissão para aceitar item na troca.");
     }
@@ -199,9 +208,10 @@ export const createSale = defineService({
     if (input.followup && !can(actor, "deliveries.manage")) {
       throw new AppError("forbidden", "Você não tem permissão para registrar entregas e etapas depois da venda.");
     }
-    const fulfillment: Fulfillment =
-      input.fulfillment ??
-      (input.followup?.address || Number(fee) > 0 || input.followup?.deliveryCost ? "delivery" : await defaultFulfillment(tx));
+    const fulfillment: Fulfillment = !deliveriesOn
+      ? "pickup"
+      : input.fulfillment ??
+        (input.followup?.address || Number(fee) > 0 || input.followup?.deliveryCost ? "delivery" : await defaultFulfillment(tx));
     if (fulfillment === "pickup" && Number(fee) > 0) {
       throw new AppError("invalid_input", "Venda com retirada no local não tem taxa de entrega. Escolha Entrega para cobrar o frete.");
     }
@@ -276,7 +286,8 @@ export const createSale = defineService({
     const owed = lines.filter((l) => l.backorder > 0).map((l) => `${fmtQty(l.backorder)} × ${l.product.name}`);
     const extra: { name: string; notes?: string; cost?: string }[] = owed.length > 0 ? [{ name: ORDER_STEP, notes: `Pedir: ${owed.join("; ")}` }] : [];
     if (fulfillment === "delivery") extra.push({ name: DELIVERY_STEP, cost: input.followup?.deliveryCost });
-    await insertFollowup(tx, actor, sale.id, ids, input.followup ?? {}, extra, fulfillment === "pickup" ? [DELIVERY_STEP] : []);
+    // Sem o recurso de entregas, a venda não abre etapas (o que faltou fica em backorder_qty).
+    if (deliveriesOn) await insertFollowup(tx, actor, sale.id, ids, input.followup ?? {}, extra, fulfillment === "pickup" ? [DELIVERY_STEP] : []);
 
     await audit({
       action: "sale.create",

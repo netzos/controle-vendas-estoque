@@ -41,7 +41,6 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       topbar={
         <div className="topbar-actions">
           {telegram && <TelegramButton linked={telegramLinked} />}
-          {developer && <Link href="/plataforma" className="button secondary small">Painel da plataforma</Link>}
           <OrganizationSwitcher
             organizations={organizations}
             activeId={actor.organizationId}

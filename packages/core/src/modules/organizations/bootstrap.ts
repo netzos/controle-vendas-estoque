@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { Db, Tx } from "@erp/db";
 import { setTenant, withTransaction } from "@erp/db";
 import { z } from "zod";
+import { seedCompanyFeatures } from "../../features.ts";
 import { recordAudit } from "../../audit.ts";
 import { AppError, parseInput } from "../../errors.ts";
 import { emitEvent } from "../../outbox.ts";
@@ -77,6 +78,8 @@ export async function createOrganizationTx(
      SELECT $1, t.name, t.description, t.ord - 1 FROM unnest($2::text[], $3::text[]) WITH ORDINALITY AS t(name, description, ord)`,
     [organizationId, DEFAULT_STEP_TYPES.map((t) => t[0]), DEFAULT_STEP_TYPES.map((t) => t[1])],
   );
+
+  await seedCompanyFeatures(tx, organizationId);
 
   let ownerRoleId = "";
   for (const role of SYSTEM_ROLES) {

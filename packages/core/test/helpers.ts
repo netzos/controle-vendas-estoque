@@ -8,6 +8,8 @@ import { createOrganization, setupFirstAdmin } from "../src/modules/organization
 import { addMember } from "../src/modules/access/members.ts";
 import { listRoles } from "../src/modules/access/roles.ts";
 import { runService } from "../src/service.ts";
+import { COMPANY_FEATURES } from "../src/features.ts";
+import { withTenant } from "@erp/db";
 
 const MIGRATIONS = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../db/migrations");
 
@@ -40,11 +42,26 @@ export async function setupTestDb(): Promise<TestDb> {
 
 export const PASSWORD = "senha-forte-123";
 
+// Os testes antigos contam com entregas, troca, custos e campos ligados; empresa
+// nova de verdade nasce com eles desligados (Ajustes › Recursos).
+export async function enableAllFeatures(db: Db, organizationId: string, enabled = true) {
+  await withTenant(db, { organizationId, userId: null }, async (tx) => {
+    for (const f of COMPANY_FEATURES) {
+      await tx.query(
+        `INSERT INTO controle_vendas_estoque.organization_settings (organization_id, key, value) VALUES ($1, $2, $3)
+         ON CONFLICT (organization_id, key) DO UPDATE SET value = EXCLUDED.value`,
+        [organizationId, `features.${f.key}`, JSON.stringify(enabled)],
+      );
+    }
+  });
+}
+
 export async function seedCompany(db: Db, name = "Empresa Teste", email = `dono-${Math.random().toString(36).slice(2)}@teste.com`) {
   // setupFirstAdmin só roda no banco vazio; nos demais casos criamos direto.
   const { rows } = await db.query("SELECT 1 FROM controle_vendas_estoque.users LIMIT 1");
   if (rows.length === 0) {
     const r = await setupFirstAdmin(db, { name: "Dono", email, password: PASSWORD, organization: { name } });
+    await enableAllFeatures(db, r.organizationId);
     return { ...r, email };
   }
   const u = await db.query<{ id: string }>(
@@ -52,6 +69,7 @@ export async function seedCompany(db: Db, name = "Empresa Teste", email = `dono-
     [email, await hashPassword(PASSWORD)],
   );
   const org = await createOrganization(db, u.rows[0]!.id, { name });
+  await enableAllFeatures(db, org.organizationId);
   return { userId: u.rows[0]!.id, ...org, email };
 }
 

@@ -160,7 +160,7 @@ export function SaleForm({
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   {p.imageId && <img className="pos-thumb" src={`/imagens/${p.imageId}`} alt="" loading="lazy" />}
                   <span className="pos-name">{p.name}</span>
-                  <span className="pos-price">{money(p.price)}</span>
+                  <span className="pos-price">{money(p.price)} <small>/ {p.unitCode}</small></span>
                   <span className={`pos-stock${p.trackStock && stock <= 0 ? " out" : ""}`}>
                     {!p.trackStock
                       ? ITEM_TYPES[p.itemType].label
