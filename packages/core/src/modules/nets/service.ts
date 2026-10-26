@@ -416,7 +416,8 @@ export async function processNetsTurn(
       return;
     }
 
-    const { tools, definitions } = netsTools(actor);
+    const { tools } = netsTools(actor);
+    let definitions = netsTools(actor, { lazy: true }).definitions;
     const model = deps.model ?? defaultNetsModel;
     const texts: string[] = [];
     const cleaned: string[] = [];
@@ -425,7 +426,7 @@ export async function processNetsTurn(
     let usedModel: string = NETS_MODEL;
     try {
       for (let step = 0; step < MAX_STEPS; step++) {
-        const response = await model({
+        const request = (defs: typeof definitions) => model({
           model: NETS_MODEL,
           max_tokens: 16000,
           output_config: { effort: "medium" },
@@ -433,9 +434,19 @@ export async function processNetsTurn(
           // mensagem pagam só o que é novo.
           cache_control: { type: "ephemeral" },
           system,
-          tools: definitions,
+          tools: defs,
           messages,
         });
+        let response: Anthropic.Beta.BetaMessage;
+        try {
+          response = await request(definitions);
+        } catch (err) {
+          // Se a API recusar a busca de ferramentas, segue com todas abertas (mais caro, mas responde).
+          if (!(err instanceof Anthropic.BadRequestError) || definitions.every((d) => !("defer_loading" in d))) throw err;
+          console.error("nets tool search refused", err.message);
+          definitions = netsTools(actor).definitions;
+          response = await request(definitions);
+        }
         addAiUsage(used, response.usage);
         usedModel = response.model ?? usedModel;
         for (const b of response.content) {

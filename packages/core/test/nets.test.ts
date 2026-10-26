@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { after, before, beforeEach, describe, it } from "node:test";
-import type Anthropic from "@anthropic-ai/sdk";
+import Anthropic from "@anthropic-ai/sdk";
 import {
   AppError,
   decideNetsAction,
@@ -70,6 +70,27 @@ async function say(actor: Actor, text: string, model: NetsModel, context?: strin
 }
 
 describe("Netz", () => {
+  it("só as ferramentas do dia a dia vêm abertas; o resto fica atrás da busca", async () => {
+    const s = script([{ type: "text", text: "oi" }]);
+    await say(owner, "oi", s.model);
+    const tools = s.requests[0]!.tools as Array<{ name: string; type?: string; defer_loading?: boolean }>;
+    assert.equal(tools[0]!.name, "tool_search_tool_bm25");
+    assert.ok(!tools.find((d) => d.name === "sales_create")!.defer_loading);
+    assert.equal(tools.find((d) => d.name === "commissions_panel")!.defer_loading, true);
+  });
+
+  it("se a API recusar a busca, responde com todas as ferramentas abertas", async () => {
+    const s = script([{ type: "text", text: "oi de novo" }]);
+    let calls = 0;
+    const model: NetsModel = async (req) => {
+      if (calls++ === 0) throw new Anthropic.BadRequestError(400, undefined, "tool search not supported", new Headers());
+      return s.model(req);
+    };
+    const reply = await say(owner, "oi", model);
+    assert.equal(reply.body, "oi de novo");
+    assert.ok(!(s.requests[0]!.tools as Array<{ defer_loading?: boolean }>).some((d) => d.defer_loading));
+  });
+
   it("lista colada vira um cartão só e cada pedido usa o cache", async () => {
     const nomes = ["Lote Ana", "Lote Bruno", "Lote Carla"];
     const s = script(

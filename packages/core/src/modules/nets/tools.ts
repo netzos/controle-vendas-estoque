@@ -46,6 +46,15 @@ export const DELIVERIES_TOOL = "ver_mensagens_entregues";
 export const PERSON_NOTE_TOOL = "anotar_jeito";
 export const BATCH_TOOL = "propor_lote";
 export const BATCH_LIMIT = 200;
+export const TOOL_SEARCH = "tool_search_tool_bm25";
+
+// Ferramentas sempre à mão (o dia a dia). As outras ficam guardadas e a Netz
+// busca quando precisa, como as skills do pi: o pedido leva ~10 mil tokens fixos
+// em vez de ~24 mil.
+const ALWAYS = new Set([
+  "products_list", "products_create", "customers_list", "customers_create", "suppliers_list",
+  "sales_list", "sales_create", "sales_dashboard", "stock_overview", "stock_move",
+]);
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyService = ServiceDefinition<z.ZodType, any>;
@@ -213,14 +222,18 @@ function batchTool(writable: string[]): Anthropic.Beta.BetaTool {
   };
 }
 
-/** Ferramentas que esta pessoa pode usar, sempre na mesma ordem (cache). */
-export function netsTools(actor: Actor): { tools: NetsTool[]; definitions: Anthropic.Beta.BetaTool[] } {
+/**
+ * Ferramentas que esta pessoa pode usar, sempre na mesma ordem (cache).
+ * lazy: as fora do dia a dia ficam guardadas atrás da busca de ferramentas.
+ */
+export function netsTools(actor: Actor, opts: { lazy?: boolean } = {}): { tools: NetsTool[]; definitions: Array<Anthropic.Beta.BetaTool | Anthropic.Beta.Messages.BetaToolSearchToolBm25_20251119> } {
   const tools = TOOLS.filter((t) => !t.service.permission || can(actor, t.service.permission));
   const writable = tools.filter((t) => !t.read).map((t) => t.name);
   return {
     tools,
     definitions: [
-      ...tools.map((t) => t.definition),
+      ...(opts.lazy ? [{ type: "tool_search_tool_bm25_20251119", name: TOOL_SEARCH } as const] : []),
+      ...tools.map((t) => (opts.lazy && !ALWAYS.has(t.name) ? { ...t.definition, defer_loading: true } : t.definition)),
       ...(writable.length ? [batchTool(writable)] : []),
       improvementTool, improvementListTool, improvementComplementTool, deliveriesTool, personNoteTool,
     ],
