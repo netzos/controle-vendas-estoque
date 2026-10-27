@@ -1,7 +1,7 @@
 import type { Tx } from "@erp/db";
 import { z } from "zod";
 import { can } from "../../context.ts";
-import { AppError, notFound } from "../../errors.ts";
+import { AppError, forbidden, notFound } from "../../errors.ts";
 import { defineService } from "../../service.ts";
 import { decimalField, optionalText, uuidOrNull } from "../catalog/fields.ts";
 import { applyMovement, averageCost } from "../stock/movements.ts";
@@ -65,6 +65,9 @@ export interface Sale {
   number: number;
   customerId: string | null;
   customerName: string | null;
+  /** Filial da venda; null = da empresa toda. */
+  branchId: string | null;
+  branchName: string | null;
   status: "completed" | "cancelled";
   paymentMethod: PaymentMethod;
   subtotal: string;
@@ -86,7 +89,8 @@ export interface Sale {
   cancelReason: string | null;
 }
 
-const SALE_COLUMNS = `s.id, s.number, s.customer_id AS "customerId", c.name AS "customerName", s.status,
+const SALE_COLUMNS = `s.id, s.number, s.customer_id AS "customerId", c.name AS "customerName",
+  s.branch_id AS "branchId", (SELECT b.name FROM controle_vendas_estoque.branches b WHERE b.id = s.branch_id) AS "branchName", s.status,
   s.payment_method AS "paymentMethod", s.subtotal::text AS subtotal, s.discount::text AS discount, s.total::text AS total,
   s.trade_in_total::text AS "tradeInTotal", s.paid_total::text AS "paidTotal", s.payment_status AS "paymentStatus",
   s.delivery_fee::text AS "deliveryFee", s.fulfillment,
@@ -111,6 +115,8 @@ export const createSale = defineService({
   risk: 3,
   input: z.object({
     customerId: uuidOrNull,
+    // Sem filial: a do cliente, ou a única filial de quem vende.
+    branchId: uuidOrNull,
     // Pago de uma forma só, tudo na hora. Para dividir ou deixar parte para
     // depois, use payments (o que não for pago fica a receber).
     paymentMethod: z.enum(["cash", "pix", "credit", "debit", "other"]).optional(),
@@ -159,9 +165,17 @@ export const createSale = defineService({
       .optional(),
   }),
   async handler({ tx, actor, audit, emit }, input) {
+    let branchId = input.branchId ?? null;
     if (input.customerId) {
-      const c = await tx.query("SELECT 1 FROM controle_vendas_estoque.customers WHERE id = $1", [input.customerId]);
+      const c = await tx.query<{ branchId: string | null }>("SELECT branch_id AS \"branchId\" FROM controle_vendas_estoque.customers WHERE id = $1", [input.customerId]);
       if (!c.rowCount) throw new AppError("invalid_input", "Cliente não encontrado.");
+      branchId ??= c.rows[0]!.branchId;
+    }
+    if (!branchId && actor.branchIds?.length === 1) branchId = actor.branchIds[0]!;
+    if (branchId) {
+      if (actor.branchIds && !actor.branchIds.includes(branchId)) throw forbidden("Você não vende por esta filial.");
+      const b = await tx.query("SELECT 1 FROM controle_vendas_estoque.branches WHERE id = $1", [branchId]);
+      if (!b.rowCount) throw new AppError("invalid_input", "Filial inválida.");
     }
 
     const ids = [...new Set(input.items.map((i) => i.productId))];
@@ -265,12 +279,12 @@ export const createSale = defineService({
     const { rows } = await tx.query<{ id: string; number: number; total: string }>(
       `INSERT INTO controle_vendas_estoque.sales
          (organization_id, number, customer_id, payment_method, subtotal, discount, total, cost_total, notes, created_by, trade_in_total, delivery_fee, fulfillment,
-          paid_total, payment_status)
+          paid_total, payment_status, branch_id)
        VALUES ($1, (SELECT coalesce(max(number), 0) + 1 FROM controle_vendas_estoque.sales WHERE organization_id = $1),
-               $2, $3, $4, $5, $4::numeric - $5::numeric + $10::numeric, $6, $7, $8, $9, $10, $11, $12, $13)
+               $2, $3, $4, $5, $4::numeric - $5::numeric + $10::numeric, $6, $7, $8, $9, $10, $11, $12, $13, $14)
        RETURNING id, number, total::text AS total`,
       [actor.organizationId, input.customerId ?? null, mainMethod, subtotal, input.discount, cost, input.notes ?? null, actor.userId,
-        tradeTotal.toFixed(2), fee, fulfillment, (paidCents / 100).toFixed(2), paymentStatus],
+        tradeTotal.toFixed(2), fee, fulfillment, (paidCents / 100).toFixed(2), paymentStatus, branchId],
     );
     const sale = { ...rows[0]!, paymentStatus, paidTotal: (paidCents / 100).toFixed(2), toPay: (toPayCents / 100).toFixed(2) };
     for (const p of payments) {
@@ -433,16 +447,20 @@ export const listSales = defineService({
     search: z.string().trim().max(100).optional(),
     // Só as que ainda têm algo a receber (pagamento parcial ou a receber).
     openPayment: z.boolean().default(false),
+    // Só as vendas desta filial.
+    branchId: z.string().uuid().optional(),
     limit: z.number().int().min(1).max(500).default(100),
   }),
-  async handler({ tx }, input) {
+  async handler({ tx, actor }, input) {
     const term = input.search?.replace(/^n[ºo°]?\s*/i, "") ?? "";
     const { rows } = await tx.query<Sale>(
       `SELECT ${SALE_COLUMNS} FROM ${SALE_FROM}
         WHERE ($1 = '' OR s.number::text = $1 OR lower(c.name) LIKE '%' || lower($1) || '%')
           AND (NOT $3 OR (s.payment_status <> 'paid' AND s.status = 'completed'))
+          AND ($4::uuid IS NULL OR s.branch_id = $4)
+          AND ($5::uuid[] IS NULL OR s.branch_id IS NULL OR s.branch_id = ANY($5))
         ORDER BY s.sold_at DESC LIMIT $2`,
-      [term, input.limit, input.openPayment],
+      [term, input.limit, input.openPayment, input.branchId ?? null, actor.branchIds],
     );
     return rows;
   },
@@ -512,8 +530,16 @@ export const salesDashboard = defineService({
   description: "Painel de vendas: faturamento, número de vendas, ticket médio, lucro, comparação com o período anterior e mais vendidos",
   permission: "sales.view",
   risk: 1,
-  input: z.object({ period: z.enum(["today", "7d", "30d", "month"]).default("today") }),
+  input: z.object({
+    period: z.enum(["today", "7d", "30d", "month"]).default("today"),
+    // Só as vendas desta filial (os outros custos continuam da empresa toda).
+    branchId: z.string().uuid().optional(),
+  }),
   async handler({ tx }, input) {
+    // Com filial, cada consulta lê só as vendas dela. O id já foi validado como UUID.
+    const SALES = input.branchId
+      ? `(SELECT * FROM controle_vendas_estoque.sales WHERE branch_id = '${input.branchId}')`
+      : "controle_vendas_estoque.sales";
     // Intervalo [start, end) no fuso da empresa, e o intervalo anterior de mesmo tamanho.
     const range = await tx.query<{ start: Date; end: Date; prevStart: Date; tz: string }>(
       `WITH tz AS (SELECT timezone AS tz FROM controle_vendas_estoque.organizations WHERE id = controle_vendas_estoque.current_org()),
@@ -538,9 +564,9 @@ export const salesDashboard = defineService({
                   WHERE k.status = 'active' AND k.incurred_on >= ($1::timestamptz AT TIME ZONE $3)::date
                     AND k.incurred_on < ($2::timestamptz AT TIME ZONE $3)::date)::text AS other,
                 coalesce((SELECT sum(i.quantity) FROM controle_vendas_estoque.sale_items i
-                           JOIN controle_vendas_estoque.sales s2 ON s2.id = i.sale_id
+                           JOIN ${SALES} s2 ON s2.id = i.sale_id
                           WHERE s2.status = 'completed' AND s2.sold_at >= $1 AND s2.sold_at < $2), 0)::text AS items
-           FROM controle_vendas_estoque.sales WHERE status = 'completed' AND sold_at >= $1 AND sold_at < $2`,
+           FROM ${SALES} sf WHERE status = 'completed' AND sold_at >= $1 AND sold_at < $2`,
         [from, to, tz],
       );
       const r = rows[0]!;
@@ -568,13 +594,13 @@ export const salesDashboard = defineService({
         ? `SELECT lpad(h::text, 2, '0') || 'h' AS label,
                   coalesce(sum(s.total), 0)::text AS revenue, count(s.id)::int AS count
              FROM generate_series(0, 23) h
-             LEFT JOIN controle_vendas_estoque.sales s
+             LEFT JOIN ${SALES} s
                ON s.status = 'completed' AND s.sold_at >= $1 AND s.sold_at < $2
               AND extract(hour FROM s.sold_at AT TIME ZONE $3)::int = h
             GROUP BY h ORDER BY h`
         : `SELECT to_char(d, 'DD/MM') AS label, coalesce(sum(s.total), 0)::text AS revenue, count(s.id)::int AS count
              FROM generate_series(($1::timestamptz AT TIME ZONE $3)::date, ($2::timestamptz AT TIME ZONE $3)::date - 1, interval '1 day') d
-             LEFT JOIN controle_vendas_estoque.sales s
+             LEFT JOIN ${SALES} s
                ON s.status = 'completed' AND (s.sold_at AT TIME ZONE $3)::date = d::date
             GROUP BY d ORDER BY d`,
       [start, end, tz],
@@ -583,7 +609,7 @@ export const salesDashboard = defineService({
     const top = await tx.query<{ productId: string; name: string; unitCode: string; quantity: string; revenue: string }>(
       `SELECT p.id AS "productId", p.name, u.code AS "unitCode", sum(i.quantity)::text AS quantity, sum(i.total)::text AS revenue
          FROM controle_vendas_estoque.sale_items i
-         JOIN controle_vendas_estoque.sales s ON s.id = i.sale_id AND s.status = 'completed'
+         JOIN ${SALES} s ON s.id = i.sale_id AND s.status = 'completed'
          JOIN controle_vendas_estoque.products p ON p.id = i.product_id
          JOIN controle_vendas_estoque.units u ON u.id = p.unit_id
         WHERE s.sold_at >= $1 AND s.sold_at < $2
@@ -596,10 +622,10 @@ export const salesDashboard = defineService({
     const payments = await tx.query<{ method: PaymentMethod | "trade_in"; revenue: string; count: number }>(
       `SELECT method, sum(amount)::text AS revenue, count(DISTINCT sale_id)::int AS count FROM (
          SELECT p.method, p.amount, p.sale_id FROM controle_vendas_estoque.sale_payments p
-           JOIN controle_vendas_estoque.sales s ON s.id = p.sale_id
+           JOIN ${SALES} s ON s.id = p.sale_id
           WHERE s.status = 'completed' AND s.sold_at >= $1 AND s.sold_at < $2
          UNION ALL
-         SELECT 'trade_in', trade_in_total, id FROM controle_vendas_estoque.sales
+         SELECT 'trade_in', trade_in_total, id FROM ${SALES} sf
           WHERE status = 'completed' AND sold_at >= $1 AND sold_at < $2 AND trade_in_total > 0
        ) x GROUP BY method ORDER BY sum(amount) DESC`,
       [start, end],
@@ -608,17 +634,17 @@ export const salesDashboard = defineService({
     // Tudo o que ainda falta receber, de qualquer data.
     const open = await tx.query<{ amount: string; count: number }>(
       `SELECT coalesce(sum(total - trade_in_total - paid_total), 0)::text AS amount, count(*)::int AS count
-         FROM controle_vendas_estoque.sales WHERE status = 'completed' AND payment_status <> 'paid'`,
+         FROM ${SALES} sf WHERE status = 'completed' AND payment_status <> 'paid'`,
     );
 
     const hours = await tx.query<{ hour: number; revenue: string; count: number }>(
       `SELECT extract(hour FROM sold_at AT TIME ZONE $3)::int AS hour, sum(total)::text AS revenue, count(*)::int AS count
-         FROM controle_vendas_estoque.sales WHERE status = 'completed' AND sold_at >= $1 AND sold_at < $2
+         FROM ${SALES} sf WHERE status = 'completed' AND sold_at >= $1 AND sold_at < $2
         GROUP BY 1 ORDER BY 1`,
       [start, end, tz],
     );
 
-    const recent = await tx.query<Sale>(`SELECT ${SALE_COLUMNS} FROM ${SALE_FROM} ORDER BY s.sold_at DESC LIMIT 6`);
+    const recent = await tx.query<Sale>(`SELECT ${SALE_COLUMNS} FROM ${SALE_FROM.replace("controle_vendas_estoque.sales s", `${SALES} s`)} ORDER BY s.sold_at DESC LIMIT 6`);
 
     // Retiradas no local x entregas, com o que o transporte custou.
     const ways = await tx.query<{ fulfillment: Fulfillment; count: number; revenue: string; fees: string; transport: string }>(
@@ -626,7 +652,7 @@ export const salesDashboard = defineService({
               coalesce(sum((SELECT sum(k.amount) FROM controle_vendas_estoque.costs k
                              JOIN controle_vendas_estoque.sale_steps t ON t.id = k.step_id
                             WHERE k.sale_id = s.id AND k.status = 'active' AND lower(t.name) = lower($3))), 0)::text AS transport
-         FROM controle_vendas_estoque.sales s WHERE s.status = 'completed' AND s.sold_at >= $1 AND s.sold_at < $2
+         FROM ${SALES} s WHERE s.status = 'completed' AND s.sold_at >= $1 AND s.sold_at < $2
         GROUP BY s.fulfillment`,
       [start, end, DELIVERY_STEP],
     );

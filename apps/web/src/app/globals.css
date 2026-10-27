@@ -119,6 +119,8 @@ button.link { background: none; border: none; color: var(--accent); padding: 0; 
 .alert { border-radius: var(--radius-sm); padding: 12px 14px; margin-bottom: 14px; }
 .alert.error { background: var(--danger-soft); color: var(--danger); }
 .alert.success { background: var(--success-soft); color: var(--success); }
+.alert.warn { background: var(--warning-soft); color: var(--warning); }
+tr.row-warn td { background: var(--warning-soft); }
 .table-wrap { overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; }
 th, td { text-align: left; padding: 14px 12px; border-bottom: 1px solid var(--border); vertical-align: middle; }
@@ -764,3 +766,8 @@ summary .edit-hint { float: right; font-size: 13px; color: var(--muted); font-we
 .inline-form input[name="rate"] { width: 64px; padding: 6px 8px; }
 .bar-track { height: 4px; margin-top: 6px; background: var(--surface-2); border-radius: 4px; overflow: hidden; max-width: 160px; }
 .bar-track span { display: block; height: 100%; background: var(--accent); }
+
+/* Primeiros passos */
+.onboarding { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); margin-bottom: 14px; }
+.onboarding .card { margin-bottom: 0; }
+.onboarding-step.done h2::after { content: " ✓"; color: var(--success); }

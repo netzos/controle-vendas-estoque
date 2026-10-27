@@ -13,7 +13,9 @@ import {
   platformFeatures,
   platformOrganizationDetail,
   platformOrganizationMonitoring,
+  platformUsageRecent,
   platformUsdBrl,
+  USAGE_CALL_ALERT_BRL,
   USAGE_LABELS,
   type ImprovementStatus,
 } from "@erp/core";
@@ -31,6 +33,9 @@ export const metadata = { title: "Ficha da empresa" };
 const IMP_STATUS: Record<ImprovementStatus, string> = {
   new: "Novo", analysis: "Em análise", approved: "Aprovado", building: "Em desenvolvimento", published: "Publicado", rejected: "Recusado",
 };
+const USAGE_FEATURES: Record<string, string> = {
+  netz: "Resposta da Netz", improvements_analysis: "Análise de melhorias", nets_guidance: "Manual da Netz", telegram_audio: "Áudio do Telegram", panel_audio: "Áudio do painel",
+};
 const CHANNEL: Record<string, string> = { web: "Painel", telegram: "Telegram", api: "Integração", system: "Sistema", whatsapp: "WhatsApp" };
 
 export default async function OrganizationDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -43,12 +48,13 @@ export default async function OrganizationDetailPage({ params }: { params: Promi
     if (isAppError(err) && err.code === "not_found") notFound();
     throw err;
   }
-  const [features, viewer, rate, billingNotes, monitoring] = await Promise.all([
+  const [features, viewer, rate, billingNotes, monitoring, calls] = await Promise.all([
     platformFeatures(db(), actor.userId),
     improvementViewer(db(), await currentActor()),
     platformUsdBrl(db()),
     platformBillingNotes(db(), actor.userId, id),
     platformOrganizationMonitoring(db(), actor.userId, id),
+    platformUsageRecent(db(), actor.userId, id),
   ]);
   const improvements = await listImprovements(db(), viewer, { organizationId: id, includeMerged: true });
   const { organization: o, members, dailySales, activity, notes, signup } = detail;
@@ -64,6 +70,9 @@ export default async function OrganizationDetailPage({ params }: { params: Promi
   const cost30 = Number(o.usageCost30dUsd) * rate;
   const costMonth = Number(o.usageCostMonthUsd) * rate;
   const margin = Number(o.monthlyPrice) - cost30;
+  const callBrl = (c: { costUsd: string }) => Number(c.costUsd) * rate;
+  const expensive = calls.filter((c) => callBrl(c) > USAGE_CALL_ALERT_BRL).length;
+  const tokens = new Intl.NumberFormat("pt-BR");
 
   return (
     <>
@@ -215,6 +224,40 @@ export default async function OrganizationDetailPage({ params }: { params: Promi
           <p className="muted small-text">O custo em reais usa a cotação de {money(rate)} por dólar (muda em Receita e custos). Custos fixos da plataforma não entram aqui.</p>
         </section>
       </div>
+
+      <section className="card">
+        <div className="card-head">
+          <h2>Custo por resposta</h2>
+          <span className="muted">últimas {calls.length} chamadas de IA e áudio</span>
+        </div>
+        {expensive > 0 && (
+          <p className="alert warn">{expensive} {expensive === 1 ? "resposta passou" : "respostas passaram"} de {money(USAGE_CALL_ALERT_BRL)}. Veja o modelo e as palavras lidas e escritas abaixo.</p>
+        )}
+        {calls.length === 0 ? (
+          <p className="muted">Nenhum uso de IA ainda.</p>
+        ) : (
+          <div className="table-wrap">
+            <table>
+              <thead><tr><th>Quando</th><th>Uso</th><th>Modelo</th><th className="num">Lidas</th><th className="num">Do cache</th><th className="num">Guardadas no cache</th><th className="num">Escritas</th><th className="num">Custo</th></tr></thead>
+              <tbody>
+                {calls.map((c, i) => (
+                  <tr key={i} className={callBrl(c) > USAGE_CALL_ALERT_BRL ? "row-warn" : ""}>
+                    <td>{dateTime.format(new Date(c.createdAt))}</td>
+                    <td>{USAGE_FEATURES[c.feature] ?? c.feature}</td>
+                    <td>{c.model}</td>
+                    <td className="num">{c.kind === "ai" ? tokens.format(c.inputTokens) : `${c.seconds}s`}</td>
+                    <td className="num">{c.kind === "ai" ? tokens.format(c.cacheReadTokens) : ""}</td>
+                    <td className="num">{c.kind === "ai" ? tokens.format(c.cacheWriteTokens) : ""}</td>
+                    <td className="num">{c.kind === "ai" ? tokens.format(c.outputTokens) : ""}</td>
+                    <td className="num">{money(callBrl(c))}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <p className="muted small-text">Contado em tokens (pedaços de palavra). Ler do cache sai 10 a 20 vezes mais barato; guardar no cache e escrever são as partes caras.</p>
+      </section>
 
       <section className="card">
         <div className="card-head">

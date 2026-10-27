@@ -114,6 +114,7 @@ export const NAVIGATION: NavGroup[] = [
     icon: "sliders",
     hub: "/ajustes",
     items: [
+      { label: "Primeiros passos", href: "/primeiros-passos", permission: "customers.manage", phase: 2, section: "Empresa", description: "Traga clientes de uma planilha, no seu ritmo" },
       { label: "Dados da empresa", href: "/administracao/empresa", permission: "organization.view", phase: 1, section: "Empresa", description: "Nome, documento e contato" },
       { label: "Filiais", href: "/administracao/filiais", permission: "branches.view", phase: 1, section: "Empresa", description: "Lojas ou pontos de venda" },
       { label: "Configurações gerais", href: "/administracao/configuracoes", permission: "settings.view", phase: 1, section: "Empresa", description: "Nome nos documentos, semana e casas decimais" },

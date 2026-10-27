@@ -129,14 +129,15 @@ describe("Netz no Telegram", () => {
     const { messages } = await listNetsMessages(t.app, owner);
     assert.equal(messages.at(-1)!.actionStatus, "pending");
 
-    const done = script([{ type: "text", text: "Pronto, cadastrado." }]);
+    // Sem próximo passo, o aviso de "feito" sai do próprio sistema, sem IA.
+    const done = script();
     await handleTelegramUpdate(
       t.app,
       { update_id: nextUpdate++, callback_query: { id: "cb1", from: tgUser, data: buttons[0]!.callback_data, message: { message_id: 5, chat: { id: 777, type: "private" } } } },
       { api: f.api, model: done },
     );
     assert.equal((await runService(t.app, listProducts, owner, { search: "Orient" })).length, 1);
-    assert.equal(f.sent().at(-1), "Pronto, cadastrado.");
+    assert.equal(f.sent().at(-1), "Pronto, feito: Cadastrar Relógio Orient por R$ 900.");
     assert.ok(f.calls.some((c) => c.method === "editMessageReplyMarkup"));
     assert.ok(f.calls.some((c) => c.method === "answerCallbackQuery" && c.params.text === "Feito"));
   });

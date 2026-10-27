@@ -34,6 +34,8 @@ const EXCLUDED = new Set([
   "customers.photo.set",
   "customers.photo.get",
   "organization.today",
+  // A Netz importa listas com propor_lote (um cartão só).
+  "customers.import",
 ]);
 
 // Consultas rodam na hora; o resto vira proposta para a pessoa confirmar.
@@ -45,6 +47,7 @@ export const IMPROVEMENT_COMPLEMENT_TOOL = "complementar_melhoria";
 export const DELIVERIES_TOOL = "ver_mensagens_entregues";
 export const PERSON_NOTE_TOOL = "anotar_jeito";
 export const BATCH_TOOL = "propor_lote";
+export const ESCALATE_TOOL = "pensar_com_calma";
 export const BATCH_LIMIT = 200;
 export const TOOL_SEARCH = "tool_search_tool_bm25";
 
@@ -93,6 +96,12 @@ const ALL: AnyService[] = [
   .filter((s) => !EXCLUDED.has(s.name))
   .sort((a, b) => a.name.localeCompare(b.name));
 
+// Sem _continua, a confirmação é respondida pelo próprio sistema, sem chamar a IA.
+const CONTINUE_PROP = {
+  type: "boolean",
+  description: "true só se, depois desta ação, o pedido da pessoa ainda tiver outro passo (ex.: cadastrar o cliente e depois lançar a venda dele). Sem isso, o sistema só avisa que foi feito.",
+};
+
 function build(service: AnyService): NetsTool {
   const read = service.risk === 1 && READ.test(service.name);
   const schema = trim(z.toJSONSchema(service.input, { io: "input", unrepresentable: "any" })) as {
@@ -103,6 +112,7 @@ function build(service: AnyService): NetsTool {
   if (!read) {
     schema.properties = {
       _resumo: { type: "string", maxLength: 300, description: "Uma frase dizendo o que vai acontecer, para o cartão de confirmação." },
+      _continua: CONTINUE_PROP,
       ...schema.properties,
     };
     schema.required = ["_resumo", ...(schema.required ?? [])];
@@ -181,6 +191,16 @@ const deliveriesTool: Anthropic.Beta.BetaTool = {
   },
 };
 
+// A Netz responde num modelo rápido e barato; quando o pedido pede raciocínio,
+// ela chama esta ferramenta e um modelo mais forte continua o mesmo turno.
+const escalateTool: Anthropic.Beta.BetaTool = {
+  name: ESCALATE_TOOL,
+  description:
+    "Passa a resposta para um modelo mais forte. Use antes de começar quando o pedido exigir análise ou comparação de números, planejamento, várias etapas ligadas, " +
+    "ou quando você não tiver certeza do que fazer. Não use para consultas, cadastros, vendas simples ou conversa. Roda na hora.",
+  input_schema: { type: "object", properties: { motivo: { type: "string", maxLength: 200, description: "Por que precisa pensar com calma, numa frase." } } },
+};
+
 const personNoteTool: Anthropic.Beta.BetaTool = {
   name: PERSON_NOTE_TOOL,
   description:
@@ -208,6 +228,7 @@ function batchTool(writable: string[]): Anthropic.Beta.BetaTool {
       type: "object",
       properties: {
         _resumo: { type: "string", maxLength: 300, description: "Uma frase dizendo o que vai acontecer. Ex.: \"Cadastrar 25 clientes da lista\"." },
+        _continua: CONTINUE_PROP,
         ferramenta: { type: "string", enum: writable, description: "A ferramenta que roda em cada item." },
         itens: {
           type: "array",
@@ -235,14 +256,14 @@ export function netsTools(actor: Actor, opts: { lazy?: boolean } = {}): { tools:
       ...(opts.lazy ? [{ type: "tool_search_tool_bm25_20251119", name: TOOL_SEARCH } as const] : []),
       ...tools.map((t) => (opts.lazy && !ALWAYS.has(t.name) ? { ...t.definition, defer_loading: true } : t.definition)),
       ...(writable.length ? [batchTool(writable)] : []),
-      improvementTool, improvementListTool, improvementComplementTool, deliveriesTool, personNoteTool,
+      improvementTool, improvementListTool, improvementComplementTool, deliveriesTool, personNoteTool, escalateTool,
     ],
   };
 }
 
 /** Todas as ferramentas da Netz, para a tela da Plataforma (cada pessoa só recebe as permitidas). */
 export function netsToolCatalog(): Array<{ name: string; description: string }> {
-  return [...TOOLS.map((t) => t.definition), batchTool(TOOLS.filter((t) => !t.read).map((t) => t.name)), improvementTool, improvementListTool, improvementComplementTool, deliveriesTool, personNoteTool].map((d) => ({
+  return [...TOOLS.map((t) => t.definition), batchTool(TOOLS.filter((t) => !t.read).map((t) => t.name)), improvementTool, improvementListTool, improvementComplementTool, deliveriesTool, personNoteTool, escalateTool].map((d) => ({
     name: d.name,
     description: d.description ?? "",
   }));

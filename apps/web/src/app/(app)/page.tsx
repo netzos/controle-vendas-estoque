@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { can, enabledFeatures, FULFILLMENTS, getOrganization, PAYMENT_LABELS, salesDashboard, stepCounts, stockOverview, telegramConfigured, telegramOrganizationOf, type SalesPeriod } from "@erp/core";
+import { can, enabledFeatures, FULFILLMENTS, getOrganization, listBranches, listCustomers, PAYMENT_LABELS, salesDashboard, stepCounts, stockOverview, telegramConfigured, telegramOrganizationOf, type SalesPeriod } from "@erp/core";
 import { currentActor } from "@/lib/auth";
 import { query } from "@/lib/actions";
 import { money, quantity } from "@/lib/format";
@@ -16,7 +16,7 @@ const PERIODS: { key: SalesPeriod; label: string; previous: string }[] = [
   { key: "month", label: "Este mês", previous: "mês passado" },
 ];
 
-export default async function HomePage({ searchParams }: { searchParams: Promise<{ periodo?: string }> }) {
+export default async function HomePage({ searchParams }: { searchParams: Promise<{ periodo?: string; filial?: string }> }) {
   const actor = await currentActor();
   const params = await searchParams;
   const period = PERIODS.find((p) => p.key === params.periodo) ?? PERIODS[0]!;
@@ -25,13 +25,22 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const features = await enabledFeatures(db(), actor.organizationId);
   const canCosts = features.has("costs") && can(actor, "costs.view");
   const telegramReady = can(actor, "nets.use") && telegramConfigured() && !actor.platformView && features.has("telegram");
-  const [org, dash, stock, steps, telegramPending] = await Promise.all([
+  // Empresa com mais de uma filial: o painel pode mostrar uma só.
+  const branches = canSales && can(actor, "branches.view") ? await query(listBranches, {}) : [];
+  const branch = branches.length > 1 ? branches.find((b) => b.id === params.filial) : undefined;
+  const link = (p: { periodo?: string; filial?: string }) => {
+    const q = new URLSearchParams(Object.entries(p).filter((e): e is [string, string] => !!e[1]));
+    return q.size ? `/?${q}` : "/";
+  };
+  const [org, dash, stock, steps, telegramPending, fewCustomers] = await Promise.all([
     query(getOrganization, {}),
-    canSales ? query(salesDashboard, { period: period.key }) : null,
+    canSales ? query(salesDashboard, { period: period.key, branchId: branch?.id }) : null,
     canStock ? query(stockOverview, {}) : null,
     features.has("deliveries") && can(actor, "deliveries.view") ? query(stepCounts, {}) : null,
     // Cartão de boas-vindas da Netz no Telegram até a pessoa ligar a conta.
     telegramReady ? telegramOrganizationOf(db(), actor.userId).then((linkedTo) => !linkedTo) : false,
+    // Empresa começando: lembra dos Primeiros passos até ter alguns clientes.
+    can(actor, "customers.manage") && !actor.platformView ? query(listCustomers, { limit: 5 }).then((c) => c.length < 5) : false,
   ]);
   const timeFmt = new Intl.DateTimeFormat("pt-BR", { timeZone: org.timezone, hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" });
   const alerts = stock?.rows.filter((r) => r.status === "out" || r.status === "low").sort((a, b) => Number(a.stockQty) - Number(b.stockQty)) ?? [];
@@ -47,6 +56,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   if (dash && dash.receivable.count > 0) needs.push({ href: "/vendas?receber=1", text: `${money(dash.receivable.amount)} para receber em ${plural(dash.receivable.count, "venda", "vendas")}`, action: "Ver", tone: "warn" });
   if (owed > 0) needs.push({ href: "/estoque?filtro=zerados", text: `${plural(owed, "produto vendido por encomenda", "produtos vendidos por encomenda")}, falta pedir ao fornecedor`, action: "Ver", tone: "bad" });
   if (out > 0) needs.push({ href: "/estoque?filtro=zerados", text: `${plural(out, "produto zerado", "produtos zerados")}`, action: "Repor", tone: "bad" });
+  if (fewCustomers) needs.push({ href: "/primeiros-passos", text: "Primeiros passos: traga seus clientes de uma planilha, quando quiser", action: "Ver", tone: "warn" });
   if (low > 0) needs.push({ href: "/estoque?filtro=baixo", text: `${plural(low, "produto abaixo do mínimo", "produtos abaixo do mínimo")}`, action: "Repor", tone: "warn" });
 
   return (
@@ -60,9 +70,17 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
           {canSales && (
             <nav className="segmented" aria-label="Período">
               {PERIODS.map((p) => (
-                <Link key={p.key} href={p.key === "today" ? "/" : `/?periodo=${p.key}`} className={p.key === period.key ? "active" : ""}>
+                <Link key={p.key} href={link({ periodo: p.key === "today" ? undefined : p.key, filial: branch?.id })} className={p.key === period.key ? "active" : ""}>
                   {p.label}
                 </Link>
+              ))}
+            </nav>
+          )}
+          {branches.length > 1 && (
+            <nav className="segmented" aria-label="Filial">
+              <Link href={link({ periodo: params.periodo })} className={branch ? "" : "active"}>Todas</Link>
+              {branches.map((b) => (
+                <Link key={b.id} href={link({ periodo: params.periodo, filial: b.id })} className={branch?.id === b.id ? "active" : ""}>{b.name}</Link>
               ))}
             </nav>
           )}
