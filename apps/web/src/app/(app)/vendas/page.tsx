@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { can, enabledFeatures, FULFILLMENTS, PAYMENT_STATUS_LABELS, getOrganization, getSale, getSaleFollowup, listBranches, listSales, listStepTypes, orgDate, PAYMENT_LABELS } from "@erp/core";
+import { can, enabledFeatures, FULFILLMENTS, INSTALLMENT_STATUS_LABELS, INTERVAL_LABELS, PAYMENT_STATUS_LABELS, getOrganization, getSale, getSaleFollowup, listBranches, listSales, listStepTypes, orgDate, PAYMENT_LABELS } from "@erp/core";
 import { requirePermission } from "@/lib/auth";
 import { query } from "@/lib/actions";
 import { db } from "@/lib/db";
@@ -28,6 +28,7 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
     : [null, "", []];
   const canSteps = can(actor, "deliveries.manage");
   const fmt = new Intl.DateTimeFormat("pt-BR", { timeZone: org.timezone, dateStyle: "short", timeStyle: "short" });
+  const day = (d: string) => d.split("-").reverse().join("/");
 
   return (
     <>
@@ -96,6 +97,30 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
             <span className="cart-grand">{money(selected.total)}</span>
           </div>
           <h3 className="form-section">Pagamento</h3>
+          {selected.installments.length > 0 && (
+            <>
+              <p className="muted">
+                {Number(selected.downPayment) > 0 ? `Entrada de ${money(selected.downPayment)} + ` : "Sem entrada · "}
+                {selected.installments.length}x {selected.installmentInterval ? INTERVAL_LABELS[selected.installmentInterval].toLowerCase() : ""}
+              </p>
+              <div className="table-wrap">
+                <table className="cards">
+                  <thead><tr><th>Parcela</th><th>Vencimento</th><th className="num">Valor</th><th className="num">Pago</th><th>Situação</th></tr></thead>
+                  <tbody>
+                    {selected.installments.map((i) => (
+                      <tr key={i.id}>
+                        <td data-label="Parcela">{i.number}/{selected.installments.length}</td>
+                        <td data-label="Vencimento">{day(i.dueDate)}</td>
+                        <td data-label="Valor" className="num">{money(i.amount)}</td>
+                        <td data-label="Pago" className="num">{Number(i.paidAmount) > 0 ? money(i.paidAmount) : "—"}{i.paidOn && <small className="muted">em {day(i.paidOn)}</small>}</td>
+                        <td data-label="Situação"><span className={`tag inst-tag ${i.status}`}>{INSTALLMENT_STATUS_LABELS[i.status]}</span></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
           {selected.payments.length === 0 ? (
             <p className="muted">Nada recebido ainda.</p>
           ) : (
@@ -112,10 +137,20 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
           {(() => {
             const open = Number(selected.total) - Number(selected.tradeInTotal) - Number(selected.paidTotal);
             if (selected.status !== "completed" || open <= 0.004) return null;
+            // Parcelada: o formulário já vem com a próxima parcela em aberto.
+            const next = selected.installments.find((i) => i.status !== "paid" && i.status !== "cancelled");
+            const nextOpen = next ? (Number(next.amount) - Number(next.paidAmount)).toFixed(2) : open.toFixed(2);
             return (
               <div className="open-box">
                 <p><b>Falta receber {money(open)}</b> de {money(Number(selected.total) - Number(selected.tradeInTotal))}.</p>
-                {can(actor, "sales.receive") && <ReceivePaymentForm saleId={selected.id} open={open.toFixed(2)} />}
+                {can(actor, "sales.receive") && (
+                  <ReceivePaymentForm
+                    saleId={selected.id}
+                    open={nextOpen}
+                    installmentId={next?.id}
+                    hint={next ? `Parcela ${next.number} · vence ${day(next.dueDate)}. Se passar, vai para as próximas.` : undefined}
+                  />
+                )}
               </div>
             );
           })()}
@@ -173,7 +208,7 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
                     <td data-label="Pagamento">
                       {s.status === "completed" && s.paymentStatus !== "paid" ? (
                         <span className={`tag pay-tag ${s.paymentStatus}`}>
-                          {s.paymentStatus === "partial" ? `Parcial · falta ${money(Number(s.total) - Number(s.tradeInTotal) - Number(s.paidTotal))}` : "A receber"}
+                          {s.installmentCount > 0 ? `${s.installmentCount}x · falta ${money(Number(s.total) - Number(s.tradeInTotal) - Number(s.paidTotal))}` : s.paymentStatus === "partial" ? `Parcial · falta ${money(Number(s.total) - Number(s.tradeInTotal) - Number(s.paidTotal))}` : "A receber"}
                         </span>
                       ) : (
                         PAYMENT_LABELS[s.paymentMethod]

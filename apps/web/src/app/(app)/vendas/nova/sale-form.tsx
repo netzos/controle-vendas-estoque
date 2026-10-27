@@ -3,7 +3,9 @@
 import { useActionState, useEffect, useMemo, useState } from "react";
 import { FormMessage, SubmitButton } from "@/components/form";
 import { money, quantity } from "@/lib/format";
-import { DELIVERY_STEP, FULFILLMENTS, ITEM_TYPES, ORDER_STEP, type Fulfillment, type ItemType } from "@erp/core/labels";
+import {
+  DELIVERY_STEP, FULFILLMENTS, INTERVAL_LABELS, ITEM_TYPES, ORDER_STEP, dueDates, splitCents, type Fulfillment, type InstallmentInterval, type ItemType,
+} from "@erp/core/labels";
 import { createSaleAction } from "../actions";
 
 export interface PosProduct {
@@ -61,6 +63,8 @@ export function SaleForm({
   const [payment, setPayment] = useState<string>("pix");
   // Pagamento dividido em várias formas, ou só uma parte agora (o resto fica a receber).
   const [split, setSplit] = useState<{ key: number; method: string; amount: string }[] | null>(null);
+  // Parcelado / a prazo: as linhas de split viram a entrada (pode não ter) e o resto vira parcelas.
+  const [plan, setPlan] = useState<{ count: string; interval: InstallmentInterval; firstDue: string } | null>(null);
   const [discount, setDiscount] = useState("");
   // Preço negociado por item; vazio = preço do cadastro.
   const [prices, setPrices] = useState<Record<string, string>>({});
@@ -84,6 +88,7 @@ export function SaleForm({
       setDiscount("");
       setSearch("");
       setSplit(null);
+      setPlan(null);
     }
   }, [state]);
 
@@ -115,6 +120,14 @@ export function SaleForm({
   const setSplitRow = (key: number, patch: Partial<{ method: string; amount: string }>) =>
     setSplit((rows) => (rows ?? []).map((r) => (r.key === key ? { ...r, ...patch } : r)));
   const startSplit = () => setSplit([{ key: Date.now(), method: payment, amount: "" }]);
+  const startPlan = () => {
+    setSplit([]);
+    setPlan({ count: "3", interval: "monthly", firstDue: dueDates(today, 2, "monthly")[1]! });
+  };
+  const planCount = plan ? (plan.interval === "single" ? 1 : Math.min(Math.max(Math.trunc(toNumber(plan.count)), 1), 120)) : 0;
+  const planDates = plan && /^\d{4}-\d{2}-\d{2}$/.test(plan.firstDue) ? dueDates(plan.firstDue, planCount, plan.interval) : [];
+  const planCents = plan && splitOpen > 0 && planDates.length > 0 ? splitCents(Math.round(splitOpen * 100), planDates.length) : [];
+  const shortDate = (d: string) => d.split("-").reverse().slice(0, 2).join("/") + (d.slice(0, 4) !== today.slice(0, 4) ? `/${d.slice(2, 4)}` : "");
   const tracked = products.filter((p) => p.trackStock);
   const draftOf = (n: string): StepDraft => stepDrafts[n] ?? { scheduledFor: "", responsible: "", cost: "" };
   const setDraft = (n: string, patch: Partial<StepDraft>) => setStepDrafts((d) => ({ ...d, [n]: { ...draftOf(n), ...patch } }));
@@ -136,6 +149,9 @@ export function SaleForm({
           return changed ? { productId: l.product.id, quantity: l.qty, unitPrice: prices[l.product.id] } : { productId: l.product.id, quantity: l.qty };
         }),
       )} />
+      {plan && (
+        <input type="hidden" name="installments" value={JSON.stringify({ count: planCount, interval: plan.interval, firstDue: plan.firstDue })} />
+      )}
       {split ? (
         <input type="hidden" name="payments" value={JSON.stringify(split.filter((p) => toNumber(p.amount) > 0).map((p) => ({ method: p.method, amount: p.amount })))} />
       ) : (
@@ -311,14 +327,42 @@ export function SaleForm({
                 </button>
               ))}
             </div>
-            <button type="button" className="link-button" onClick={startSplit}>Dividir em mais de uma forma ou pagar só uma parte</button>
+            <div className="pay-links">
+              <button type="button" className="link-button" onClick={startSplit}>Dividir em mais de uma forma ou pagar só uma parte</button>
+              <button type="button" className="link-button" onClick={startPlan}>Parcelado / a prazo</button>
+            </div>
           </>
         ) : (
           <div className="split-pay">
             <div className="split-head">
-              <strong>Pagamento dividido</strong>
-              <button type="button" className="link-button" onClick={() => setSplit(null)}>Pagar tudo de uma forma</button>
+              <strong>{plan ? "Parcelado / a prazo" : "Pagamento dividido"}</strong>
+              <button type="button" className="link-button" onClick={() => { setSplit(null); setPlan(null); }}>Pagar tudo de uma forma</button>
             </div>
+            {plan && (
+              <div className="plan-fields">
+                <label>
+                  <span>Parcelas</span>
+                  <input
+                    inputMode="numeric"
+                    aria-label="Número de parcelas"
+                    value={plan.interval === "single" ? "1" : plan.count}
+                    disabled={plan.interval === "single"}
+                    onChange={(e) => setPlan({ ...plan, count: e.target.value.replace(/\D/g, "") })}
+                  />
+                </label>
+                <label>
+                  <span>Intervalo</span>
+                  <select aria-label="Intervalo das parcelas" value={plan.interval} onChange={(e) => setPlan({ ...plan, interval: e.target.value as InstallmentInterval })}>
+                    {(Object.keys(INTERVAL_LABELS) as InstallmentInterval[]).map((k) => <option key={k} value={k}>{INTERVAL_LABELS[k]}</option>)}
+                  </select>
+                </label>
+                <label>
+                  <span>{plan.interval === "single" ? "Vencimento" : "1º vencimento"}</span>
+                  <input type="date" aria-label="Primeiro vencimento" value={plan.firstDue} onChange={(e) => setPlan({ ...plan, firstDue: e.target.value })} />
+                </label>
+              </div>
+            )}
+            {plan && <p className="muted small-text">Escolha o cliente abaixo para saber quem deve. {split.length === 0 ? "Sem entrada." : "Entrada:"}</p>}
             {split.map((row, i) => (
               <div className="split-row" key={row.key}>
                 <select aria-label="Forma de pagamento" value={row.method} onChange={(e) => setSplitRow(row.key, { method: e.target.value })}>
@@ -334,7 +378,7 @@ export function SaleForm({
                 {splitOpen > 0 && !row.amount && (
                   <button type="button" className="secondary small" onClick={() => setSplitRow(row.key, { amount: splitOpen.toFixed(2).replace(".", ",") })}>Resto</button>
                 )}
-                {split.length > 1 && (
+                {(split.length > 1 || plan) && (
                   <button type="button" className="secondary small" aria-label="Tirar esta forma" onClick={() => setSplit((rows) => (rows ?? []).filter((r) => r.key !== row.key))}>×</button>
                 )}
                 {i === split.length - 1 && split.length < 5 && splitOpen > 0 && row.amount && (
@@ -342,11 +386,21 @@ export function SaleForm({
                 )}
               </div>
             ))}
+            {plan && split.length === 0 && (
+              <button type="button" className="secondary small" onClick={() => setSplit([{ key: Date.now(), method: "pix", amount: "" }])}>+ Teve entrada</button>
+            )}
             <p className={`split-sum${splitOpen < 0 ? " warn-text" : ""}`}>
-              Pago agora <b>{money(splitPaid)}</b>
-              {splitOpen > 0 && <> · falta <b>{money(splitOpen)}</b></>}
+              {plan ? "Entrada" : "Pago agora"} <b>{money(splitPaid)}</b>
+              {splitOpen > 0 && <> · {plan ? "parcelado" : "falta"} <b>{money(splitOpen)}</b></>}
             </p>
-            {splitOpen > 0 && <p className="muted small-text">O que faltar fica como <b>pagamento parcial</b>. Você recebe o resto depois, na ficha da venda.</p>}
+            {plan && planCents.length > 0 && (
+              <ol className="plan-preview">
+                {planCents.map((c, i) => (
+                  <li key={i}><span>{planCents.length > 1 ? `${i + 1}ª parcela` : "A pagar"} · {shortDate(planDates[i]!)}</span><b>{money(c / 100)}</b></li>
+                ))}
+              </ol>
+            )}
+            {!plan && splitOpen > 0 && <p className="muted small-text">O que faltar fica como <b>pagamento parcial</b>. Você recebe o resto depois, na ficha da venda.</p>}
             {splitOpen < 0 && <p className="warn-text small-text">O valor pago passa do total da venda.</p>}
           </div>
         )}
