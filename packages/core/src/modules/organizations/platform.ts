@@ -665,6 +665,34 @@ export async function platformUsageSummary(db: Db, developerUserId: string, sinc
   return rows;
 }
 
+export interface PlatformUsageCall {
+  createdAt: Date;
+  kind: "ai" | "transcription";
+  feature: string;
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  seconds: string;
+  costUsd: string;
+}
+
+/** Teto de custo por resposta da IA, em reais: acima disso a ficha da empresa avisa. */
+export const USAGE_CALL_ALERT_BRL = 0.3;
+
+/** Cada chamada de IA ou áudio de uma empresa, da mais nova para a mais antiga. */
+export async function platformUsageRecent(db: Db, developerUserId: string, organizationId: string, limit = 40): Promise<PlatformUsageCall[]> {
+  await assertDeveloper(db, developerUserId);
+  const { rows } = await db.query<PlatformUsageCall>(
+    `SELECT created_at AS "createdAt", kind, feature, model, input_tokens AS "inputTokens", output_tokens AS "outputTokens",
+            cache_read_tokens AS "cacheReadTokens", cache_write_tokens AS "cacheWriteTokens", seconds, cost_usd AS "costUsd"
+       FROM controle_vendas_estoque.platform_usage_recent($1, $2, $3)`,
+    [developerUserId, organizationId, limit],
+  );
+  return rows;
+}
+
 // Monitoramento da empresa ----------------------------------------------------
 
 export type UsageKind =

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { addressLine, can, listCustomers } from "@erp/core";
+import { addressLine, can, listBranches, listCustomers } from "@erp/core";
 import { requirePermission } from "@/lib/auth";
 import { query } from "@/lib/actions";
 import { documentLabel } from "@/lib/format";
@@ -8,11 +8,15 @@ import { Notice, RemoveRecord } from "@/components/remove-record";
 
 export const metadata = { title: "Clientes" };
 
-export default async function CustomersPage({ searchParams }: { searchParams: Promise<{ q?: string; id?: string; novo?: string; inativos?: string; aviso?: string }> }) {
+export default async function CustomersPage({ searchParams }: { searchParams: Promise<{ q?: string; id?: string; novo?: string; inativos?: string; aviso?: string; filial?: string }> }) {
   const actor = await requirePermission("customers.view");
   const params = await searchParams;
   const includeInactive = params.inativos === "1";
-  const customers = await query(listCustomers, { search: params.q || undefined, includeInactive: true });
+  // Filial só aparece quando a empresa tem mais de uma.
+  const branches = can(actor, "branches.view") ? await query(listBranches, {}) : [];
+  const multi = branches.length > 1;
+  const branch = multi ? branches.find((b) => b.id === params.filial) : undefined;
+  const customers = await query(listCustomers, { search: params.q || undefined, includeInactive: true, branchId: branch?.id });
   const shown = includeInactive ? customers : customers.filter((c) => c.status === "active");
   const selected = params.id ? customers.find((c) => c.id === params.id) : undefined;
   const canManage = can(actor, "customers.manage");
@@ -31,8 +35,8 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
         </div>
         <section className="card">
           <h2>Dados do cliente</h2>
-          {canManage ? <CustomerForm key={selected.id} customer={selected} /> : (
-            <p className="muted">{[documentLabel(selected.document), selected.phone, addressLine(selected)].filter(Boolean).join(" · ") || "Sem outros dados."}</p>
+          {canManage ? <CustomerForm key={selected.id} customer={selected} branches={branches} /> : (
+            <p className="muted">{[selected.code && `Código ${selected.code}`, documentLabel(selected.document), selected.phone, addressLine(selected), selected.branchName].filter(Boolean).join(" · ") || "Sem outros dados."}</p>
           )}
         </section>
         {canManage && (
@@ -57,7 +61,7 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
       {canManage && params.novo === "1" && (
         <section className="card">
           <h2>Novo cliente</h2>
-          <CustomerForm />
+          <CustomerForm branches={branches} />
         </section>
       )}
 
@@ -66,6 +70,12 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
           <form>
             <input type="search" name="q" defaultValue={params.q ?? ""} placeholder="Buscar por nome, CPF/CNPJ ou e-mail" aria-label="Buscar clientes" />
             {includeInactive && <input type="hidden" name="inativos" value="1" />}
+            {multi && (
+              <select name="filial" defaultValue={branch?.id ?? ""} aria-label="Filial">
+                <option value="">Todas as filiais</option>
+                {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+              </select>
+            )}
             <button type="submit" className="secondary">Buscar</button>
           </form>
           {canManage && <Link className="button" href="/clientes?novo=1">Novo cliente</Link>}
@@ -76,7 +86,7 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
           <div className="table-wrap">
             <table className="cards">
               <thead>
-                <tr><th>Nome</th><th>CPF/CNPJ</th><th>Telefone</th><th>Cidade</th><th>Situação</th><th></th></tr>
+                <tr><th>Nome</th><th>CPF/CNPJ</th><th>Telefone</th><th>Cidade</th>{multi && <th>Filial</th>}<th>Situação</th><th></th></tr>
               </thead>
               <tbody>
                 {shown.map((c) => (
@@ -95,6 +105,7 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
                     <td data-label="CPF/CNPJ" className="sm-hide">{documentLabel(c.document)}</td>
                     <td data-label="Telefone">{c.phone}</td>
                     <td data-label="Cidade" className="sm-hide">{[c.city, c.state].filter(Boolean).join(" / ")}</td>
+                    {multi && <td data-label="Filial">{c.branchName ?? <span className="muted">Todas</span>}</td>}
                     <td data-label="Situação"><span className={`tag ${c.status === "active" ? "ok" : "off"}`}>{c.status === "active" ? "Ativo" : "Inativo"}</span></td>
                     <td><Link className="button secondary small" href={`/clientes?id=${c.id}`}>{canManage ? "Editar" : "Abrir"}</Link></td>
                   </tr>
@@ -104,6 +115,7 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
           </div>
         )}
         <p className="muted">
+          {canManage && <><Link href="/primeiros-passos/clientes">Trazer clientes de uma planilha</Link> · </>}
           {includeInactive ? <Link href="/clientes">Esconder inativos</Link> : <Link href="/clientes?inativos=1">Mostrar inativos</Link>}
         </p>
       </section>

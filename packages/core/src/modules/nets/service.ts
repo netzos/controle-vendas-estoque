@@ -12,16 +12,19 @@ import { currentNetsManual } from "./guidance.ts";
 import { NETS_RULES } from "./instructions.ts";
 import { listNetsDeliveries } from "./deliveries.ts";
 import { activePersonNotes, agentNotePerson, personNotesText } from "./person.ts";
-import { BATCH_LIMIT, BATCH_TOOL, DELIVERIES_TOOL, IMPROVEMENT_COMPLEMENT_TOOL, IMPROVEMENT_LIST_TOOL, IMPROVEMENT_TOOL, netsTools, PERSON_NOTE_TOOL, type NetsTool } from "./tools.ts";
+import { BATCH_LIMIT, BATCH_TOOL, DELIVERIES_TOOL, ESCALATE_TOOL, IMPROVEMENT_COMPLEMENT_TOOL, IMPROVEMENT_LIST_TOOL, IMPROVEMENT_TOOL, netsTools, PERSON_NOTE_TOOL, type NetsTool } from "./tools.ts";
 
 // Netz: o agente global. A conversa fica no banco; cada mensagem da pessoa é
 // respondida fora da requisição (processNetsTurn). Consultas rodam na hora;
 // ações que mudam dados viram um cartão que a pessoa confirma ou cancela.
 
+// Cada resposta começa no modelo rápido (o Haiku custa ~40 vezes menos que o Opus).
+// Quando o pedido pede raciocínio, a Netz chama pensar_com_calma e o Opus continua.
 export const NETS_MODEL = "claude-opus-5-5";
+export const NETS_FAST_MODEL = process.env.NETS_FAST_MODEL || "claude-haiku-5-5";
 export const NETS_DAILY_LIMIT = 200;
 const MAX_STEPS = 12;
-const RESULT_LIMIT = 15000;
+const RESULT_LIMIT = 8000;
 const HISTORY = 30;
 
 export type NetsActionStatus = "pending" | "running" | "done" | "failed" | "cancelled" | "expired";
@@ -33,6 +36,8 @@ export interface NetsAction {
   input: Record<string, unknown>;
   /** Lote: a mesma ação para cada item (propor_lote). */
   items?: Record<string, unknown>[];
+  /** O pedido tem mais passos depois desta ação: a IA continua após a confirmação. */
+  next?: boolean;
 }
 
 export interface NetsMessage {
@@ -61,7 +66,8 @@ export function netsConfigured(): boolean {
 let client: Anthropic | null = null;
 export const defaultNetsModel: NetsModel = (req) => {
   client ??= new Anthropic();
-  // Se o modelo recusar por política, a API tenta de novo num modelo de reserva.
+  // Se o modelo recusar por política, a API tenta de novo num modelo de reserva (o Haiku não tem reserva).
+  if (req.model.startsWith("claude-haiku")) return client.beta.messages.create(req);
   return client.beta.messages.create({ ...req, betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" });
 };
 
@@ -224,7 +230,7 @@ const STATUS_NOTE: Record<NetsActionStatus, string> = {
 function historyText(r: Row, clock: Intl.DateTimeFormat): string {
   if (r.role === "user") return `[${clock.format(r.createdAt)}] ${r.context ? `[Tela: ${r.context}]\n` : ""}${r.body}`;
   if (!r.action) return r.body;
-  const result = r.actionResult ? `; resultado: ${clip(r.actionResult, 1500)}` : "";
+  const result = r.actionResult ? `; resultado: ${clip(r.actionResult, 600)}` : "";
   return `${r.body}\n\n[Ação proposta: ${r.action.title} — ${STATUS_NOTE[r.actionStatus ?? "expired"]}${result}]`;
 }
 
@@ -290,7 +296,7 @@ async function runTool(db: Db, actor: Actor, tools: NetsTool[], block: Anthropic
   if (block.name === BATCH_TOOL) return proposeBatch(tools, input, proposed);
   const tool = tools.find((t) => t.name === block.name);
   if (!tool) return { content: "Ferramenta indisponível para esta pessoa.", isError: true };
-  const { _resumo, ...args } = input;
+  const { _resumo, _continua, ...args } = input;
   try {
     if (tool.read) return { content: serialize(await runService(db, tool.service, actor, args)) };
     if (proposed) return { content: "Já existe uma ação esperando confirmação neste turno. Proponha uma ação por vez.", isError: true };
@@ -299,7 +305,7 @@ async function runTool(db: Db, actor: Actor, tools: NetsTool[], block: Anthropic
     const title = typeof _resumo === "string" && _resumo.trim() ? _resumo.trim().slice(0, 300) : tool.service.description;
     return {
       content: "Proposta pronta: a pessoa vai ver um cartão para confirmar ou cancelar. Termine a resposta dizendo o que vai acontecer; não diga que já foi feito.",
-      action: { tool: tool.name, service: tool.service.name, title, input: args },
+      action: { tool: tool.name, service: tool.service.name, title, input: args, ...(_continua === true ? { next: true } : {}) },
     };
   } catch (err) {
     return { content: err instanceof AppError ? err.message : "Erro inesperado na ferramenta.", isError: true };
@@ -315,7 +321,7 @@ function proposeBatch(tools: NetsTool[], input: Record<string, unknown>, propose
   const items: Record<string, unknown>[] = [];
   const problems: string[] = [];
   raw.forEach((item, i) => {
-    const { _resumo, ...args } = (item && typeof item === "object" ? item : {}) as Record<string, unknown>;
+    const { _resumo, _continua, ...args } = (item && typeof item === "object" ? item : {}) as Record<string, unknown>;
     try {
       parseInput(tool.service.input, args);
       items.push(args);
@@ -327,8 +333,42 @@ function proposeBatch(tools: NetsTool[], input: Record<string, unknown>, propose
   const title = typeof input._resumo === "string" && input._resumo.trim() ? input._resumo.trim().slice(0, 300) : `${tool.service.description} (${items.length} itens)`;
   return {
     content: `Proposta pronta: um cartão só para os ${items.length} itens. Termine a resposta dizendo o que vai acontecer; não diga que já foi feito.`,
-    action: { tool: tool.name, service: tool.service.name, title, input: {}, items },
+    action: { tool: tool.name, service: tool.service.name, title, input: {}, items, ...(input._continua === true ? { next: true } : {}) },
   };
+}
+
+/** Resposta pronta depois de uma ação confirmada que deu certo e não tem próximo passo: sem IA, custo zero. */
+export function confirmationText(action: Pick<NetsAction, "title" | "items">, result: string | null): string {
+  if (action.items) {
+    try {
+      const r = JSON.parse(result ?? "") as { total: number; feitos: number; falhas: Array<{ item: number; erro: string }> };
+      const lines = [`Pronto! ${r.feitos} de ${r.total} feitos: ${action.title}.`];
+      if (r.falhas.length) {
+        lines.push(`Não deu certo em ${r.falhas.length}:`);
+        for (const f of r.falhas.slice(0, 10)) lines.push(`- item ${f.item}: ${f.erro}`);
+        if (r.falhas.length > 10) lines.push(`- e mais ${r.falhas.length - 10}.`);
+      }
+      return lines.join("\n");
+    } catch {
+      // Resultado cortado: cai na frase simples.
+    }
+  }
+  return `Pronto, feito: ${action.title}.`;
+}
+
+/** Junta os textos de vários passos sem repetir o mesmo parágrafo. */
+export function joinReply(texts: string[]): string {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const text of texts) {
+    for (const p of text.split(/\n{2,}/)) {
+      const key = p.trim().toLowerCase().replace(/\s+/g, " ");
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      out.push(p.trim());
+    }
+  }
+  return out.join("\n\n");
 }
 
 /** Roda o lote confirmado item por item; um erro não para os outros. */
@@ -383,6 +423,10 @@ export async function processNetsTurn(
     await finish("Você não tem permissão para conversar com a Netz. Peça a quem administra a empresa.");
     return;
   }
+  if (trigger.role === "assistant" && trigger.action && trigger.actionStatus === "done" && !trigger.action.next) {
+    await finish(confirmationText(trigger.action, trigger.actionResult));
+    return;
+  }
 
   try {
     const { history, system, timezone } = await asUser(db, owner, async (tx) => {
@@ -422,12 +466,13 @@ export async function processNetsTurn(
     const texts: string[] = [];
     const cleaned: string[] = [];
     let action: NetsAction | undefined;
-    const used = emptyAiUsage();
-    let usedModel: string = NETS_MODEL;
+    // Uso por modelo: um turno pode começar no rápido e terminar no forte.
+    const used = new Map<string, ReturnType<typeof emptyAiUsage>>();
+    let current = NETS_FAST_MODEL;
     try {
       for (let step = 0; step < MAX_STEPS; step++) {
         const request = (defs: typeof definitions) => model({
-          model: NETS_MODEL,
+          model: current,
           max_tokens: 16000,
           output_config: { effort: "medium" },
           // Cache automático até a última mensagem: o próximo passo e a próxima
@@ -447,8 +492,9 @@ export async function processNetsTurn(
           definitions = netsTools(actor).definitions;
           response = await request(definitions);
         }
-        addAiUsage(used, response.usage);
-        usedModel = response.model ?? usedModel;
+        const m = response.model ?? current;
+        if (!used.has(m)) used.set(m, emptyAiUsage());
+        addAiUsage(used.get(m)!, response.usage);
         for (const b of response.content) {
           if (b.type !== "text") continue;
           const c = cleanReply(b.text);
@@ -468,6 +514,11 @@ export async function processNetsTurn(
         messages.push({ role: "assistant", content: response.content });
         const results: Anthropic.Beta.BetaToolResultBlockParam[] = [];
         for (const use of uses) {
+          if (use.name === ESCALATE_TOOL) {
+            current = NETS_MODEL;
+            results.push({ type: "tool_result", tool_use_id: use.id, content: "Ok: a partir daqui um modelo mais forte continua. Siga o pedido." });
+            continue;
+          }
           const out = await runTool(db, actor, tools, use, !!action);
           if (out.action) action = out.action;
           results.push({ type: "tool_result", tool_use_id: use.id, content: out.content, ...(out.isError ? { is_error: true } : {}) });
@@ -475,9 +526,9 @@ export async function processNetsTurn(
         messages.push({ role: "user", content: results });
       }
     } finally {
-      if (used.input_tokens || used.output_tokens) await recordAiUsage(db, owner, "netz", usedModel, used);
+      for (const [m, u] of used) if (u.input_tokens || u.output_tokens) await recordAiUsage(db, owner, "netz", m, u);
     }
-    const body = texts.join("\n\n") || (action ? action.title : "Pronto.");
+    const body = joinReply(texts) || (action ? action.title : "Pronto.");
     await finish(body, action, cleaned);
   } catch (err) {
     console.error("nets turn failed", err instanceof Error ? err.message : err);

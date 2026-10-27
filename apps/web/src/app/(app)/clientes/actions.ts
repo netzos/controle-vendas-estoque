@@ -21,6 +21,10 @@ function fields(form: FormData) {
     city: optional(form, "city"),
     state: optional(form, "state"),
     notes: optional(form, "notes"),
+    code: optional(form, "code"),
+    customerSince: optional(form, "customerSince"),
+    // Sem o campo na tela (empresa com uma filial só), a filial fica como está.
+    branchId: form.has("branchId") ? optional(form, "branchId") : undefined,
   };
 }
 

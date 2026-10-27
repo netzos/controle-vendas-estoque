@@ -5,10 +5,13 @@ import Anthropic from "@anthropic-ai/sdk";
 import {
   AppError,
   decideNetsAction,
+  joinReply,
   listCustomers,
   listNetsMessages,
   listProducts,
   listUnits,
+  NETS_FAST_MODEL,
+  NETS_MODEL,
   netsTools,
   postNetsMessage,
   processNetsTurn,
@@ -110,9 +113,26 @@ describe("Netz", () => {
 
     assert.deepEqual(await decideNetsAction(t.app, owner, { id: reply.id, decision: "confirm" }), { status: "done", queued: true });
     assert.equal((await runService(t.app, listCustomers, owner, { search: "Lote" })).length, 3);
-    const c = script([{ type: "text", text: "Pronto, 3 clientes." }]);
+    // Sem próximo passo, o sistema responde sozinho: nenhuma chamada à IA.
+    const c = script();
     await processNetsTurn(t.app, { organizationId: owner.organizationId, userId: owner.userId, messageId: reply.id }, { model: c.model });
-    assert.match(JSON.stringify(c.requests[0]!.messages.at(-2)), /feitos.{0,6}3/);
+    assert.equal(c.requests.length, 0);
+    assert.equal((await listNetsMessages(t.app, owner)).messages.at(-1)!.body, "Pronto! 3 de 3 feitos: Cadastrar 3 clientes.");
+  });
+
+  it("começa no modelo rápido e passa para o forte quando precisa pensar", async () => {
+    const s = script(
+      [{ type: "tool_use", name: "pensar_com_calma", input: { motivo: "comparar meses" } }],
+      [{ type: "text", text: "Outubro vendeu mais." }],
+    );
+    const reply = await say(owner, "compara outubro com setembro", s.model);
+    assert.equal(reply.body, "Outubro vendeu mais.");
+    assert.equal(s.requests[0]!.model, NETS_FAST_MODEL);
+    assert.equal(s.requests[1]!.model, NETS_MODEL);
+  });
+
+  it("não repete o mesmo parágrafo de passos diferentes", () => {
+    assert.equal(joinReply(["Cadastrado, faltam 2.", "cadastrado,  faltam 2.\n\nPronto."]), "Cadastrado, faltam 2.\n\nPronto.");
   });
 
   it("lote com item inválido volta para a Netz corrigir", async () => {
@@ -143,7 +163,7 @@ describe("Netz", () => {
         {
           type: "tool_use",
           name: "products_create",
-          input: { _resumo: "Cadastrar Lata de açaí por R$ 60,00", sku: "LATA", name: "Lata de açaí", unitId: un, salePrice: "60", costPrice: "0", minStock: "0" },
+          input: { _resumo: "Cadastrar Lata de açaí por R$ 60,00", _continua: true, sku: "LATA", name: "Lata de açaí", unitId: un, salePrice: "60", costPrice: "0", minStock: "0" },
         },
       ],
       [{ type: "text", text: "Confirme no cartão." }],

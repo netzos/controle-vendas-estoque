@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { can, enabledFeatures, FULFILLMENTS, PAYMENT_STATUS_LABELS, getOrganization, getSale, getSaleFollowup, listSales, listStepTypes, orgDate, PAYMENT_LABELS } from "@erp/core";
+import { can, enabledFeatures, FULFILLMENTS, PAYMENT_STATUS_LABELS, getOrganization, getSale, getSaleFollowup, listBranches, listSales, listStepTypes, orgDate, PAYMENT_LABELS } from "@erp/core";
 import { requirePermission } from "@/lib/auth";
 import { query } from "@/lib/actions";
 import { db } from "@/lib/db";
@@ -10,12 +10,15 @@ import { AddStepsForm, StepRow } from "../entregas/steps";
 
 export const metadata = { title: "Vendas" };
 
-export default async function SalesPage({ searchParams }: { searchParams: Promise<{ q?: string; id?: string; receber?: string }> }) {
+export default async function SalesPage({ searchParams }: { searchParams: Promise<{ q?: string; id?: string; receber?: string; filial?: string }> }) {
   const actor = await requirePermission("sales.view");
   const params = await searchParams;
+  const branches = can(actor, "branches.view") ? await query(listBranches, {}) : [];
+  const multi = branches.length > 1;
+  const branch = multi ? branches.find((b) => b.id === params.filial) : undefined;
   const [org, sales, selected, features] = await Promise.all([
     query(getOrganization, {}),
-    query(listSales, { search: params.q || undefined, openPayment: params.receber === "1" }),
+    query(listSales, { search: params.q || undefined, openPayment: params.receber === "1", branchId: branch?.id }),
     params.id ? query(getSale, { id: params.id }).catch(() => null) : null,
     enabledFeatures(db(), actor.organizationId),
   ]);
@@ -138,6 +141,12 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
           <form>
             <input type="search" name="q" defaultValue={params.q ?? ""} placeholder="Buscar pelo número ou pelo cliente" aria-label="Buscar vendas" />
             {params.receber === "1" && <input type="hidden" name="receber" value="1" />}
+            {multi && (
+              <select name="filial" defaultValue={branch?.id ?? ""} aria-label="Filial">
+                <option value="">Todas as filiais</option>
+                {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+              </select>
+            )}
             <button type="submit" className="secondary">Buscar</button>
           </form>
           <nav className="segmented" aria-label="Filtro de pagamento">
@@ -152,7 +161,7 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
           <div className="table-wrap">
             <table className="cards">
               <thead>
-                <tr><th>Nº</th><th>Data</th><th>Cliente</th><th>Pagamento</th><th className="num">Itens</th><th className="num">Total</th><th>Situação</th></tr>
+                <tr><th>Nº</th><th>Data</th><th>Cliente</th>{multi && <th>Filial</th>}<th>Pagamento</th><th className="num">Itens</th><th className="num">Total</th><th>Situação</th></tr>
               </thead>
               <tbody>
                 {sales.map((s) => (
@@ -160,6 +169,7 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
                     <td data-label="Nº"><Link href={`/vendas?id=${s.id}`}>{s.number}</Link></td>
                     <td data-label="Data">{fmt.format(s.soldAt)}</td>
                     <td data-label="Cliente">{s.customerName ?? <span className="muted">Consumidor</span>}</td>
+                    {multi && <td data-label="Filial">{s.branchName ?? <span className="muted">—</span>}</td>}
                     <td data-label="Pagamento">
                       {s.status === "completed" && s.paymentStatus !== "paid" ? (
                         <span className={`tag pay-tag ${s.paymentStatus}`}>

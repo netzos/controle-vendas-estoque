@@ -1,14 +1,14 @@
 "use client";
 
 import { useActionState } from "react";
-import type { Customer } from "@erp/core";
+import type { Branch, Customer } from "@erp/core";
 import { Field, FormMessage, SubmitButton } from "@/components/form";
 import { AddressFields } from "@/components/address-fields";
 import { PhotoPicker } from "@/components/photo-picker";
 import { documentLabel, zipLabel } from "@/lib/format";
 import { createCustomerAction, updateCustomerAction } from "./actions";
 
-export function CustomerForm({ customer }: { customer?: Customer }) {
+export function CustomerForm({ customer, branches = [] }: { customer?: Customer; branches?: Pick<Branch, "id" | "name">[] }) {
   const [state, action] = useActionState(customer ? updateCustomerAction : createCustomerAction, null);
   return (
     <form action={action}>
@@ -34,6 +34,20 @@ export function CustomerForm({ customer }: { customer?: Customer }) {
         <Field label="E-mail" name="email" state={state}>
           <input id="email" name="email" type="email" defaultValue={customer?.email ?? ""} maxLength={160} />
         </Field>
+        <Field label="Código do cliente" name="code" state={state} hint="O código que você já usava, se tiver">
+          <input id="code" name="code" defaultValue={customer?.code ?? ""} maxLength={40} />
+        </Field>
+        <Field label="Cliente desde" name="customerSince" state={state}>
+          <input id="customerSince" name="customerSince" type="date" defaultValue={customer?.customerSince ?? ""} />
+        </Field>
+        {branches.length > 1 && (
+          <Field label="Filial" name="branchId" state={state}>
+            <select id="branchId" name="branchId" defaultValue={customer?.branchId ?? ""}>
+              <option value="">Todas as filiais</option>
+              {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+            </select>
+          </Field>
+        )}
         {customer && (
           <Field label="Situação" name="status" state={state}>
             <select id="status" name="status" defaultValue={customer.status}>
