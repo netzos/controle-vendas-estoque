@@ -760,6 +760,25 @@ summary .edit-hint { float: right; font-size: 13px; color: var(--muted); font-we
 .open-box p { margin: 0 0 10px; }
 @media (max-width: 640px) { .pay-list li { grid-template-columns: 1fr auto; } .pay-list li .muted { grid-column: 1 / -1; order: 3; font-size: 12.5px; } }
 
+/* Venda parcelada e A receber. */
+.pay-links { display: flex; gap: 6px 18px; flex-wrap: wrap; }
+.plan-fields { display: grid; grid-template-columns: 90px 1fr 1fr; gap: 8px; }
+.plan-fields label { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; color: var(--muted); }
+.plan-preview { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; max-height: 220px; overflow-y: auto; }
+.plan-preview li { display: flex; justify-content: space-between; gap: 8px; padding: 4px 0; border-bottom: 1px dashed var(--border); font-size: 13.5px; }
+.list-toolbar h2 { margin: 0; flex: 1; }
+.row-action { position: relative; }
+.row-action > summary { list-style: none; cursor: pointer; white-space: nowrap; }
+.row-action > summary::-webkit-details-marker { display: none; }
+.row-action[open] > .receive-form { position: absolute; right: 0; top: calc(100% + 6px); z-index: 20; width: min(560px, calc(100vw - 32px)); padding: 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 16px; box-shadow: var(--shadow); text-align: left; }
+@media (max-width: 640px) { .row-action[open] > .receive-form { position: static; width: auto; margin-top: 8px; } }
+.inst-tag.paid { background: #e8f6ee; color: #18794e; }
+.inst-tag.open { background: var(--surface-2); color: var(--text); }
+.inst-tag.partial { background: #fff4e0; color: #9a5b00; }
+.inst-tag.late { background: #fdecec; color: #b42318; }
+.inst-tag.cancelled { background: var(--surface-2); color: var(--muted); text-decoration: line-through; }
+@media (max-width: 760px) { .plan-fields { grid-template-columns: 1fr 1fr; } .plan-fields label:last-child { grid-column: 1 / -1; } }
+
 /* Comissões */
 .segmented span.active { padding: 7px 14px; border-radius: 10px; background: var(--accent); color: #fff; font-weight: 500; white-space: nowrap; font-size: 14px; }
 .inline-form { display: flex; align-items: center; gap: 6px; }

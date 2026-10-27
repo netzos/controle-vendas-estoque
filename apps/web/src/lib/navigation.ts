@@ -97,13 +97,13 @@ export const NAVIGATION: NavGroup[] = [
   {
     label: "Financeiro",
     short: "Financeiro",
-    hint: "Gastos, custo de cada produto, comissões e quanto sobra de verdade",
+    hint: "Dinheiro na rua, gastos, custo de cada produto, comissões e quanto sobra de verdade",
     icon: "wallet",
     items: [
+      { label: "A receber", href: "/financeiro/receber", permission: "sales.view", phase: 2 },
       { label: "Lucro real", href: "/custos", permission: "costs.view", feature: "costs", phase: 2 },
       { label: "Custo de cada produto", href: "/custos/obtencao", permission: "costs.view", feature: "costs", phase: 2 },
       { label: "Comissões", href: "/comissoes", permission: "commissions.view", feature: "commissions", phase: 2 },
-      { label: "A receber", href: "/financeiro/receber", phase: 5 },
       { label: "A pagar", href: "/financeiro/pagar", phase: 5 },
     ],
   },

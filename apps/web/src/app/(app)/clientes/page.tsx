@@ -1,8 +1,8 @@
 import Link from "next/link";
-import { addressLine, can, listBranches, listCustomers } from "@erp/core";
+import { addressLine, can, INSTALLMENT_STATUS_LABELS, listBranches, listCustomers, listReceivables } from "@erp/core";
 import { requirePermission } from "@/lib/auth";
 import { query } from "@/lib/actions";
-import { documentLabel } from "@/lib/format";
+import { documentLabel, money } from "@/lib/format";
 import { CustomerForm } from "./customer-form";
 import { Notice, RemoveRecord } from "@/components/remove-record";
 
@@ -22,6 +22,7 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
   const canManage = can(actor, "customers.manage");
 
   if (selected) {
+    const owes = can(actor, "sales.view") ? await query(listReceivables, { customerId: selected.id }) : null;
     return (
       <>
         <p><Link href="/clientes">← Clientes</Link></p>
@@ -33,6 +34,30 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
             <p><span className={`tag ${selected.status === "active" ? "ok" : "off"}`}>{selected.status === "active" ? "Ativo" : "Inativo"}</span></p>
           </div>
         </div>
+        {owes && owes.total.count > 0 && (
+          <section className="card">
+            <div className="card-head">
+              <h2>Deve {money(owes.total.amount)}</h2>
+              <Link href={`/financeiro/receber?cliente=${selected.id}`}>Ver e receber →</Link>
+            </div>
+            {Number(owes.late.amount) > 0 && <p className="warn-text">{money(owes.late.amount)} já vencido.</p>}
+            <ul className="pay-list">
+              {owes.items.slice(0, 6).map((i) => (
+                <li key={i.installmentId ?? i.saleId}>
+                  <span>
+                    <Link href={`/vendas?id=${i.saleId}`}>Venda nº {i.saleNumber}</Link>
+                    {i.number !== null && <small className="muted"> · parcela {i.number}/{i.count}</small>}
+                  </span>
+                  <span className="muted">
+                    {i.dueDate ? i.dueDate.split("-").reverse().join("/") : "sem data"} · <span className={`tag inst-tag ${i.status}`}>{INSTALLMENT_STATUS_LABELS[i.status]}</span>
+                  </span>
+                  <strong>{money(i.open)}</strong>
+                </li>
+              ))}
+            </ul>
+            {owes.items.length > 6 && <p className="muted">E mais {owes.items.length - 6}.</p>}
+          </section>
+        )}
         <section className="card">
           <h2>Dados do cliente</h2>
           {canManage ? <CustomerForm key={selected.id} customer={selected} branches={branches} /> : (

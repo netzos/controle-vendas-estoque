@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { can, enabledFeatures, FULFILLMENTS, getOrganization, listBranches, listCustomers, PAYMENT_LABELS, salesDashboard, stepCounts, stockOverview, telegramConfigured, telegramOrganizationOf, type SalesPeriod } from "@erp/core";
+import { can, enabledFeatures, FULFILLMENTS, getOrganization, listBranches, listCustomers, listReceivables, PAYMENT_LABELS, salesDashboard, stepCounts, stockOverview, telegramConfigured, telegramOrganizationOf, type SalesPeriod } from "@erp/core";
 import { currentActor } from "@/lib/auth";
 import { query } from "@/lib/actions";
 import { money, quantity } from "@/lib/format";
@@ -32,7 +32,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
     const q = new URLSearchParams(Object.entries(p).filter((e): e is [string, string] => !!e[1]));
     return q.size ? `/?${q}` : "/";
   };
-  const [org, dash, stock, steps, telegramPending, fewCustomers] = await Promise.all([
+  const [org, dash, stock, steps, telegramPending, fewCustomers, late] = await Promise.all([
     query(getOrganization, {}),
     canSales ? query(salesDashboard, { period: period.key, branchId: branch?.id }) : null,
     canStock ? query(stockOverview, {}) : null,
@@ -41,6 +41,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
     telegramReady ? telegramOrganizationOf(db(), actor.userId).then((linkedTo) => !linkedTo) : false,
     // Empresa começando: lembra dos Primeiros passos até ter alguns clientes.
     can(actor, "customers.manage") && !actor.platformView ? query(listCustomers, { limit: 5 }).then((c) => c.length < 5) : false,
+    canSales ? query(listReceivables, { filter: "late", limit: 1 }) : null,
   ]);
   const timeFmt = new Intl.DateTimeFormat("pt-BR", { timeZone: org.timezone, hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" });
   const alerts = stock?.rows.filter((r) => r.status === "out" || r.status === "low").sort((a, b) => Number(a.stockQty) - Number(b.stockQty)) ?? [];
@@ -53,7 +54,8 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const needs: { href: string; text: string; action: string; tone: "bad" | "warn" }[] = [];
   if (steps && steps.late > 0) needs.push({ href: "/entregas?filtro=late", text: `${plural(steps.late, "entrega ou serviço atrasado", "entregas ou serviços atrasados")}`, action: "Resolver", tone: "bad" });
   if (steps && steps.today > 0) needs.push({ href: "/entregas?filtro=today", text: `${plural(steps.today, "entrega ou serviço", "entregas ou serviços")} para hoje`, action: "Ver", tone: "warn" });
-  if (dash && dash.receivable.count > 0) needs.push({ href: "/vendas?receber=1", text: `${money(dash.receivable.amount)} para receber em ${plural(dash.receivable.count, "venda", "vendas")}`, action: "Ver", tone: "warn" });
+  if (late && late.late.count > 0) needs.push({ href: "/financeiro/receber?filtro=late", text: `${money(late.late.amount)} vencido em ${plural(late.late.count, "parcela", "parcelas")}`, action: "Cobrar", tone: "bad" });
+  if (dash && dash.receivable.count > 0) needs.push({ href: "/financeiro/receber", text: `${money(dash.receivable.amount)} na rua, em ${plural(dash.receivable.count, "venda", "vendas")}`, action: "Ver", tone: "warn" });
   if (owed > 0) needs.push({ href: "/estoque?filtro=zerados", text: `${plural(owed, "produto vendido por encomenda", "produtos vendidos por encomenda")}, falta pedir ao fornecedor`, action: "Ver", tone: "bad" });
   if (out > 0) needs.push({ href: "/estoque?filtro=zerados", text: `${plural(out, "produto zerado", "produtos zerados")}`, action: "Repor", tone: "bad" });
   if (fewCustomers) needs.push({ href: "/primeiros-passos", text: "Primeiros passos: traga seus clientes de uma planilha, quando quiser", action: "Ver", tone: "warn" });

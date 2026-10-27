@@ -5,7 +5,7 @@ import { AppError, forbidden, notFound } from "../../errors.ts";
 import { defineService } from "../../service.ts";
 import { decimalField, optionalText, uuidOrNull } from "../catalog/fields.ts";
 import { applyMovement, averageCost } from "../stock/movements.ts";
-import { DELIVERY_STEP, ORDER_STEP, type Fulfillment } from "../../labels.ts";
+import { DELIVERY_STEP, INTERVAL_LABELS, ORDER_STEP, dueDates, splitCents, type Fulfillment, type InstallmentInterval, type InstallmentStatus } from "../../labels.ts";
 import { cancelFollowup, followupInput, insertFollowup } from "./followups.ts";
 import { featureEnabled } from "../../features.ts";
 
@@ -47,6 +47,22 @@ export interface SalePayment {
   userName: string;
 }
 
+export interface SaleInstallment {
+  id: string;
+  number: number;
+  dueDate: string;
+  amount: string;
+  paidAmount: string;
+  paidOn: string | null;
+  status: InstallmentStatus;
+}
+
+// Hoje no fuso da empresa e a situação da parcela ("vencida" e "parcial" pelo dia de hoje).
+const ORG_TODAY = `(now() AT TIME ZONE (SELECT timezone FROM controle_vendas_estoque.organizations WHERE id = controle_vendas_estoque.current_org()))::date`;
+const INSTALLMENT_STATUS = `CASE WHEN i.status <> 'open' THEN i.status
+  WHEN i.due_date < ${ORG_TODAY} THEN 'late'
+  WHEN i.paid_amount > 0 THEN 'partial' ELSE 'open' END`;
+
 export interface SaleItem {
   id: string;
   productId: string;
@@ -77,6 +93,10 @@ export interface Sale {
   /** Quanto já foi recebido em dinheiro, Pix, cartão... (sem a troca). */
   paidTotal: string;
   paymentStatus: PaymentStatus;
+  /** Venda parcelada: entrada paga na hora, número de parcelas e intervalo. */
+  downPayment: string;
+  installmentCount: number;
+  installmentInterval: InstallmentInterval | null;
   deliveryFee: string;
   fulfillment: Fulfillment;
   followupStatus: "open" | "done" | "cancelled" | null;
@@ -93,6 +113,7 @@ const SALE_COLUMNS = `s.id, s.number, s.customer_id AS "customerId", c.name AS "
   s.branch_id AS "branchId", (SELECT b.name FROM controle_vendas_estoque.branches b WHERE b.id = s.branch_id) AS "branchName", s.status,
   s.payment_method AS "paymentMethod", s.subtotal::text AS subtotal, s.discount::text AS discount, s.total::text AS total,
   s.trade_in_total::text AS "tradeInTotal", s.paid_total::text AS "paidTotal", s.payment_status AS "paymentStatus",
+  s.down_payment::text AS "downPayment", s.installment_count AS "installmentCount", s.installment_interval AS "installmentInterval",
   s.delivery_fee::text AS "deliveryFee", s.fulfillment,
   (SELECT f.status FROM controle_vendas_estoque.sale_followups f WHERE f.sale_id = s.id) AS "followupStatus", s.cost_total::text AS "costTotal", s.notes, s.sold_at AS "soldAt", u.name AS "userName",
   (SELECT count(*) FROM controle_vendas_estoque.sale_items i WHERE i.sale_id = s.id)::int AS "itemCount",
@@ -125,6 +146,15 @@ export const createSale = defineService({
       .max(10)
       .optional(),
     discount: decimalField(2, "Desconto").default("0"),
+    // Parcelado / a prazo: o que vier em payments é a entrada; o resto vira
+    // parcelas com vencimento. "single" = uma data só (fiado com data combinada).
+    installments: z
+      .object({
+        count: z.number().int().min(1, "Pelo menos 1 parcela.").max(120, "No máximo 120 parcelas."),
+        interval: z.enum(["monthly", "biweekly", "weekly", "single"]).default("monthly"),
+        firstDue: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Informe a data do primeiro vencimento."),
+      })
+      .optional(),
     notes: optionalText(1000),
     items: z
       .array(
@@ -265,11 +295,18 @@ export const createSale = defineService({
 
     // Recebimentos: o que não for pago agora fica a receber (pagamento parcial).
     const toPayCents = Math.round((Number(subtotal) - Number(input.discount) + Number(fee) - tradeTotal) * 100);
-    if (!input.payments && !input.paymentMethod) throw new AppError("invalid_input", "Escolha a forma de pagamento.");
-    const payments = (input.payments ?? (toPayCents > 0 ? [{ method: input.paymentMethod!, amount: (toPayCents / 100).toFixed(2) }] : []))
+    const plan = input.installments;
+    if (plan && !input.customerId) throw new AppError("invalid_input", "Para vender parcelado ou a prazo, escolha o cliente.");
+    if (!input.payments && !input.paymentMethod && !plan) throw new AppError("invalid_input", "Escolha a forma de pagamento.");
+    const payments = (input.payments ?? (!plan && toPayCents > 0 ? [{ method: input.paymentMethod!, amount: (toPayCents / 100).toFixed(2) }] : []))
       .filter((p) => Number(p.amount) > 0);
     const paidCents = payments.reduce((a, p) => a + Math.round(Number(p.amount) * 100), 0);
     if (paidCents > toPayCents) throw new AppError("invalid_input", "O valor pago passa do total da venda.");
+    // Parcelas: o que falta depois da entrada, dividido pelos vencimentos.
+    const schedule = plan ? dueDates(plan.firstDue, plan.count, plan.interval) : [];
+    if (plan && Number.isNaN(Date.parse(plan.firstDue))) throw new AppError("invalid_input", "Data do primeiro vencimento inválida.");
+    if (plan && paidCents >= toPayCents) throw new AppError("invalid_input", "A entrada já paga a venda toda; não sobra nada para parcelar.");
+    const parcels = plan ? splitCents(toPayCents - paidCents, schedule.length) : [];
     const paymentStatus: PaymentStatus = paidCents >= toPayCents ? "paid" : paidCents > 0 ? "partial" : "pending";
     // Forma principal: a de maior valor (a venda antiga só tinha uma).
     const mainMethod = [...payments].sort((a, b) => Number(b.amount) - Number(a.amount))[0]?.method ?? input.paymentMethod ?? "other";
@@ -279,14 +316,27 @@ export const createSale = defineService({
     const { rows } = await tx.query<{ id: string; number: number; total: string }>(
       `INSERT INTO controle_vendas_estoque.sales
          (organization_id, number, customer_id, payment_method, subtotal, discount, total, cost_total, notes, created_by, trade_in_total, delivery_fee, fulfillment,
-          paid_total, payment_status, branch_id)
+          paid_total, payment_status, branch_id, down_payment, installment_count, installment_interval, first_due_date)
        VALUES ($1, (SELECT coalesce(max(number), 0) + 1 FROM controle_vendas_estoque.sales WHERE organization_id = $1),
-               $2, $3, $4, $5, $4::numeric - $5::numeric + $10::numeric, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+               $2, $3, $4, $5, $4::numeric - $5::numeric + $10::numeric, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
        RETURNING id, number, total::text AS total`,
       [actor.organizationId, input.customerId ?? null, mainMethod, subtotal, input.discount, cost, input.notes ?? null, actor.userId,
-        tradeTotal.toFixed(2), fee, fulfillment, (paidCents / 100).toFixed(2), paymentStatus, branchId],
+        tradeTotal.toFixed(2), fee, fulfillment, (paidCents / 100).toFixed(2), paymentStatus, branchId,
+        plan ? (paidCents / 100).toFixed(2) : "0", parcels.length, plan?.interval ?? null, plan?.firstDue ?? null],
     );
-    const sale = { ...rows[0]!, paymentStatus, paidTotal: (paidCents / 100).toFixed(2), toPay: (toPayCents / 100).toFixed(2) };
+    for (const [i, cents] of parcels.entries()) {
+      await tx.query(
+        `INSERT INTO controle_vendas_estoque.sale_installments (organization_id, sale_id, number, due_date, amount) VALUES ($1, $2, $3, $4, $5)`,
+        [actor.organizationId, rows[0]!.id, i + 1, schedule[i], (cents / 100).toFixed(2)],
+      );
+    }
+    const sale = {
+      ...rows[0]!,
+      paymentStatus,
+      paidTotal: (paidCents / 100).toFixed(2),
+      toPay: (toPayCents / 100).toFixed(2),
+      installments: parcels.map((c, i) => ({ number: i + 1, dueDate: schedule[i]!, amount: (c / 100).toFixed(2) })),
+    };
     for (const p of payments) {
       await tx.query(
         `INSERT INTO controle_vendas_estoque.sale_payments (organization_id, sale_id, method, amount, created_by) VALUES ($1, $2, $3, $4, $5)`,
@@ -352,7 +402,7 @@ export const createSale = defineService({
       action: "sale.create",
       entityType: "sale",
       entityId: sale.id,
-      summary: `Venda nº ${sale.number} de R$ ${sale.total}${tradeTotal > 0 ? ` (R$ ${tradeTotal.toFixed(2)} em troca)` : ""}${paymentStatus !== "paid" ? ` · falta receber R$ ${((toPayCents - paidCents) / 100).toFixed(2)}` : ""}`,
+      summary: `Venda nº ${sale.number} de R$ ${sale.total}${tradeTotal > 0 ? ` (R$ ${tradeTotal.toFixed(2)} em troca)` : ""}${paymentStatus !== "paid" ? ` · falta receber R$ ${((toPayCents - paidCents) / 100).toFixed(2)}` : ""}${parcels.length > 0 ? ` em ${parcels.length}x (${INTERVAL_LABELS[plan!.interval].toLowerCase()}, 1º vencimento ${plan!.firstDue})` : ""}`,
       after: { ...sale, items: lines.length, tradeIns: input.tradeIns.length },
     });
     await emit("sale.created", { saleId: sale.id, number: sale.number, total: sale.total }, { type: "sale", id: sale.id });
@@ -387,6 +437,7 @@ export const cancelSale = defineService({
       await applyMovement(tx, actor, { ...m, kind: "sale_cancel", saleId: input.id, notes: input.reason });
     }
     await cancelFollowup(tx, input.id);
+    await tx.query("UPDATE controle_vendas_estoque.sale_installments SET status = 'cancelled' WHERE sale_id = $1 AND status = 'open'", [input.id]);
     await audit({ action: "sale.cancel", entityType: "sale", entityId: input.id, summary: `Venda nº ${sale.number} cancelada: ${input.reason}` });
     await emit("sale.cancelled", { saleId: input.id, number: sale.number }, { type: "sale", id: input.id });
     return { id: input.id, number: sale.number };
@@ -402,6 +453,8 @@ export const receiveSalePayment = defineService({
     saleId: z.string().uuid(),
     method: z.enum(["cash", "pix", "credit", "debit", "other"]),
     amount: decimalField(2, "Valor recebido"),
+    // Parcela que a pessoa está pagando; sem ela, paga da mais antiga em aberto.
+    installmentId: uuidOrNull,
     notes: optionalText(300),
   }),
   async handler({ tx, actor, audit, emit }, input) {
@@ -427,14 +480,145 @@ export const receiveSalePayment = defineService({
       "UPDATE controle_vendas_estoque.sales SET paid_total = paid_total + $2::numeric, payment_status = $3 WHERE id = $1",
       [input.saleId, (amount / 100).toFixed(2), status],
     );
+    const applied = await applyToInstallments(tx, input.saleId, amount, input.installmentId);
     await audit({
       action: "sale.receive",
       entityType: "sale",
       entityId: input.saleId,
-      summary: `Recebido R$ ${(amount / 100).toFixed(2)} (${PAYMENT_LABELS[input.method]}) da venda nº ${sale.number}${status === "paid" ? ", quitada" : ""}`,
+      summary: `Recebido R$ ${(amount / 100).toFixed(2)} (${PAYMENT_LABELS[input.method]}) da venda nº ${sale.number}${applied.length > 0 ? ` · parcela ${applied.join(", ")}` : ""}${status === "paid" ? ", quitada" : ""}`,
     });
     await emit("sale.payment_received", { saleId: input.saleId, amount: (amount / 100).toFixed(2), status }, { type: "sale", id: input.saleId });
-    return { saleId: input.saleId, number: sale.number, paymentStatus: status, stillOpen: ((open - amount) / 100).toFixed(2) };
+    return { saleId: input.saleId, number: sale.number, paymentStatus: status, stillOpen: ((open - amount) / 100).toFixed(2), installments: applied };
+  },
+});
+
+// Aplica um recebimento nas parcelas abertas: primeiro a escolhida (se houver),
+// depois da mais antiga para a mais nova. Devolve os números das parcelas tocadas.
+async function applyToInstallments(tx: Tx, saleId: string, cents: number, firstId?: string | null): Promise<number[]> {
+  const { rows } = await tx.query<{ id: string; number: number; open: string }>(
+    `SELECT id, number, (amount - paid_amount)::text AS open FROM controle_vendas_estoque.sale_installments
+      WHERE sale_id = $1 AND status = 'open' ORDER BY (id = $2::uuid) DESC NULLS LAST, number FOR UPDATE`,
+    [saleId, firstId ?? null],
+  );
+  if (firstId && rows[0]?.id !== firstId) throw new AppError("invalid_input", "Essa parcela não está em aberto.");
+  const touched: number[] = [];
+  let left = cents;
+  for (const r of rows) {
+    if (left <= 0) break;
+    const take = Math.min(left, Math.round(Number(r.open) * 100));
+    left -= take;
+    touched.push(r.number);
+    await tx.query(
+      `UPDATE controle_vendas_estoque.sale_installments
+          SET paid_amount = paid_amount + $2::numeric, paid_on = ${ORG_TODAY},
+              status = CASE WHEN paid_amount + $2::numeric >= amount THEN 'paid' ELSE 'open' END
+        WHERE id = $1`,
+      [r.id, (take / 100).toFixed(2)],
+    );
+  }
+  return touched.sort((a, b) => a - b);
+}
+
+export interface Receivable {
+  /** Parcela (installmentId) ou venda a receber sem parcelas (installmentId nulo). */
+  installmentId: string | null;
+  saleId: string;
+  saleNumber: number;
+  customerId: string | null;
+  customerName: string | null;
+  customerPhone: string | null;
+  number: number | null;
+  count: number;
+  /** Sem data combinada quando a venda ficou a receber sem parcelas. */
+  dueDate: string | null;
+  amount: string;
+  paidAmount: string;
+  open: string;
+  status: InstallmentStatus;
+  daysLate: number;
+}
+
+export interface ReceivablesOverview {
+  today: string;
+  total: { amount: string; count: number; customers: number };
+  late: { amount: string; count: number };
+  week: { amount: string; count: number };
+  noDate: { amount: string; count: number };
+  customers: { customerId: string | null; name: string | null; phone: string | null; open: string; late: string; nextDue: string | null; items: number }[];
+  items: Receivable[];
+}
+
+export const listReceivables = defineService({
+  name: "receivables.list",
+  description:
+    "Contas a receber (dinheiro na rua): o total em aberto, o que está vencido, o que vence nos próximos 7 dias, quanto cada cliente deve e cada parcela em aberto",
+  permission: "sales.view",
+  risk: 1,
+  input: z.object({
+    customerId: uuidOrNull,
+    // late = só vencidas; week = vencidas e as que vencem em 7 dias.
+    filter: z.enum(["all", "late", "week"]).default("all"),
+    limit: z.number().int().min(1).max(1000).default(300),
+  }),
+  async handler({ tx }, input) {
+    const { rows } = await tx.query<Receivable>(
+      `WITH open_items AS (
+         SELECT i.id AS "installmentId", s.id AS "saleId", s.number AS "saleNumber", s.customer_id AS "customerId",
+                i.number, s.installment_count AS count, i.due_date AS due, i.amount, i.paid_amount AS paid,
+                ${INSTALLMENT_STATUS} AS status
+           FROM controle_vendas_estoque.sale_installments i
+           JOIN controle_vendas_estoque.sales s ON s.id = i.sale_id
+          WHERE i.status = 'open' AND s.status = 'completed'
+         UNION ALL
+         -- Venda a receber sem parcelas (fiado sem data, ou pagamento parcial antigo).
+         SELECT NULL, s.id, s.number, s.customer_id, NULL, 0, NULL, s.total - s.trade_in_total, s.paid_total,
+                CASE WHEN s.paid_total > 0 THEN 'partial' ELSE 'open' END
+           FROM controle_vendas_estoque.sales s
+          WHERE s.status = 'completed' AND s.payment_status <> 'paid' AND s.installment_count = 0
+       )
+       SELECT o."installmentId", o."saleId", o."saleNumber", o."customerId", c.name AS "customerName", c.phone AS "customerPhone",
+              o.number, o.count, to_char(o.due, 'YYYY-MM-DD') AS "dueDate", o.amount::text AS amount, o.paid::text AS "paidAmount",
+              (o.amount - o.paid)::text AS open, o.status,
+              CASE WHEN o.due IS NOT NULL AND o.due < ${ORG_TODAY} THEN (${ORG_TODAY} - o.due) ELSE 0 END AS "daysLate"
+         FROM open_items o
+         LEFT JOIN controle_vendas_estoque.customers c ON c.id = o."customerId"
+        WHERE ($1::uuid IS NULL OR o."customerId" = $1)
+        ORDER BY o.due NULLS LAST, c.name, o."saleNumber", o.number`,
+      [input.customerId ?? null],
+    );
+    const today = (await tx.query<{ d: string }>(`SELECT to_char(${ORG_TODAY}, 'YYYY-MM-DD') AS d`)).rows[0]!.d;
+    const weekEnd = new Date(Date.parse(today) + 7 * 86400000).toISOString().slice(0, 10);
+    const cents = (r: Receivable) => Math.round(Number(r.open) * 100);
+    const sum = (list: Receivable[]) => ({ amount: (list.reduce((a, r) => a + cents(r), 0) / 100).toFixed(2), count: list.length });
+    const late = rows.filter((r) => r.status === "late");
+    const week = rows.filter((r) => r.dueDate !== null && r.dueDate <= weekEnd);
+
+    const byCustomer = new Map<string, ReceivablesOverview["customers"][number] & { lateCents: number; openCents: number }>();
+    for (const r of rows) {
+      const key = r.customerId ?? "";
+      const c = byCustomer.get(key) ?? {
+        customerId: r.customerId, name: r.customerName, phone: r.customerPhone, open: "0", late: "0", nextDue: null, items: 0, lateCents: 0, openCents: 0,
+      };
+      c.openCents += cents(r);
+      if (r.status === "late") c.lateCents += cents(r);
+      if (r.dueDate && (!c.nextDue || r.dueDate < c.nextDue)) c.nextDue = r.dueDate;
+      c.items += 1;
+      byCustomer.set(key, c);
+    }
+    const customers = [...byCustomer.values()]
+      .sort((a, b) => b.openCents - a.openCents)
+      .map(({ lateCents, openCents, ...c }) => ({ ...c, open: (openCents / 100).toFixed(2), late: (lateCents / 100).toFixed(2) }));
+
+    const items = input.filter === "late" ? late : input.filter === "week" ? week : rows;
+    return {
+      today,
+      total: { ...sum(rows), customers: customers.length },
+      late: sum(late),
+      week: sum(week.filter((r) => r.status !== "late")),
+      noDate: sum(rows.filter((r) => r.dueDate === null)),
+      customers,
+      items: items.slice(0, input.limit),
+    } satisfies ReceivablesOverview;
   },
 });
 
@@ -501,7 +685,14 @@ export const getSale = defineService({
         WHERE p.sale_id = $1 ORDER BY p.paid_at, p.created_at`,
       [input.id],
     );
-    return { ...rows[0], items: items.rows, tradeIns: tradeIns.rows, payments: payments.rows };
+    const installments = await tx.query<SaleInstallment>(
+      `SELECT i.id, i.number, to_char(i.due_date, 'YYYY-MM-DD') AS "dueDate", i.amount::text AS amount, i.paid_amount::text AS "paidAmount",
+              to_char(i.paid_on, 'YYYY-MM-DD') AS "paidOn", ${INSTALLMENT_STATUS} AS status
+         FROM controle_vendas_estoque.sale_installments i
+        WHERE i.sale_id = $1 ORDER BY i.number`,
+      [input.id],
+    );
+    return { ...rows[0], items: items.rows, tradeIns: tradeIns.rows, payments: payments.rows, installments: installments.rows };
   },
 });
 
