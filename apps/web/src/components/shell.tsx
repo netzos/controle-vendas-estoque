@@ -17,12 +17,15 @@ export function Shell({
   topbar,
   user,
   logout,
+  viewMode = false,
   children,
 }: {
   navigation: NavGroup[];
   topbar: React.ReactNode;
   user: { name: string };
   logout: (form: FormData) => Promise<void>;
+  /** Administrador olhando o painel de um cliente: cor diferente e tudo travado. */
+  viewMode?: boolean;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -35,7 +38,7 @@ export function Shell({
   const tabs = current && !current.hub && current.items.length > 1 ? current.items : null;
 
   return (
-    <div className="shell">
+    <div className={`shell${viewMode ? " view-mode" : ""}`}>
       <aside className="rail" aria-label="Menu principal">
         <Link href="/" className="rail-logo" aria-label={`${BRAND_NAME} · Início`}>
           <LogoMark size={52} />
