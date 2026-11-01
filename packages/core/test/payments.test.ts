@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { after, before, describe, it } from "node:test";
-import { AppError, createProduct, createSale, getSale, listSales, listUnits, receiveSalePayment, runService, salesDashboard, type Actor } from "../src/index.ts";
+import { AppError, createProduct, createSale, getSale, listSales, listUnits, receiveSalePayment, runService, salesDashboard, setHandoverDate, type Actor } from "../src/index.ts";
 import { actorFor, seedCompany, setupTestDb, type TestDb } from "./helpers.ts";
 
 let t: TestDb;
@@ -64,5 +64,33 @@ describe("pagamento dividido e parcial", () => {
       AppError,
     );
     await assert.rejects(runService(t.app, createSale, owner, { items: [{ productId: produto, quantity: "1" }] }), AppError);
+  });
+
+  it("a combinar: sem forma, fica a receber e a forma entra no recebimento", async () => {
+    const sale = await runService(t.app, createSale, owner, {
+      items: [{ productId: produto, quantity: "1" }],
+      paymentLater: true,
+      paymentMethod: "pix",
+      handoverDate: "2030-05-20",
+    });
+    assert.equal(sale.paymentStatus, "pending");
+    let full = await runService(t.app, getSale, owner, { id: sale.id });
+    assert.equal(full.paymentMethod, null);
+    assert.equal(full.handoverDate, "2030-05-20");
+    assert.equal(full.payments.length, 0);
+    await runService(t.app, receiveSalePayment, owner, { saleId: sale.id, method: "cash", amount: "1000" });
+    full = await runService(t.app, getSale, owner, { id: sale.id });
+    assert.equal(full.paymentMethod, "cash");
+    assert.equal(full.paymentStatus, "paid");
+  });
+
+  it("muda e tira a data de retirada depois", async () => {
+    const sale = await runService(t.app, createSale, owner, { paymentMethod: "pix", items: [{ productId: produto, quantity: "1" }] });
+    assert.equal((await runService(t.app, getSale, owner, { id: sale.id })).handoverDate, null);
+    await runService(t.app, setHandoverDate, owner, { id: sale.id, handoverDate: "2030-06-01" });
+    assert.equal((await runService(t.app, getSale, owner, { id: sale.id })).handoverDate, "2030-06-01");
+    await runService(t.app, setHandoverDate, owner, { id: sale.id, handoverDate: "" });
+    assert.equal((await runService(t.app, getSale, owner, { id: sale.id })).handoverDate, null);
+    await assert.rejects(runService(t.app, setHandoverDate, owner, { id: sale.id, handoverDate: "amanhã" }), AppError);
   });
 });

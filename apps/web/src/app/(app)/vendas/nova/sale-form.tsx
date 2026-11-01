@@ -30,6 +30,8 @@ const PAYMENTS = [
   { key: "debit", label: "Débito" },
   { key: "credit", label: "Crédito" },
   { key: "other", label: "Outro" },
+  // Forma ainda não combinada: a venda fica toda a receber.
+  { key: "later", label: "A combinar" },
 ] as const;
 
 // Quantidade digitada com vírgula: "1,5" → 1.5.
@@ -62,6 +64,8 @@ export function SaleForm({
   // Pagamento dividido em várias formas, ou só uma parte agora (o resto fica a receber).
   const [split, setSplit] = useState<{ key: number; method: string; amount: string }[] | null>(null);
   const [discount, setDiscount] = useState("");
+  // Dia combinado para o cliente retirar (ou receber, na entrega).
+  const [handover, setHandover] = useState("");
   // Preço negociado por item; vazio = preço do cadastro.
   const [prices, setPrices] = useState<Record<string, string>>({});
   // Itens que o cliente entrega como parte do pagamento.
@@ -84,6 +88,8 @@ export function SaleForm({
       setDiscount("");
       setSearch("");
       setSplit(null);
+      setHandover("");
+      setPayment("pix");
     }
   }, [state]);
 
@@ -114,7 +120,7 @@ export function SaleForm({
   const splitOpen = Math.round((Math.max(toPay, 0) - splitPaid) * 100) / 100;
   const setSplitRow = (key: number, patch: Partial<{ method: string; amount: string }>) =>
     setSplit((rows) => (rows ?? []).map((r) => (r.key === key ? { ...r, ...patch } : r)));
-  const startSplit = () => setSplit([{ key: Date.now(), method: payment, amount: "" }]);
+  const startSplit = () => setSplit([{ key: Date.now(), method: payment === "later" ? "pix" : payment, amount: "" }]);
   const tracked = products.filter((p) => p.trackStock);
   const draftOf = (n: string): StepDraft => stepDrafts[n] ?? { scheduledFor: "", responsible: "", cost: "" };
   const setDraft = (n: string, patch: Partial<StepDraft>) => setStepDrafts((d) => ({ ...d, [n]: { ...draftOf(n), ...patch } }));
@@ -138,9 +144,12 @@ export function SaleForm({
       )} />
       {split ? (
         <input type="hidden" name="payments" value={JSON.stringify(split.filter((p) => toNumber(p.amount) > 0).map((p) => ({ method: p.method, amount: p.amount })))} />
+      ) : payment === "later" ? (
+        <input type="hidden" name="paymentLater" value="1" />
       ) : (
         <input type="hidden" name="paymentMethod" value={payment} />
       )}
+      <input type="hidden" name="handoverDate" value={handover} />
       <input type="hidden" name="fulfillment" value={way} />
       {hasAfter && (
         <input
@@ -268,6 +277,13 @@ export function SaleForm({
           </div>
         )}
 
+        {lines.length > 0 && (
+          <div className="field handover-field">
+            <label htmlFor="handoverDate">{way === "delivery" ? "Data da entrega (opcional)" : "Data da retirada (opcional)"}</label>
+            <input id="handoverDate" type="date" min={today} value={handover} onChange={(e) => setHandover(e.target.value)} />
+          </div>
+        )}
+
         {hasAfter && (
           <details className="after-sale" open>
             <summary>{way === "delivery" ? "Entrega e etapas" : "Depois da venda"} <span className="muted">· {stepNames.join(", ")}</span></summary>
@@ -311,6 +327,9 @@ export function SaleForm({
                 </button>
               ))}
             </div>
+            {payment === "later" && (
+              <p className="muted small-text">Nada é recebido agora: a venda fica <b>a receber</b>. A forma de pagamento você escolhe na hora de receber, na ficha da venda.</p>
+            )}
             <button type="button" className="link-button" onClick={startSplit}>Dividir em mais de uma forma ou pagar só uma parte</button>
           </>
         ) : (
@@ -322,7 +341,7 @@ export function SaleForm({
             {split.map((row, i) => (
               <div className="split-row" key={row.key}>
                 <select aria-label="Forma de pagamento" value={row.method} onChange={(e) => setSplitRow(row.key, { method: e.target.value })}>
-                  {PAYMENTS.map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}
+                  {PAYMENTS.filter((p) => p.key !== "later").map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}
                 </select>
                 <input
                   aria-label="Valor pago nesta forma"
