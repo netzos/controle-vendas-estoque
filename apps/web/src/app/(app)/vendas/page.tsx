@@ -4,13 +4,14 @@ import { requirePermission } from "@/lib/auth";
 import { query } from "@/lib/actions";
 import { db } from "@/lib/db";
 import { money, quantity } from "@/lib/format";
-import { CancelSaleForm } from "./cancel-form";
+import { CancelSaleForm, DeleteSaleForm } from "./cancel-form";
+import { Notice } from "@/components/remove-record";
 import { ReceivePaymentForm } from "./receive-form";
 import { AddStepsForm, StepRow } from "../entregas/steps";
 
 export const metadata = { title: "Vendas" };
 
-export default async function SalesPage({ searchParams }: { searchParams: Promise<{ q?: string; id?: string; receber?: string; filial?: string }> }) {
+export default async function SalesPage({ searchParams }: { searchParams: Promise<{ q?: string; id?: string; receber?: string; filial?: string; aviso?: string }> }) {
   const actor = await requirePermission("sales.view");
   const params = await searchParams;
   const branches = can(actor, "branches.view") ? await query(listBranches, {}) : [];
@@ -33,8 +34,9 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
     <>
       <div className="page-header">
         <h1>Vendas</h1>
-        <p>Todas as vendas registradas. Cancelar uma venda devolve os itens ao estoque.</p>
+        <p>Todas as vendas registradas. Cancelar uma venda devolve os itens ao estoque e guarda o histórico; excluir apaga a venda de vez.</p>
       </div>
+      <Notice text={params.aviso} />
 
       {selected && (
         <section className="card">
@@ -133,6 +135,7 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
           {selected.status === "completed" && canSteps && <AddStepsForm saleId={selected.id} hasFollowup={!!followup} today={today} stepNames={stepTypes.map((t) => t.name)} />}
           {selected.status === "cancelled" && <p className="muted">Cancelada: {selected.cancelReason}</p>}
           {selected.status === "completed" && can(actor, "sales.cancel") && <CancelSaleForm id={selected.id} />}
+          {can(actor, "sales.cancel") && <DeleteSaleForm id={selected.id} number={selected.number} />}
         </section>
       )}
 

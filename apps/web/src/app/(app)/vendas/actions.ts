@@ -1,8 +1,9 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import type { z } from "zod";
-import { cancelSale, createSale, receiveSalePayment, runService } from "@erp/core";
+import { cancelSale, createSale, deleteSale, receiveSalePayment, runService } from "@erp/core";
 import { money } from "@/lib/format";
 import { currentActor } from "@/lib/auth";
 import { db } from "@/lib/db";
@@ -47,6 +48,17 @@ export async function createSaleAction(_: FormState, form: FormData): Promise<Fo
 
 export async function cancelSaleAction(_: FormState, form: FormData): Promise<FormState> {
   return perform(cancelSale, { id: str(form, "id"), reason: str(form, "reason") }, { successMessage: "Venda cancelada e itens devolvidos ao estoque.", revalidate: "/vendas" });
+}
+
+export async function deleteSaleAction(_: FormState, form: FormData): Promise<FormState> {
+  let number: number;
+  try {
+    ({ number } = await runService(db(), deleteSale, await currentActor(), { id: str(form, "id") }));
+  } catch (err) {
+    return toFormState(err);
+  }
+  revalidatePath("/", "layout");
+  redirect(`/vendas?aviso=${encodeURIComponent(`Venda nº ${number} excluída por completo.`)}`);
 }
 
 export async function receivePaymentAction(_: FormState, form: FormData): Promise<FormState> {
