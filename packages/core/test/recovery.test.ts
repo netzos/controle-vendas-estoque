@@ -45,13 +45,40 @@ const capture = () => setMailTransport(async (m) => void sent.push(m));
 
 describe("recuperação de senha", () => {
   it("sem e-mail configurado avisa e não cria link", async () => {
-    assert.deepEqual(await requestPasswordReset(t.app, email), { mailEnabled: false });
+    assert.deepEqual(await requestPasswordReset(t.app, email, { telegram: null }), { enabled: false });
+  });
+
+  it("sem e-mail, manda o link pelo Telegram ligado à conta", async () => {
+    const a = await seedCompany(t.app, "Loja Telegram");
+    await t.owner.query(
+      `INSERT INTO controle_vendas_estoque.telegram_links (user_id, organization_id, telegram_user_id, chat_id, first_name)
+       VALUES ($1, $2, 555, 555, 'Dono')`,
+      [a.userId, a.organizationId],
+    );
+    const msgs: { chat_id: string; text: string }[] = [];
+    const telegram = {
+      call: async (method: string, params: Record<string, unknown> = {}) => {
+        assert.equal(method, "sendMessage");
+        msgs.push(params as { chat_id: string; text: string });
+        return { message_id: 1 } as never;
+      },
+      download: async () => new Uint8Array(),
+    };
+    assert.deepEqual(await requestPasswordReset(t.app, "ninguem@teste.com", { telegram }), { enabled: true });
+    assert.deepEqual(await requestPasswordReset(t.app, email, { telegram }), { enabled: true });
+    assert.equal(msgs.length, 0);
+    await requestPasswordReset(t.app, a.email, { telegram });
+    assert.equal(msgs.length, 1);
+    assert.equal(msgs[0]!.chat_id, "555");
+    const token = /token=([A-Za-z0-9_-]+)/.exec(msgs[0]!.text)![1]!;
+    await resetPassword(t.app, { token, newPassword: "senha-pelo-telegram" });
+    await login(t.app, { email: a.email, password: "senha-pelo-telegram" });
   });
 
   it("link troca a senha uma vez, encerra sessões e não revela e-mails", async () => {
     capture();
     const old = await login(t.app, { email, password: PASSWORD });
-    assert.deepEqual(await requestPasswordReset(t.app, "ninguem@teste.com"), { mailEnabled: true });
+    assert.deepEqual(await requestPasswordReset(t.app, "ninguem@teste.com"), { enabled: true });
     assert.equal(sent.length, 0);
 
     await requestPasswordReset(t.app, email.toUpperCase());
