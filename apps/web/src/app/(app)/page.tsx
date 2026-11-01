@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { can, enabledFeatures, FULFILLMENTS, getOrganization, listBranches, listCustomers, PAYMENT_LABELS, salesDashboard, stepCounts, stockOverview, telegramConfigured, telegramOrganizationOf, type SalesPeriod } from "@erp/core";
+import { redirect } from "next/navigation";
+import { can, enabledFeatures, isPlatformDeveloper, FULFILLMENTS, getOrganization, listBranches, listCustomers, PAYMENT_LABELS, salesDashboard, stepCounts, stockOverview, telegramConfigured, telegramOrganizationOf, type SalesPeriod } from "@erp/core";
 import { currentActor } from "@/lib/auth";
 import { query } from "@/lib/actions";
 import { money, quantity } from "@/lib/format";
@@ -18,6 +19,8 @@ const PERIODS: { key: SalesPeriod; label: string; previous: string }[] = [
 
 export default async function HomePage({ searchParams }: { searchParams: Promise<{ periodo?: string; filial?: string }> }) {
   const actor = await currentActor();
+  // Modo gestor: a conta da plataforma não tem painel de vendas, começa na Plataforma.
+  if (!actor.platformView && (await isPlatformDeveloper(db(), actor.userId))) redirect("/plataforma");
   const params = await searchParams;
   const period = PERIODS.find((p) => p.key === params.periodo) ?? PERIODS[0]!;
   const canSales = can(actor, "sales.view");
