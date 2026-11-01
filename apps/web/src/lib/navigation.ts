@@ -53,6 +53,14 @@ export const NAVIGATION: NavGroup[] = [
     ],
   },
   {
+    label: "Painel",
+    short: "Painel",
+    hint: "Suas vendas em gráficos: melhores dias, produtos e clientes",
+    icon: "chart",
+    // Um item só: as sub-abas ficam na própria página e levam o período junto.
+    items: [{ label: "Painel", href: "/painel", permission: "sales.view", phase: 2 }],
+  },
+  {
     label: "Vender",
     short: "Vender",
     hint: "Registre uma venda em poucos toques",

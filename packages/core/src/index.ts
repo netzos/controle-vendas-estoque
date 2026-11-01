@@ -33,6 +33,7 @@ export * from "./modules/catalog/remove.ts";
 export * from "./modules/stock/movements.ts";
 export * from "./modules/sales/sales.ts";
 export * from "./modules/sales/followups.ts";
+export * from "./modules/sales/insights.ts";
 export * from "./modules/costs/costs.ts";
 export * from "./modules/commissions/commissions.ts";
 export * from "./modules/nets/instructions.ts";
