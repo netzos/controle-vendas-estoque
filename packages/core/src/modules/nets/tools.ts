@@ -15,6 +15,7 @@ import * as costs from "../costs/costs.ts";
 import * as commissions from "../commissions/commissions.ts";
 import * as organizations from "../organizations/service.ts";
 import * as followups from "../sales/followups.ts";
+import * as insights from "../sales/insights.ts";
 import * as sales from "../sales/sales.ts";
 import * as settings from "../settings/service.ts";
 import * as movements from "../stock/movements.ts";
@@ -89,7 +90,7 @@ function trim(node: unknown): unknown {
 
 const ALL: AnyService[] = [
   organizations, settings, audit, members, roles, parties, products, customFields, images, remove, supplierProducts,
-  movements, sales, followups, costs, commissions,
+  movements, sales, insights, followups, costs, commissions,
 ]
   .flatMap((m) => Object.values(m))
   .filter(isService)
