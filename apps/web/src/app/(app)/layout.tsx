@@ -1,7 +1,7 @@
 import { can, enabledFeatures, isPlatformDeveloper, listPlatformOrganizations, listUserOrganizations, telegramConfigured, telegramOrganizationOf } from "@erp/core";
 import { db } from "@/lib/db";
 import { currentActor } from "@/lib/auth";
-import { visibleNavigation } from "@/lib/nav-visible";
+import { managerMode, visibleNavigation } from "@/lib/nav-visible";
 import { OrganizationSwitcher, Shell } from "@/components/shell";
 import { NetsBubble } from "@/components/nets-bubble";
 import Link from "next/link";
@@ -28,7 +28,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       }))
     : own;
   // Botão Telegram no topo de todas as telas: a pessoa chega à Netz com um clique.
-  const telegram = can(actor, "nets.use") && features.has("telegram") && telegramConfigured() && !actor.platformView;
+  // No modo gestor não há Netz nem Telegram: a conta é só para gerir a plataforma.
+  const manager = managerMode(actor, developer);
+  const telegram = can(actor, "nets.use") && features.has("telegram") && telegramConfigured() && !actor.platformView && !manager;
   const telegramLinked = telegram && (await telegramOrganizationOf(db(), actor.userId)) !== null;
   const viewing = actor.platformView ? all.find((o) => o.id === actor.organizationId) : undefined;
   const navigation = visibleNavigation(actor, developer, features);
@@ -41,12 +43,15 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       topbar={
         <div className="topbar-actions">
           {telegram && <TelegramButton linked={telegramLinked} />}
-          <OrganizationSwitcher
-            organizations={organizations}
-            activeId={actor.organizationId}
-            action={switchOrganizationAction}
-            createHref={developer ? undefined : "/administracao/outra-empresa"}
-          />
+          {/* Conta gestora: sem nome de empresa nem troca de empresa, só a Plataforma. */}
+          {!manager && (
+            <OrganizationSwitcher
+              organizations={organizations}
+              activeId={actor.organizationId}
+              action={switchOrganizationAction}
+              createHref={developer ? undefined : "/administracao/outra-empresa"}
+            />
+          )}
         </div>
       }
     >
@@ -57,7 +62,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         </div>
       )}
       {children}
-      {can(actor, "nets.use") && features.has("netz") && (
+      {can(actor, "nets.use") && features.has("netz") && !manager && (
         <Suspense fallback={null}>
           <NetsBubble />
         </Suspense>
