@@ -393,6 +393,47 @@ export const cancelSale = defineService({
   },
 });
 
+export const deleteSale = defineService({
+  name: "sales.delete",
+  description:
+    "Exclui uma venda por completo, como se nunca tivesse existido: itens, pagamentos, troca, etapas e custos ligados a ela. O estoque que a venda mexeu volta ao que era. Use só quando a pessoa pedir para excluir (para desfazer mantendo o histórico, use sales.cancel).",
+  permission: "sales.cancel",
+  risk: 4,
+  input: z.object({ id: z.string().uuid() }),
+  async handler({ tx, audit }, input) {
+    const { rows } = await tx.query<{ number: number; total: string; status: string }>(
+      "SELECT number, total::text AS total, status FROM controle_vendas_estoque.sales WHERE id = $1 FOR UPDATE",
+      [input.id],
+    );
+    const sale = rows[0];
+    if (!sale) throw notFound("Venda");
+    // Desfaz no saldo tudo o que a venda movimentou (baixa, troca e, se foi
+    // cancelada, a devolução). Venda cancelada soma zero e o saldo não muda.
+    await tx.query(
+      `UPDATE controle_vendas_estoque.products p SET stock_qty = p.stock_qty - m.qty
+         FROM (SELECT product_id, sum(quantity) AS qty FROM controle_vendas_estoque.stock_movements
+                WHERE sale_id = $1 GROUP BY product_id) m
+        WHERE p.id = m.product_id AND m.qty <> 0`,
+      [input.id],
+    );
+    await tx.query("DELETE FROM controle_vendas_estoque.stock_movements WHERE sale_id = $1", [input.id]);
+    await tx.query(
+      `DELETE FROM controle_vendas_estoque.costs
+        WHERE sale_id = $1 OR step_id IN (SELECT id FROM controle_vendas_estoque.sale_steps WHERE sale_id = $1)`,
+      [input.id],
+    );
+    // Itens, pagamentos, troca e etapas saem junto (ON DELETE CASCADE).
+    await tx.query("DELETE FROM controle_vendas_estoque.sales WHERE id = $1", [input.id]);
+    await audit({
+      action: "sale.delete",
+      entityType: "sale",
+      entityId: input.id,
+      summary: `Venda nº ${sale.number} de R$ ${sale.total} excluída${sale.status === "cancelled" ? " (estava cancelada)" : ""}`,
+    });
+    return { id: input.id, number: sale.number };
+  },
+});
+
 export const receiveSalePayment = defineService({
   name: "sales.receive",
   description: "Registra o recebimento de uma parte ou do restante de uma venda com pagamento parcial ou a receber",

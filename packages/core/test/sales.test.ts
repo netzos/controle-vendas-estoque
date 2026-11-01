@@ -3,6 +3,7 @@ import { after, before, describe, it } from "node:test";
 import {
   AppError,
   cancelSale,
+  deleteSale,
   createMovement,
   createProduct,
   createSale,
@@ -121,5 +122,25 @@ describe("vendas e estoque", () => {
     const s = await runService(t.app, createSale, seller.actor, { paymentMethod: "pix", items: [{ productId: acai, quantity: "1" }] });
     await assert.rejects(runService(t.app, cancelSale, seller.actor, { id: s.id, reason: "teste" }), rejectsWith("forbidden"));
     await assert.rejects(runService(t.app, createMovement, seller.actor, { productId: acai, kind: "in", quantity: "1" }), rejectsWith("forbidden"));
+  });
+
+  it("excluir apaga a venda por completo e devolve o estoque; cancelada não mexe de novo", async () => {
+    const before = (await runService(t.app, stockOverview, owner, {})).rows.find((r) => r.id === acai)!.stockQty;
+    const s = await runService(t.app, createSale, owner, { paymentMethod: "pix", items: [{ productId: acai, quantity: "3" }] });
+    await runService(t.app, deleteSale, owner, { id: s.id });
+    await assert.rejects(runService(t.app, getSale, owner, { id: s.id }), rejectsWith("not_found"));
+    assert.equal((await runService(t.app, stockOverview, owner, {})).rows.find((r) => r.id === acai)!.stockQty, before);
+    const moves = await runService(t.app, listMovements, owner, { productId: acai });
+    assert.ok(!moves.some((m) => m.saleId === s.id), "movimentos da venda somem");
+
+    const c = await runService(t.app, createSale, owner, { paymentMethod: "cash", items: [{ productId: acai, quantity: "2" }] });
+    await runService(t.app, cancelSale, owner, { id: c.id, reason: "Teste" });
+    await runService(t.app, deleteSale, owner, { id: c.id });
+    assert.equal((await runService(t.app, stockOverview, owner, {})).rows.find((r) => r.id === acai)!.stockQty, before);
+
+    const seller = await addUserWithRole(t.app, owner, "sales", "Vendedor 2");
+    const v = await runService(t.app, createSale, seller.actor, { paymentMethod: "pix", items: [{ productId: acai, quantity: "1" }] });
+    await assert.rejects(runService(t.app, deleteSale, seller.actor, { id: v.id }), rejectsWith("forbidden"));
+    await assert.rejects(runService(t.app, deleteSale, other, { id: v.id }), rejectsWith("not_found"));
   });
 });
