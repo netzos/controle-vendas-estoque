@@ -43,12 +43,15 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       topbar={
         <div className="topbar-actions">
           {telegram && <TelegramButton linked={telegramLinked} />}
-          <OrganizationSwitcher
-            organizations={organizations}
-            activeId={actor.organizationId}
-            action={switchOrganizationAction}
-            createHref={developer ? undefined : "/administracao/outra-empresa"}
-          />
+          {/* Conta gestora: sem nome de empresa nem troca de empresa, só a Plataforma. */}
+          {!manager && (
+            <OrganizationSwitcher
+              organizations={organizations}
+              activeId={actor.organizationId}
+              action={switchOrganizationAction}
+              createHref={developer ? undefined : "/administracao/outra-empresa"}
+            />
+          )}
         </div>
       }
     >
