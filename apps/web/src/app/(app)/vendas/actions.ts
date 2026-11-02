@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import type { z } from "zod";
-import { cancelSale, createSale, deleteSale, receiveSalePayment, runService, setHandoverDate } from "@erp/core";
+import { cancelSale, createSale, deleteSale, receiveSalePayment, runService, setHandoverDate, updateSale } from "@erp/core";
 import { money } from "@/lib/format";
 import { currentActor } from "@/lib/auth";
 import { db } from "@/lib/db";
@@ -77,4 +77,20 @@ export async function setHandoverDateAction(_: FormState, form: FormData): Promi
     { id: str(form, "id"), handoverDate: str(form, "handoverDate") || null },
     { successMessage: str(form, "handoverDate") ? "Data salva." : "Data tirada.", revalidate: "/vendas" },
   );
+}
+
+export async function updateSaleAction(_: FormState, form: FormData): Promise<FormState> {
+  let items: { productId: string; quantity: string; unitPrice?: string }[];
+  try {
+    items = JSON.parse(str(form, "items") || "[]");
+  } catch {
+    return { ok: false, message: "Itens inválidos." };
+  }
+  try {
+    const r = await runService(db(), updateSale, await currentActor(), { id: str(form, "id"), items, reason: optional(form, "reason") });
+    revalidatePath("/", "layout");
+    return { ok: true, message: `Venda nº ${r.number} corrigida: ${money(r.total)}${Number(r.stillOpen) > 0 ? `. Falta receber ${money(r.stillOpen)}.` : ""}` };
+  } catch (err) {
+    return toFormState(err);
+  }
 }

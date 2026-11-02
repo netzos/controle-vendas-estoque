@@ -980,3 +980,10 @@ th, td { border-bottom-color: rgba(15, 17, 21, .07); }
 .kpi.hero { background: linear-gradient(145deg, #3b414b 0%, #23272e 100%); border-color: rgba(255, 255, 255, .12); box-shadow: 0 1px 0 rgba(255, 255, 255, .14) inset, 0 20px 40px -20px rgba(15, 17, 21, .55); }
 .nets-fab { background: linear-gradient(180deg, #2f343c, #15181d); }
 td small.unit { display: inline; font-size: 12.5px; }
+/* Corrigir itens de uma venda (melhoria 17) */
+.edit-sale td input { width: 6.5em; text-align: right; }
+.edit-sale-add { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+.edit-sale-add select { flex: 1 1 200px; }
+
+/* Texto ao vivo enquanto a pessoa fala com a Netz (melhoria 16) */
+.nets-live { margin: 0 12px 6px; padding: 8px 12px; border: 1px dashed var(--border); border-radius: 12px; font-size: 14px; color: var(--muted); max-height: 120px; overflow-y: auto; }
