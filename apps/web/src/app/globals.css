@@ -926,3 +926,6 @@ summary .edit-hint { float: right; font-size: 13px; color: var(--muted); font-we
 .edit-sale td input { width: 6.5em; text-align: right; }
 .edit-sale-add { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
 .edit-sale-add select { flex: 1 1 200px; }
+
+/* Texto ao vivo enquanto a pessoa fala com a Netz (melhoria 16) */
+.nets-live { margin: 0 12px 6px; padding: 8px 12px; border: 1px dashed var(--border); border-radius: 12px; font-size: 14px; color: var(--muted); max-height: 120px; overflow-y: auto; }
