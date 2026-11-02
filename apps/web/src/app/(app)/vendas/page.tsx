@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { can, enabledFeatures, FULFILLMENTS, PAYMENT_STATUS_LABELS, getOrganization, getSale, getSaleFollowup, listBranches, listSales, listStepTypes, orgDate, PAYMENT_LABELS, PAYMENT_LATER_LABEL, handoverDateReady, isPaymentLater } from "@erp/core";
+import { can, enabledFeatures, listProducts, FULFILLMENTS, PAYMENT_STATUS_LABELS, getOrganization, getSale, getSaleFollowup, listBranches, listSales, listStepTypes, orgDate, PAYMENT_LABELS, PAYMENT_LATER_LABEL, handoverDateReady, isPaymentLater } from "@erp/core";
 import { requirePermission } from "@/lib/auth";
 import { query } from "@/lib/actions";
 import { db } from "@/lib/db";
@@ -8,6 +8,7 @@ import { CancelSaleForm, DeleteSaleForm } from "./cancel-form";
 import { Notice } from "@/components/remove-record";
 import { ReceivePaymentForm } from "./receive-form";
 import { HandoverDateForm } from "./handover-form";
+import { EditSaleForm } from "./edit-form";
 import { AddStepsForm, StepRow } from "../entregas/steps";
 
 export const metadata = { title: "Vendas" };
@@ -30,6 +31,10 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
     ? await Promise.all([query(getSaleFollowup, { saleId: selected.id }), query(orgDate, {}), query(listStepTypes, {})])
     : [null, "", []];
   const canSteps = can(actor, "deliveries.manage");
+  // Corrigir itens: venda concluída e ainda não paga por inteiro (melhoria 17).
+  const canEdit = !!selected && selected.status === "completed" && can(actor, "sales.create") && !actor.platformView &&
+    !(selected.paymentStatus === "paid" && Number(selected.paidTotal) > 0);
+  const editProducts = canEdit ? await query(listProducts, { limit: 500 }) : [];
   const fmt = new Intl.DateTimeFormat("pt-BR", { timeZone: org.timezone, dateStyle: "short", timeStyle: "short" });
   // "2026-11-02" → "02/11"; o ano só aparece quando não é o atual.
   const year = String(new Date().getFullYear());
@@ -104,6 +109,19 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
             </span>
             <span className="cart-grand">{money(selected.total)}</span>
           </div>
+          {canEdit && (
+            <EditSaleForm
+              key={`${selected.id}-${selected.total}`}
+              saleId={selected.id}
+              canChangePrice={can(actor, "sales.change_price")}
+              items={[...selected.items.reduce((m, i) => {
+                const prev = m.get(i.productId);
+                m.set(i.productId, { productId: i.productId, name: i.productName, quantity: String(Number(i.quantity) + Number(prev?.quantity ?? 0)), unitPrice: String(Number(i.unitPrice)) });
+                return m;
+              }, new Map<string, { productId: string; name: string; quantity: string; unitPrice: string }>()).values()]}
+              products={editProducts.filter((p) => p.status === "active").map((p) => ({ id: p.id, name: p.name, price: String(Number(p.salePrice)) }))}
+            />
+          )}
           {handoverReady && selected.status === "completed" && can(actor, "sales.create") && (
             <HandoverDateForm
               saleId={selected.id}

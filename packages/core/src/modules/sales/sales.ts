@@ -548,6 +548,180 @@ export const setHandoverDate = defineService({
   },
 });
 
+/**
+ * Melhoria 17: corrigir uma venda já registrada (o cliente levou mais, mudou o
+ * preço...) sem excluir e lançar de novo. Mantém o número, os pagamentos, a
+ * troca e as etapas; acerta o estoque só pela diferença e recalcula os totais.
+ * O antes e o depois ficam no histórico de alterações.
+ */
+export const updateSale = defineService({
+  name: "sales.update",
+  description:
+    "Corrige uma venda já registrada: itens, quantidades, preços, desconto e observações. Mantém o número, os pagamentos e as etapas; o estoque muda só pela diferença. Mande a lista COMPLETA de itens como ela deve ficar. Venda já paga por inteiro não pode trocar itens.",
+  permission: "sales.create",
+  risk: 3,
+  input: z.object({
+    id: z.string().uuid(),
+    items: z
+      .array(
+        z.object({
+          productId: z.string().uuid("Escolha o produto."),
+          quantity: decimalField(3, "Quantidade"),
+          unitPrice: decimalField(2, "Preço").optional(),
+        }),
+      )
+      .min(1, "A venda precisa de pelo menos um item."),
+    discount: decimalField(2, "Desconto").optional(),
+    notes: optionalText(1000),
+    reason: optionalText(300),
+  }),
+  async handler({ tx, actor, audit, emit }, input) {
+    const found = await tx.query<{
+      number: number; status: string; createdBy: string; discount: string; fee: string; trade: string; paid: string; paymentStatus: PaymentStatus; total: string; notes: string | null;
+    }>(
+      `SELECT number, status, created_by AS "createdBy", discount::text AS discount, delivery_fee::text AS fee, trade_in_total::text AS trade,
+              paid_total::text AS paid, payment_status AS "paymentStatus", total::text AS total, notes
+         FROM controle_vendas_estoque.sales WHERE id = $1 FOR UPDATE`,
+      [input.id],
+    );
+    const sale = found.rows[0];
+    if (!sale) throw notFound("Venda");
+    if (sale.status === "cancelled") throw new AppError("conflict", `A venda nº ${sale.number} está cancelada.`);
+    if (sale.createdBy !== actor.userId && !can(actor, "sales.cancel")) {
+      throw forbidden("Só quem registrou a venda ou quem pode cancelar vendas consegue corrigi-la.");
+    }
+
+    const old = await tx.query<{ productId: string; name: string; quantity: string; unitPrice: string; backorder: string }>(
+      `SELECT i.product_id AS "productId", p.name, i.quantity::text AS quantity, i.unit_price::text AS "unitPrice", i.backorder_qty::text AS backorder
+         FROM controle_vendas_estoque.sale_items i JOIN controle_vendas_estoque.products p ON p.id = i.product_id
+        WHERE i.sale_id = $1 ORDER BY i.id`,
+      [input.id],
+    );
+    const milli = (v: string | number) => Math.round(Number(v) * 1000);
+    const oldQty = new Map<string, number>();
+    const oldBack = new Map<string, number>();
+    const oldPrice = new Map<string, string>();
+    for (const r of old.rows) {
+      oldQty.set(r.productId, (oldQty.get(r.productId) ?? 0) + milli(r.quantity));
+      oldBack.set(r.productId, (oldBack.get(r.productId) ?? 0) + milli(r.backorder));
+      oldPrice.set(r.productId, r.unitPrice);
+    }
+
+    // Um item por produto: quantidades repetidas do mesmo produto se somam.
+    const merged = new Map<string, { productId: string; quantity: number; unitPrice?: string }>();
+    for (const it of input.items) {
+      if (Number(it.quantity) <= 0) throw new AppError("invalid_input", "A quantidade de cada item deve ser maior que zero. Para tirar um item, deixe-o fora da lista.");
+      const m = merged.get(it.productId);
+      if (m) m.quantity += milli(it.quantity);
+      else merged.set(it.productId, { productId: it.productId, quantity: milli(it.quantity), unitPrice: it.unitPrice });
+    }
+    const ids = [...new Set([...merged.keys(), ...oldQty.keys()])];
+    const products = await tx.query<{ id: string; name: string; price: string; cost: string; track: boolean; status: string; stock: string; backorder: boolean; type: string }>(
+      `SELECT id, name, sale_price::text AS price, cost_price::text AS cost, track_stock AS track, status,
+              stock_qty::text AS stock, backorder, item_type AS type
+         FROM controle_vendas_estoque.products WHERE id = ANY($1::uuid[]) ORDER BY id FOR UPDATE`,
+      [ids],
+    );
+    const byId = new Map(products.rows.map((p) => [p.id, p]));
+
+    const itemsChanged =
+      merged.size !== oldQty.size ||
+      [...merged.values()].some((m) => oldQty.get(m.productId) !== m.quantity || (m.unitPrice !== undefined && Number(m.unitPrice) !== Number(oldPrice.get(m.productId))));
+    // Venda já paga por inteiro: não troca itens (para desfazer, cancele).
+    if (itemsChanged && sale.paymentStatus === "paid" && Number(sale.paid) > 0) {
+      throw new AppError("conflict", `A venda nº ${sale.number} já está paga. Não dá para trocar os itens; se precisar, cancele e lance de novo.`);
+    }
+
+    const lines = [...merged.values()].map((m) => {
+      const p = byId.get(m.productId);
+      if (!p) throw new AppError("invalid_input", "Produto não encontrado.");
+      const before = oldQty.get(m.productId) ?? 0;
+      if (before === 0 && p.status !== "active") throw new AppError("invalid_input", `${p.name} está inativo.`);
+      // Preço: o informado, senão o que já estava na venda, senão o do cadastro.
+      const unitPrice = m.unitPrice ?? oldPrice.get(m.productId) ?? p.price;
+      const reference = oldPrice.get(m.productId) ?? p.price;
+      if (Number(unitPrice) !== Number(reference) && Number(unitPrice) !== Number(p.price) && !can(actor, "sales.change_price")) {
+        throw new AppError("forbidden", `Você não tem permissão para mudar o preço de ${p.name}.`);
+      }
+      // Encomenda: só a diferença acrescentada pode passar do estoque.
+      const delta = m.quantity - before;
+      let backorder = oldBack.get(m.productId) ?? 0;
+      if (delta > 0) {
+        if (p.type === "made_to_order") backorder += delta;
+        else if (p.track) {
+          const free = Math.max(milli(p.stock), 0);
+          const extra = Math.max(delta - free, 0);
+          if (extra > 0 && !p.backorder) throw new AppError("invalid_input", `${p.name}: só tem ${fmtQty(free)} em estoque e este produto não vende por encomenda.`);
+          backorder += extra;
+        }
+      } else backorder = Math.max(backorder + delta, 0);
+      return { productId: m.productId, product: p, quantity: (m.quantity / 1000).toFixed(3), unitPrice, delta, backorder: Math.min(backorder, m.quantity) };
+    });
+
+    const totals = await tx.query<{ subtotal: string; cost: string }>(
+      `SELECT coalesce(sum(round(q * p, 2)), 0)::text AS subtotal, coalesce(sum(q * c), 0)::text AS cost
+         FROM unnest($1::numeric[], $2::numeric[], $3::numeric[]) AS t(q, p, c)`,
+      [lines.map((l) => l.quantity), lines.map((l) => l.unitPrice), lines.map((l) => l.product.cost)],
+    );
+    const { subtotal, cost } = totals.rows[0]!;
+    const discount = input.discount ?? sale.discount;
+    if (Number(discount) > Number(subtotal)) throw new AppError("invalid_input", "O desconto é maior que o valor da venda.");
+    const cents = (v: string | number) => Math.round(Number(v) * 100);
+    const totalCents = cents(subtotal) - cents(discount) + cents(sale.fee);
+    const toPay = totalCents - cents(sale.trade);
+    if (toPay < 0) throw new AppError("invalid_input", "O valor da troca passa do novo total da venda.");
+    const paid = cents(sale.paid);
+    if (paid > toPay) {
+      throw new AppError("invalid_input", `Já foram recebidos R$ ${(paid / 100).toFixed(2).replace(".", ",")} desta venda; o novo total não pode ficar menor que isso.`);
+    }
+    const paymentStatus: PaymentStatus = paid >= toPay ? "paid" : paid > 0 ? "partial" : "pending";
+
+    // Estoque: só a diferença. Removidos voltam; acrescentados saem.
+    const note = `Venda nº ${sale.number} corrigida${input.reason ? `: ${input.reason}` : ""}`;
+    for (const pid of oldQty.keys()) {
+      if (merged.has(pid)) continue;
+      const p = byId.get(pid)!;
+      if (p.track) await applyMovement(tx, actor, { productId: pid, kind: "sale_cancel", quantity: ((oldQty.get(pid) ?? 0) / 1000).toFixed(3), unitCost: p.cost, saleId: input.id, notes: note });
+    }
+    for (const l of lines) {
+      if (!l.product.track || l.delta === 0) continue;
+      const qty = (Math.abs(l.delta) / 1000).toFixed(3);
+      if (l.delta > 0) await applyMovement(tx, actor, { productId: l.productId, kind: "sale", quantity: `-${qty}`, unitCost: l.product.cost, saleId: input.id, notes: note });
+      else await applyMovement(tx, actor, { productId: l.productId, kind: "sale_cancel", quantity: qty, unitCost: l.product.cost, saleId: input.id, notes: note });
+    }
+
+    await tx.query("DELETE FROM controle_vendas_estoque.sale_items WHERE sale_id = $1", [input.id]);
+    for (const l of lines) {
+      await tx.query(
+        `INSERT INTO controle_vendas_estoque.sale_items (organization_id, sale_id, product_id, quantity, unit_price, unit_cost, total, backorder_qty)
+         VALUES ($1, $2, $3, $4, $5, $6, round($4::numeric * $5::numeric, 2), $7)`,
+        [actor.organizationId, input.id, l.productId, l.quantity, l.unitPrice, l.product.cost, (l.backorder / 1000).toFixed(3)],
+      );
+    }
+    const updated = await tx.query<{ total: string }>(
+      `UPDATE controle_vendas_estoque.sales
+          SET subtotal = $2, discount = $3, total = $2::numeric - $3::numeric + delivery_fee, cost_total = $4,
+              payment_status = $5, notes = $6
+        WHERE id = $1 RETURNING total::text AS total`,
+      [input.id, subtotal, discount, cost, paymentStatus, input.notes !== undefined ? input.notes ?? null : sale.notes],
+    );
+    const total = updated.rows[0]!.total;
+
+    const describe = (rows: { name: string; quantity: string; unitPrice: string }[]) =>
+      rows.map((r) => `${fmtQty(milli(r.quantity))} × ${r.name} a R$ ${Number(r.unitPrice).toFixed(2)}`).join("; ");
+    await audit({
+      action: "sale.update",
+      entityType: "sale",
+      entityId: input.id,
+      summary: `Venda nº ${sale.number} corrigida: R$ ${sale.total} → R$ ${total}${input.reason ? ` (${input.reason})` : ""}`,
+      before: { total: sale.total, discount: sale.discount, items: describe(old.rows) },
+      after: { total, discount, items: describe(lines.map((l) => ({ name: l.product.name, quantity: l.quantity, unitPrice: l.unitPrice }))) },
+    });
+    await emit("sale.updated", { saleId: input.id, number: sale.number, total }, { type: "sale", id: input.id });
+    return { id: input.id, number: sale.number, total, paymentStatus, stillOpen: ((toPay - paid) / 100).toFixed(2) };
+  },
+});
+
 export const listSales = defineService({
   name: "sales.list",
   description: "Lista as vendas mais recentes, com busca pelo número ou pelo cliente",
