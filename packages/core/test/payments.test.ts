@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { after, before, describe, it } from "node:test";
-import { AppError, createProduct, createSale, getSale, listSales, listUnits, receiveSalePayment, runService, salesDashboard, setHandoverDate, type Actor } from "../src/index.ts";
+import { AppError, createProduct, createSale, getSale, listSales, listUnits, receiveSalePayment, runService, salesDashboard, setHandoverDate, isPaymentLater, type Actor } from "../src/index.ts";
 import { actorFor, seedCompany, setupTestDb, type TestDb } from "./helpers.ts";
 
 let t: TestDb;
@@ -75,13 +75,15 @@ describe("pagamento dividido e parcial", () => {
     });
     assert.equal(sale.paymentStatus, "pending");
     let full = await runService(t.app, getSale, owner, { id: sale.id });
-    assert.equal(full.paymentMethod, null);
+    assert.equal(full.paymentMethod, "other");
+    assert.equal(isPaymentLater(full), true);
     assert.equal(full.handoverDate, "2030-05-20");
     assert.equal(full.payments.length, 0);
     await runService(t.app, receiveSalePayment, owner, { saleId: sale.id, method: "cash", amount: "1000" });
     full = await runService(t.app, getSale, owner, { id: sale.id });
     assert.equal(full.paymentMethod, "cash");
     assert.equal(full.paymentStatus, "paid");
+    assert.equal(isPaymentLater(full), false);
   });
 
   it("muda e tira a data de retirada depois", async () => {

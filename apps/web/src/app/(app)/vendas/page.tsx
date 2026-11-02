@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { can, enabledFeatures, FULFILLMENTS, PAYMENT_STATUS_LABELS, getOrganization, getSale, getSaleFollowup, listBranches, listSales, listStepTypes, orgDate, PAYMENT_LABELS, PAYMENT_LATER_LABEL } from "@erp/core";
+import { can, enabledFeatures, FULFILLMENTS, PAYMENT_STATUS_LABELS, getOrganization, getSale, getSaleFollowup, listBranches, listSales, listStepTypes, orgDate, PAYMENT_LABELS, PAYMENT_LATER_LABEL, handoverDateReady, isPaymentLater } from "@erp/core";
 import { requirePermission } from "@/lib/auth";
 import { query } from "@/lib/actions";
 import { db } from "@/lib/db";
@@ -18,11 +18,12 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
   const branches = can(actor, "branches.view") ? await query(listBranches, {}) : [];
   const multi = branches.length > 1;
   const branch = multi ? branches.find((b) => b.id === params.filial) : undefined;
-  const [org, sales, selected, features] = await Promise.all([
+  const [org, sales, selected, features, handoverReady] = await Promise.all([
     query(getOrganization, {}),
     query(listSales, { search: params.q || undefined, openPayment: params.receber === "1", branchId: branch?.id }),
     params.id ? query(getSale, { id: params.id }).catch(() => null) : null,
     enabledFeatures(db(), actor.organizationId),
+    handoverDateReady(db()),
   ]);
   const seesSteps = features.has("deliveries") && can(actor, "deliveries.view");
   const [followup, today, stepTypes] = selected && seesSteps
@@ -103,7 +104,7 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
             </span>
             <span className="cart-grand">{money(selected.total)}</span>
           </div>
-          {selected.status === "completed" && can(actor, "sales.create") && (
+          {handoverReady && selected.status === "completed" && can(actor, "sales.create") && (
             <HandoverDateForm
               saleId={selected.id}
               value={selected.handoverDate}
@@ -112,7 +113,7 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
           )}
           <h3 className="form-section">Pagamento</h3>
           {selected.payments.length === 0 ? (
-            <p className="muted">{selected.paymentMethod === null ? "Forma de pagamento a combinar. Nada recebido ainda." : "Nada recebido ainda."}</p>
+            <p className="muted">{isPaymentLater(selected) ? "Forma de pagamento a combinar. Nada recebido ainda." : "Nada recebido ainda."}</p>
           ) : (
             <ul className="pay-list">
               {selected.payments.map((p) => (
@@ -177,7 +178,7 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
           <div className="table-wrap">
             <table className="cards">
               <thead>
-                <tr><th>Nº</th><th>Data</th><th>Cliente</th>{multi && <th>Filial</th>}<th>Pagamento</th><th>Retirada</th><th className="num">Itens</th><th className="num">Total</th><th>Situação</th></tr>
+                <tr><th>Nº</th><th>Data</th><th>Cliente</th>{multi && <th>Filial</th>}<th>Pagamento</th>{handoverReady && <th>Retirada</th>}<th className="num">Itens</th><th className="num">Total</th><th>Situação</th></tr>
               </thead>
               <tbody>
                 {sales.map((s) => (
@@ -191,15 +192,17 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
                         <span className={`tag pay-tag ${s.paymentStatus}`}>
                           {s.paymentStatus === "partial"
                             ? `Parcial · falta ${money(Number(s.total) - Number(s.tradeInTotal) - Number(s.paidTotal))}`
-                            : s.paymentMethod === null ? `${PAYMENT_LATER_LABEL} · a receber` : "A receber"}
+                            : isPaymentLater(s) ? `${PAYMENT_LATER_LABEL} · a receber` : "A receber"}
                         </span>
                       ) : (
-                        s.paymentMethod ? PAYMENT_LABELS[s.paymentMethod] : PAYMENT_LATER_LABEL
+                        PAYMENT_LABELS[s.paymentMethod]
                       )}
                     </td>
-                    <td data-label={handoverWord(s.fulfillment)}>
-                      {s.handoverDate ? <>{handoverWord(s.fulfillment)} {day(s.handoverDate)}</> : <span className="muted">—</span>}
-                    </td>
+                    {handoverReady && (
+                      <td data-label={handoverWord(s.fulfillment)}>
+                        {s.handoverDate ? <>{handoverWord(s.fulfillment)} {day(s.handoverDate)}</> : <span className="muted">—</span>}
+                      </td>
+                    )}
                     <td data-label="Itens" className="num sm-hide">{s.itemCount}</td>
                     <td data-label="Total" className="num"><strong className={s.status === "cancelled" ? "strike muted" : ""}>{money(s.total)}</strong></td>
                     <td data-label="Situação"><span className={`tag ${s.status === "completed" ? "ok" : "off"}`}>{s.status === "completed" ? "Concluída" : "Cancelada"}</span></td>
