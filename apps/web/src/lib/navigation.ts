@@ -116,6 +116,13 @@ export const NAVIGATION: NavGroup[] = [
     ],
   },
   {
+    label: "Melhorias",
+    short: "Melhorias",
+    hint: "Falta algo? Sugira uma melhoria e acompanhe a resposta",
+    icon: "bulb",
+    items: [{ label: "Melhorias", href: "/melhorias", phase: 1 }],
+  },
+  {
     label: "Ajustes",
     short: "Ajustes",
     hint: "Sua empresa, a equipe e como o netzsales funciona para você",
@@ -136,8 +143,7 @@ export const NAVIGATION: NavGroup[] = [
       { label: "Etapas depois da venda", href: "/etapas", permission: "deliveries.view", feature: "deliveries", phase: 2, section: "Listas usadas nos cadastros", description: "Entrega, instalação, montagem: prazos e custos padrão" },
       { label: "Grupos de custo", href: "/custos/tipos", permission: "costs.view", feature: "costs", phase: 2, section: "Listas usadas nos cadastros", description: "Aluguel, frete, energia…" },
       // O dia a dia do Telegram é o botão do topo; aqui ficam a ligação e o Desligar.
-      { label: "Meu Telegram", href: "/assistente/telegram", permission: "nets.use", feature: "telegram", phase: 2, section: "Netz e melhorias", description: "Ligar ou desligar a Netz no seu Telegram" },
-      { label: "Pedir uma melhoria", href: "/melhorias", phase: 1, section: "Netz e melhorias", description: "Falta algo? Peça aqui e a equipe netzsales responde" },
+      { label: "Meu Telegram", href: "/assistente/telegram", permission: "nets.use", feature: "telegram", phase: 2, section: "Netz", description: "Ligar ou desligar a Netz no seu Telegram" },
     ],
   },
   {

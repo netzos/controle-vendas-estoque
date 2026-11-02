@@ -10,6 +10,9 @@ import { LogoMark } from "./logo";
 
 const matches = (item: NavItem, pathname: string) => (item.href === "/" ? pathname === "/" : pathname.startsWith(item.href));
 const inGroup = (group: NavGroup, pathname: string) => (group.hub !== undefined && pathname === group.hub) || group.items.some((i) => matches(i, pathname));
+/** Endereço mais comprido que casa com a página: /plataforma/empresas ganha de /plataforma. */
+const depth = (group: NavGroup, pathname: string) =>
+  Math.max(group.hub === pathname ? pathname.length : -1, ...group.items.filter((i) => matches(i, pathname)).map((i) => i.href.length));
 const entry = (group: NavGroup) => group.hub ?? group.items[0]!.href;
 
 export function Shell({
@@ -17,16 +20,21 @@ export function Shell({
   topbar,
   user,
   logout,
+  viewMode = false,
   children,
 }: {
   navigation: NavGroup[];
   topbar: React.ReactNode;
   user: { name: string };
   logout: (form: FormData) => Promise<void>;
+  /** Administrador olhando o painel de um cliente: cor diferente e tudo travado. */
+  viewMode?: boolean;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
-  const current = navigation.find((g) => inGroup(g, pathname));
+  const current = navigation
+    .filter((g) => inGroup(g, pathname))
+    .reduce<NavGroup | undefined>((best, g) => (!best || depth(g, pathname) > depth(best, pathname) ? g : best), undefined);
   const initials = user.name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join("");
   // No celular, a barra de baixo mostra só as tarefas do dia; o resto fica em "Mais".
   const [moreOpen, setMoreOpen] = useState(false);
@@ -35,7 +43,7 @@ export function Shell({
   const tabs = current && !current.hub && current.items.length > 1 ? current.items : null;
 
   return (
-    <div className="shell">
+    <div className={`shell${viewMode ? " view-mode" : ""}`}>
       <aside className="rail" aria-label="Menu principal">
         <Link href="/" className="rail-logo" aria-label={`${BRAND_NAME} · Início`}>
           <LogoMark size={52} />

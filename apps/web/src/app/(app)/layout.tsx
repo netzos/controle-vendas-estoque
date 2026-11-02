@@ -1,7 +1,7 @@
 import { can, enabledFeatures, isPlatformDeveloper, listPlatformOrganizations, listUserOrganizations, telegramConfigured, telegramOrganizationOf } from "@erp/core";
 import { db } from "@/lib/db";
 import { currentActor } from "@/lib/auth";
-import { visibleNavigation } from "@/lib/nav-visible";
+import { managerMode, visibleNavigation } from "@/lib/nav-visible";
 import { OrganizationSwitcher, Shell } from "@/components/shell";
 import { NetsBubble } from "@/components/nets-bubble";
 import Link from "next/link";
@@ -19,16 +19,22 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     isPlatformDeveloper(db(), actor.userId),
     enabledFeatures(db(), actor.organizationId),
   ]);
-  // O administrador escolhe qualquer empresa no topo: clientes primeiro, depois as internas.
+  // O administrador escolhe no topo: "Plataforma" (a gestão, a casa dele) e depois as empresas clientes.
+  // Ao escolher um cliente, vê o painel dele travado, só para consulta.
   const all = developer ? await listPlatformOrganizations(db(), actor.userId) : [];
+  const home = developer ? (own.find((o) => all.find((a) => a.id === o.id)?.kind === "internal") ?? own[0]) : undefined;
   const organizations = developer
-    ? [...all.filter((o) => o.kind === "customer"), ...all.filter((o) => o.kind === "internal")].map((o) => ({
-        id: o.id,
-        name: `${o.name}${o.kind === "internal" ? " (equipe)" : ""}${o.status === "suspended" ? " (suspensa)" : ""}`,
-      }))
+    ? [
+        ...(home ? [{ id: home.id, name: "Plataforma (gestão)" }] : []),
+        ...all
+          .filter((o) => o.kind === "customer")
+          .map((o) => ({ id: o.id, name: `${o.name}${o.status === "suspended" ? " (suspensa)" : ""}` })),
+      ]
     : own;
   // Botão Telegram no topo de todas as telas: a pessoa chega à Netz com um clique.
-  const telegram = can(actor, "nets.use") && features.has("telegram") && telegramConfigured() && !actor.platformView;
+  // No modo gestor não há Netz nem Telegram: a conta é só para gerir a plataforma.
+  const manager = managerMode(actor, developer);
+  const telegram = can(actor, "nets.use") && features.has("telegram") && telegramConfigured() && !actor.platformView && !manager;
   const telegramLinked = telegram && (await telegramOrganizationOf(db(), actor.userId)) !== null;
   const viewing = actor.platformView ? all.find((o) => o.id === actor.organizationId) : undefined;
   const navigation = visibleNavigation(actor, developer, features);
@@ -38,26 +44,38 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       navigation={navigation}
       user={{ name: actor.userName }}
       logout={logoutAction}
+      viewMode={actor.platformView}
       topbar={
         <div className="topbar-actions">
           {telegram && <TelegramButton linked={telegramLinked} />}
-          <OrganizationSwitcher
-            organizations={organizations}
-            activeId={actor.organizationId}
-            action={switchOrganizationAction}
-            createHref={developer ? undefined : "/administracao/outra-empresa"}
-          />
+          {/* Conta gestora: sem nome de empresa nem troca de empresa, só a Plataforma. */}
+          {!manager && (
+            <OrganizationSwitcher
+              organizations={organizations}
+              activeId={actor.organizationId}
+              action={switchOrganizationAction}
+              createHref={developer ? undefined : "/administracao/outra-empresa"}
+            />
+          )}
         </div>
       }
     >
       {actor.platformView && (
         <div className="alert view-banner" role="status">
-          Você está vendo os dados de <b>{viewing?.name ?? "uma empresa"}</b> como administrador da plataforma, só para consulta.{" "}
-          <Link href={`/plataforma/empresas/${actor.organizationId}`}>Precisa mexer? Entre para dar suporte pela ficha da empresa.</Link>
+          <span>
+            Modo administrador: você está vendo o painel de <b>{viewing?.name ?? "uma empresa"}</b>, travado, só para consulta.{" "}
+            <Link href={`/plataforma/empresas/${actor.organizationId}`}>Ver a ficha da empresa</Link>
+          </span>
+          {home && (
+            <form action={switchOrganizationAction}>
+              <input type="hidden" name="organizationId" value={home.id} />
+              <button type="submit" className="view-back">Voltar para a Plataforma</button>
+            </form>
+          )}
         </div>
       )}
       {children}
-      {can(actor, "nets.use") && features.has("netz") && (
+      {can(actor, "nets.use") && features.has("netz") && !manager && (
         <Suspense fallback={null}>
           <NetsBubble />
         </Suspense>

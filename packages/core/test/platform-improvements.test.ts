@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { after, before, describe, it } from "node:test";
 import {
   analyzeImprovementsWithAI,
+  analyzeNewImprovementWithAI,
   AppError,
   createImprovement,
   decideImprovement,
@@ -76,6 +77,23 @@ describe("melhorias na plataforma", () => {
     await createImprovement(t.app, dev, { title: "Pedido da Fazenda", body: "Algo da fazenda.", module: "geral" });
     const company = await listImprovements(t.app, dev, { organizationId: dev.organizationId, includeMerged: true });
     assert.deepEqual(company.map((i) => i.organizationName), ["Fazenda"]);
+  });
+
+  it("o pedido do cliente chega ao administrador já com a análise da IA", async () => {
+    const p = await createImprovement(t.app, a, { title: "Venda por encomenda", body: "Quero marcar a data de retirada.", module: "comercial" });
+    const fake: NetsModel = async (req) => {
+      assert.match(JSON.stringify(req.messages), /data de retirada/);
+      return { content: [{ type: "text", text: "Contexto: x\nExplicação: y\nAlteração proposta: z" }] } as any;
+    };
+    assert.equal(await analyzeNewImprovementWithAI(t.app, p.id, fake), true);
+    const seen = await getImprovement(t.app, dev, p.id);
+    assert.equal(seen.item.status, "analysis");
+    assert.match(seen.messages.at(-1)!.body, /^Análise da IA[\s\S]*Alteração proposta: z/);
+    // Não analisa duas vezes, e uma falha da IA não derruba nada.
+    assert.equal(await analyzeNewImprovementWithAI(t.app, p.id, fake), false);
+    const broken = await createImprovement(t.app, a, { title: "Outra coisa", body: "Algo.", module: "geral" });
+    assert.equal(await analyzeNewImprovementWithAI(t.app, broken.id, async () => { throw new Error("fora do ar"); }), false);
+    assert.equal((await getImprovement(t.app, dev, broken.id)).item.status, "new");
   });
 
   it("a IA analisa os pedidos abertos e a análise fica guardada", async () => {
