@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { can, enabledFeatures, FULFILLMENTS, PAYMENT_STATUS_LABELS, getOrganization, getSale, getSaleFollowup, listBranches, listSales, listStepTypes, orgDate, PAYMENT_LABELS } from "@erp/core";
+import { can, enabledFeatures, FULFILLMENTS, PAYMENT_STATUS_LABELS, getOrganization, getSale, getSaleFollowup, listBranches, listSales, listStepTypes, orgDate, PAYMENT_LABELS, PAYMENT_LATER_LABEL, handoverDateReady, isPaymentLater } from "@erp/core";
 import { requirePermission } from "@/lib/auth";
 import { query } from "@/lib/actions";
 import { db } from "@/lib/db";
@@ -7,6 +7,7 @@ import { money, quantity } from "@/lib/format";
 import { CancelSaleForm, DeleteSaleForm } from "./cancel-form";
 import { Notice } from "@/components/remove-record";
 import { ReceivePaymentForm } from "./receive-form";
+import { HandoverDateForm } from "./handover-form";
 import { AddStepsForm, StepRow } from "../entregas/steps";
 
 export const metadata = { title: "Vendas" };
@@ -17,11 +18,12 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
   const branches = can(actor, "branches.view") ? await query(listBranches, {}) : [];
   const multi = branches.length > 1;
   const branch = multi ? branches.find((b) => b.id === params.filial) : undefined;
-  const [org, sales, selected, features] = await Promise.all([
+  const [org, sales, selected, features, handoverReady] = await Promise.all([
     query(getOrganization, {}),
     query(listSales, { search: params.q || undefined, openPayment: params.receber === "1", branchId: branch?.id }),
     params.id ? query(getSale, { id: params.id }).catch(() => null) : null,
     enabledFeatures(db(), actor.organizationId),
+    handoverDateReady(db()),
   ]);
   const seesSteps = features.has("deliveries") && can(actor, "deliveries.view");
   const [followup, today, stepTypes] = selected && seesSteps
@@ -29,6 +31,10 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
     : [null, "", []];
   const canSteps = can(actor, "deliveries.manage");
   const fmt = new Intl.DateTimeFormat("pt-BR", { timeZone: org.timezone, dateStyle: "short", timeStyle: "short" });
+  // "2026-11-02" → "02/11"; o ano só aparece quando não é o atual.
+  const year = String(new Date().getFullYear());
+  const day = (d: string) => { const [y, m, dd] = d.split("-"); return y === year ? `${dd}/${m}` : `${dd}/${m}/${y}`; };
+  const handoverWord = (f: string) => (f === "delivery" ? "Entrega" : "Retirada");
 
   return (
     <>
@@ -50,7 +56,8 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
             </span>
           </div>
           <p className="muted">
-            {fmt.format(selected.soldAt)} · {FULFILLMENTS[selected.fulfillment]} · {selected.customerName ?? "Consumidor"} · por {selected.userName}
+            {fmt.format(selected.soldAt)} · {FULFILLMENTS[selected.fulfillment]}
+            {selected.handoverDate && <> em <b>{day(selected.handoverDate)}</b></>} · {selected.customerName ?? "Consumidor"} · por {selected.userName}
           </p>
           <div className="table-wrap">
             <table>
@@ -97,9 +104,16 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
             </span>
             <span className="cart-grand">{money(selected.total)}</span>
           </div>
+          {handoverReady && selected.status === "completed" && can(actor, "sales.create") && (
+            <HandoverDateForm
+              saleId={selected.id}
+              value={selected.handoverDate}
+              label={selected.fulfillment === "delivery" ? "Data da entrega" : "Data da retirada"}
+            />
+          )}
           <h3 className="form-section">Pagamento</h3>
           {selected.payments.length === 0 ? (
-            <p className="muted">Nada recebido ainda.</p>
+            <p className="muted">{isPaymentLater(selected) ? "Forma de pagamento a combinar. Nada recebido ainda." : "Nada recebido ainda."}</p>
           ) : (
             <ul className="pay-list">
               {selected.payments.map((p) => (
@@ -164,7 +178,7 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
           <div className="table-wrap">
             <table className="cards">
               <thead>
-                <tr><th>Nº</th><th>Data</th><th>Cliente</th>{multi && <th>Filial</th>}<th>Pagamento</th><th className="num">Itens</th><th className="num">Total</th><th>Situação</th></tr>
+                <tr><th>Nº</th><th>Data</th><th>Cliente</th>{multi && <th>Filial</th>}<th>Pagamento</th>{handoverReady && <th>Retirada</th>}<th className="num">Itens</th><th className="num">Total</th><th>Situação</th></tr>
               </thead>
               <tbody>
                 {sales.map((s) => (
@@ -176,12 +190,19 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
                     <td data-label="Pagamento">
                       {s.status === "completed" && s.paymentStatus !== "paid" ? (
                         <span className={`tag pay-tag ${s.paymentStatus}`}>
-                          {s.paymentStatus === "partial" ? `Parcial · falta ${money(Number(s.total) - Number(s.tradeInTotal) - Number(s.paidTotal))}` : "A receber"}
+                          {s.paymentStatus === "partial"
+                            ? `Parcial · falta ${money(Number(s.total) - Number(s.tradeInTotal) - Number(s.paidTotal))}`
+                            : isPaymentLater(s) ? `${PAYMENT_LATER_LABEL} · a receber` : "A receber"}
                         </span>
                       ) : (
                         PAYMENT_LABELS[s.paymentMethod]
                       )}
                     </td>
+                    {handoverReady && (
+                      <td data-label={handoverWord(s.fulfillment)}>
+                        {s.handoverDate ? <>{handoverWord(s.fulfillment)} {day(s.handoverDate)}</> : <span className="muted">—</span>}
+                      </td>
+                    )}
                     <td data-label="Itens" className="num sm-hide">{s.itemCount}</td>
                     <td data-label="Total" className="num"><strong className={s.status === "cancelled" ? "strike muted" : ""}>{money(s.total)}</strong></td>
                     <td data-label="Situação"><span className={`tag ${s.status === "completed" ? "ok" : "off"}`}>{s.status === "completed" ? "Concluída" : "Cancelada"}</span></td>

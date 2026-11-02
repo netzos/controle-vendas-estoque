@@ -2,6 +2,7 @@ import Link from "next/link";
 import { can, INSIGHT_PERIODS, listBranches, type InsightFilters, type InsightPeriod, type InsightRange } from "@erp/core";
 import type { Actor } from "@erp/core";
 import { query } from "@/lib/actions";
+import { PeriodPicker } from "@/components/period-picker";
 
 // Filtros do Painel ficam no endereço (?periodo=&de=&ate=&filial=&vendedor=),
 // então o link guarda o recorte e as sub-abas levam o mesmo recorte junto.
@@ -10,8 +11,8 @@ export type PanelParams = { periodo?: string; de?: string; ate?: string; filial?
 
 const PERIODS: { key: InsightPeriod; label: string }[] = [
   { key: "today", label: "Hoje" },
-  { key: "7d", label: "7 dias" },
-  { key: "30d", label: "30 dias" },
+  { key: "7d", label: "Últimos 7 dias" },
+  { key: "30d", label: "Últimos 30 dias" },
   { key: "month", label: "Este mês" },
   { key: "last_month", label: "Mês passado" },
   { key: "year", label: "Este ano" },
@@ -71,53 +72,48 @@ export async function PanelHeader({
   sellers?: { id: string; name: string }[];
 }) {
   const branches = can(actor, "branches.view") ? await query(listBranches, {}) : [];
-  // Só os filtros (sem período) para os links de período.
+  // Período atual (sem as datas) e filtros, para montar cada link.
+  const periodo = filters.period === "custom" ? undefined : filters.period === "30d" ? undefined : filters.period;
+  const dates = filters.period === "custom" ? { de: range.from, ate: range.to } : {};
   const keep = { filial: params.filial, vendedor: params.vendedor };
+  const links = Object.fromEntries(PERIODS.map((p) => [p.key, panelLink(path, keep, { periodo: p.key === "30d" ? undefined : p.key })]));
+  const current = { periodo, ...dates, ...keep };
+  const label = filters.period === "custom" ? "Período escolhido" : PERIODS.find((p) => p.key === filters.period)?.label ?? "Período";
+  const showSellers = sellers && sellers.length > 1;
+  const choiceLinks = (key: "filial" | "vendedor", list: { id: string }[]) =>
+    Object.fromEntries([["", panelLink(path, current, { [key]: undefined })], ...list.map((b) => [b.id, panelLink(path, current, { [key]: b.id })])]);
   return (
     <>
       <div className="page-header dash-header">
         <div>
           <h1>Painel</h1>
-          <p>
-            {rangeLabel(range)} · comparado com {previousLabel(range)}
-          </p>
+          <p>Comparado com o período anterior ({previousLabel(range)})</p>
         </div>
       </div>
 
+      <div className="panel-toolbar">
       <nav className="segmented panel-tabs" aria-label="Partes do painel">
         {TABS.map((t) => (
           <Link key={t.href} href={panelLink(t.href, params)} className={t.href === path ? "active" : ""}>{t.label}</Link>
         ))}
       </nav>
 
-      <div className="panel-filters">
-        <nav className="segmented" aria-label="Período">
-          {PERIODS.map((p) => (
-            <Link key={p.key} href={panelLink(path, keep, { periodo: p.key === "30d" ? undefined : p.key })} className={filters.period === p.key ? "active" : ""}>
-              {p.label}
-            </Link>
-          ))}
-        </nav>
-        <form method="get" action={path} aria-label="Escolher datas e filtros">
-          {params.filial && !(branches.length > 1) && <input type="hidden" name="filial" value={params.filial} />}
-          <input type="date" name="de" defaultValue={filters.period === "custom" ? range.from : undefined} aria-label="Primeiro dia" />
-          <input type="date" name="ate" defaultValue={filters.period === "custom" ? range.to : undefined} aria-label="Último dia" />
-          {filters.period !== "custom" && <input type="hidden" name="periodo" value={filters.period === "30d" ? "" : filters.period} />}
-          {branches.length > 1 && (
-            <select name="filial" defaultValue={params.filial ?? ""} aria-label="Filial">
-              <option value="">Todas as filiais</option>
-              {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-            </select>
-          )}
-          {sellers && sellers.length > 1 && (
-            <select name="vendedor" defaultValue={params.vendedor ?? ""} aria-label="Vendedor">
-              <option value="">Todos os vendedores</option>
-              {sellers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-            </select>
-          )}
-          {params.vendedor && !(sellers && sellers.length > 1) && <input type="hidden" name="vendedor" value={params.vendedor} />}
-          <button type="submit" className="secondary small">Aplicar</button>
-        </form>
+      <PeriodPicker
+        options={PERIODS}
+        current={filters.period}
+        label={label}
+        range={rangeLabel(range)}
+        from={range.from}
+        to={range.to}
+        links={links}
+        customLink={panelLink(path, keep)}
+        branches={branches.length > 1 ? branches.map((b) => ({ id: b.id, name: b.name })) : undefined}
+        branch={params.filial}
+        branchLinks={branches.length > 1 ? choiceLinks("filial", branches) : undefined}
+        sellers={showSellers ? sellers : undefined}
+        seller={params.vendedor}
+        sellerLinks={showSellers ? choiceLinks("vendedor", sellers) : undefined}
+      />
       </div>
     </>
   );

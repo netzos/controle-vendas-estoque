@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import type { z } from "zod";
-import { cancelSale, createSale, deleteSale, receiveSalePayment, runService } from "@erp/core";
+import { cancelSale, createSale, deleteSale, receiveSalePayment, runService, setHandoverDate } from "@erp/core";
 import { money } from "@/lib/format";
 import { currentActor } from "@/lib/auth";
 import { db } from "@/lib/db";
@@ -26,8 +26,10 @@ export async function createSaleAction(_: FormState, form: FormData): Promise<Fo
   try {
     const sale = await runService(db(), createSale, await currentActor(), {
       customerId: optional(form, "customerId"),
-      paymentMethod: payments ? undefined : (str(form, "paymentMethod") as "pix"),
+      paymentLater: str(form, "paymentLater") === "1",
+      paymentMethod: payments || str(form, "paymentLater") === "1" ? undefined : (str(form, "paymentMethod") as "pix"),
       payments,
+      handoverDate: str(form, "handoverDate") || null,
       fulfillment: str(form, "fulfillment") === "delivery" ? "delivery" : "pickup",
       discount: str(form, "discount"),
       notes: optional(form, "notes"),
@@ -66,5 +68,13 @@ export async function receivePaymentAction(_: FormState, form: FormData): Promis
     receiveSalePayment,
     { saleId: str(form, "saleId"), method: str(form, "method") as "pix", amount: str(form, "amount"), notes: optional(form, "notes") },
     { successMessage: "Pagamento registrado.", revalidate: "/vendas" },
+  );
+}
+
+export async function setHandoverDateAction(_: FormState, form: FormData): Promise<FormState> {
+  return perform(
+    setHandoverDate,
+    { id: str(form, "id"), handoverDate: str(form, "handoverDate") || null },
+    { successMessage: str(form, "handoverDate") ? "Data salva." : "Data tirada.", revalidate: "/vendas" },
   );
 }

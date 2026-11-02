@@ -251,6 +251,7 @@ export async function insertFollowup(
     if (same) {
       same.notes = same.notes ?? e.notes;
       same.cost = same.cost ?? e.cost;
+      same.scheduledFor = same.scheduledFor ?? e.scheduledFor;
     } else steps.unshift(e);
   }
   if (steps.length === 0) return null;

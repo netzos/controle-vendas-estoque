@@ -34,6 +34,8 @@ export interface NavGroup {
   hub?: string;
   /** Aparece direto na barra de baixo do celular; os outros ficam em "Mais". */
   mobile?: boolean;
+  /** Bloco do menu lateral (título pequeno acima dos itens). */
+  area: "Dia a dia" | "Gestão" | "Plataforma";
   items: NavItem[];
 }
 
@@ -43,6 +45,7 @@ export const NAVIGATION: NavGroup[] = [
   {
     label: "Início",
     short: "Início",
+    area: "Dia a dia",
     hint: "Como estão as vendas",
     icon: "home",
     mobile: true,
@@ -55,6 +58,7 @@ export const NAVIGATION: NavGroup[] = [
   {
     label: "Painel",
     short: "Painel",
+    area: "Dia a dia",
     hint: "Suas vendas em gráficos: melhores dias, produtos e clientes",
     icon: "chart",
     // Um item só: as sub-abas ficam na própria página e levam o período junto.
@@ -63,6 +67,7 @@ export const NAVIGATION: NavGroup[] = [
   {
     label: "Vender",
     short: "Vender",
+    area: "Dia a dia",
     hint: "Registre uma venda em poucos toques",
     icon: "plus",
     primary: true,
@@ -72,6 +77,7 @@ export const NAVIGATION: NavGroup[] = [
   {
     label: "Vendas",
     short: "Vendas",
+    area: "Dia a dia",
     hint: "Vendas feitas e o que falta entregar",
     icon: "cart",
     mobile: true,
@@ -84,6 +90,7 @@ export const NAVIGATION: NavGroup[] = [
   {
     label: "Produtos",
     short: "Produtos",
+    area: "Dia a dia",
     hint: "O que você vende, o estoque e quem fornece",
     icon: "tag",
     mobile: true,
@@ -98,6 +105,7 @@ export const NAVIGATION: NavGroup[] = [
   {
     label: "Clientes",
     short: "Clientes",
+    area: "Dia a dia",
     hint: "Quem compra de você",
     icon: "users",
     items: [{ label: "Clientes", href: "/clientes", permission: "customers.view", phase: 2 }],
@@ -105,6 +113,7 @@ export const NAVIGATION: NavGroup[] = [
   {
     label: "Financeiro",
     short: "Financeiro",
+    area: "Gestão",
     hint: "Gastos, custo de cada produto, comissões e quanto sobra de verdade",
     icon: "wallet",
     items: [
@@ -118,6 +127,7 @@ export const NAVIGATION: NavGroup[] = [
   {
     label: "Melhorias",
     short: "Melhorias",
+    area: "Gestão",
     hint: "Falta algo? Sugira uma melhoria e acompanhe a resposta",
     icon: "bulb",
     items: [{ label: "Melhorias", href: "/melhorias", phase: 1 }],
@@ -125,6 +135,7 @@ export const NAVIGATION: NavGroup[] = [
   {
     label: "Ajustes",
     short: "Ajustes",
+    area: "Gestão",
     hint: "Sua empresa, a equipe e como o netzsales funciona para você",
     icon: "sliders",
     hub: "/ajustes",
@@ -149,6 +160,7 @@ export const NAVIGATION: NavGroup[] = [
   {
     label: "Plataforma",
     short: "Plataforma",
+    area: "Plataforma",
     hint: "Clientes, crescimento, receita e custos de todo o netzsales",
     icon: "shield",
     items: [

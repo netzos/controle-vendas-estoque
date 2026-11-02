@@ -1,4 +1,4 @@
-import { addressLine, can, enabledFeatures, getSettings, listCustomers, listProducts, listStepTypes, orgDate } from "@erp/core";
+import { addressLine, can, enabledFeatures, handoverDateReady, getSettings, listCustomers, listProducts, listStepTypes, orgDate } from "@erp/core";
 import { requirePermission } from "@/lib/auth";
 import { query } from "@/lib/actions";
 import { db } from "@/lib/db";
@@ -8,13 +8,14 @@ export const metadata = { title: "Nova venda" };
 
 export default async function NewSalePage() {
   const actor = await requirePermission("sales.create");
-  const [products, customers, today, stepTypes, settings, features] = await Promise.all([
+  const [products, customers, today, stepTypes, settings, features, handoverReady] = await Promise.all([
     query(listProducts, { limit: 500 }),
     can(actor, "customers.view") ? query(listCustomers, { limit: 500 }) : [],
     query(orgDate, {}),
     query(listStepTypes, {}),
     query(getSettings, {}),
     enabledFeatures(db(), actor.organizationId),
+    handoverDateReady(db()),
   ]);
   return (
     <>
@@ -27,6 +28,7 @@ export default async function NewSalePage() {
         canTradeIn={features.has("trade_in") && can(actor, "sales.trade_in")}
         canManageSteps={features.has("deliveries") && can(actor, "deliveries.manage")}
         today={today}
+        handoverReady={handoverReady}
         defaultFulfillment={settings["sales.default_fulfillment"]}
         stepDefaults={stepTypes.map((t) => ({ name: t.name, days: t.defaultDays, responsible: t.defaultResponsible, cost: t.defaultCost }))}
         customers={customers.map((c) => ({ id: c.id, name: c.name, address: addressLine(c), phone: c.phone ?? "" }))}

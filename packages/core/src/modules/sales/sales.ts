@@ -1,4 +1,4 @@
-import type { Tx } from "@erp/db";
+import type { Db, Tx } from "@erp/db";
 import { z } from "zod";
 import { can } from "../../context.ts";
 import { AppError, forbidden, notFound } from "../../errors.ts";
@@ -69,7 +69,10 @@ export interface Sale {
   branchId: string | null;
   branchName: string | null;
   status: "completed" | "cancelled";
+  /** Forma principal. Venda a combinar fica com "other" até o primeiro recebimento (ver paymentLater). */
   paymentMethod: PaymentMethod;
+  /** Dia combinado para o cliente retirar (ou receber, na entrega). */
+  handoverDate: string | null;
   subtotal: string;
   discount: string;
   total: string;
@@ -93,7 +96,7 @@ const SALE_COLUMNS = `s.id, s.number, s.customer_id AS "customerId", c.name AS "
   s.branch_id AS "branchId", (SELECT b.name FROM controle_vendas_estoque.branches b WHERE b.id = s.branch_id) AS "branchName", s.status,
   s.payment_method AS "paymentMethod", s.subtotal::text AS subtotal, s.discount::text AS discount, s.total::text AS total,
   s.trade_in_total::text AS "tradeInTotal", s.paid_total::text AS "paidTotal", s.payment_status AS "paymentStatus",
-  s.delivery_fee::text AS "deliveryFee", s.fulfillment,
+  s.delivery_fee::text AS "deliveryFee", s.fulfillment, (to_jsonb(s) ->> 'handover_date') AS "handoverDate",
   (SELECT f.status FROM controle_vendas_estoque.sale_followups f WHERE f.sale_id = s.id) AS "followupStatus", s.cost_total::text AS "costTotal", s.notes, s.sold_at AS "soldAt", u.name AS "userName",
   (SELECT count(*) FROM controle_vendas_estoque.sale_items i WHERE i.sale_id = s.id)::int AS "itemCount",
   s.cancelled_at AS "cancelledAt", s.cancel_reason AS "cancelReason"`;
@@ -107,6 +110,32 @@ async function defaultFulfillment(tx: Tx): Promise<Fulfillment> {
   );
   return rows[0]?.value === "delivery" ? "delivery" : "pickup";
 }
+
+// Rótulo da venda sem forma de pagamento definida.
+export const PAYMENT_LATER_LABEL = "A combinar";
+
+// A data de retirada depende da migração 0034. Até ela rodar, o resto da venda
+// funciona e o campo some da tela (to_jsonb acima não quebra sem a coluna).
+const HANDOVER_READY = `SELECT 1 FROM information_schema.columns
+  WHERE table_schema = 'controle_vendas_estoque' AND table_name = 'sales' AND column_name = 'handover_date'`;
+
+export async function handoverDateReady(db: Db | Tx): Promise<boolean> {
+  return ((await db.query(HANDOVER_READY)).rowCount ?? 0) > 0;
+}
+
+async function requireHandoverReady(tx: Tx) {
+  if (!(await handoverDateReady(tx))) throw new AppError("invalid_input", "A data de retirada ainda não foi liberada no banco. Registre sem a data por enquanto.");
+}
+
+/** Venda a combinar: nada recebido e nenhuma forma escolhida ainda. */
+export function isPaymentLater(s: Pick<Sale, "paymentStatus" | "paidTotal" | "status">): boolean {
+  return s.status === "completed" && s.paymentStatus === "pending" && Number(s.paidTotal) === 0;
+}
+
+const handoverDateField = z.preprocess(
+  (v) => (v === "" ? null : v),
+  z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Data inválida.").nullable().optional(),
+);
 
 export const createSale = defineService({
   name: "sales.create",
@@ -124,6 +153,11 @@ export const createSale = defineService({
       .array(z.object({ method: z.enum(["cash", "pix", "credit", "debit", "other"]), amount: decimalField(2, "Valor pago") }))
       .max(10)
       .optional(),
+    paymentLater: z
+      .boolean()
+      .default(false)
+      .describe("true quando a forma de pagamento ainda não foi definida (combinar na retirada/entrega). A venda fica toda a receber e a forma é escolhida no recebimento (sales_receive). Não pergunte a forma se a pessoa disse que vai combinar depois."),
+    handoverDate: handoverDateField.describe("Dia combinado para o cliente retirar (ou receber, se for entrega), AAAA-MM-DD. Opcional."),
     discount: decimalField(2, "Desconto").default("0"),
     notes: optionalText(1000),
     items: z
@@ -265,14 +299,17 @@ export const createSale = defineService({
 
     // Recebimentos: o que não for pago agora fica a receber (pagamento parcial).
     const toPayCents = Math.round((Number(subtotal) - Number(input.discount) + Number(fee) - tradeTotal) * 100);
-    if (!input.payments && !input.paymentMethod) throw new AppError("invalid_input", "Escolha a forma de pagamento.");
-    const payments = (input.payments ?? (toPayCents > 0 ? [{ method: input.paymentMethod!, amount: (toPayCents / 100).toFixed(2) }] : []))
+    // A combinar: nada recebido agora, a forma é escolhida no recebimento.
+    if (!input.paymentLater && !input.payments && !input.paymentMethod) {
+      throw new AppError("invalid_input", "Escolha a forma de pagamento ou marque A combinar.");
+    }
+    const payments = (input.paymentLater ? [] : input.payments ?? (toPayCents > 0 ? [{ method: input.paymentMethod!, amount: (toPayCents / 100).toFixed(2) }] : []))
       .filter((p) => Number(p.amount) > 0);
     const paidCents = payments.reduce((a, p) => a + Math.round(Number(p.amount) * 100), 0);
     if (paidCents > toPayCents) throw new AppError("invalid_input", "O valor pago passa do total da venda.");
     const paymentStatus: PaymentStatus = paidCents >= toPayCents ? "paid" : paidCents > 0 ? "partial" : "pending";
     // Forma principal: a de maior valor (a venda antiga só tinha uma).
-    const mainMethod = [...payments].sort((a, b) => Number(b.amount) - Number(a.amount))[0]?.method ?? input.paymentMethod ?? "other";
+    const mainMethod = [...payments].sort((a, b) => Number(b.amount) - Number(a.amount))[0]?.method ?? (input.paymentLater ? "other" : input.paymentMethod ?? "other");
 
     // Número sequencial por empresa, sem buracos por concorrência.
     await tx.query("SELECT pg_advisory_xact_lock(hashtext('sales:' || $1))", [actor.organizationId]);
@@ -286,6 +323,10 @@ export const createSale = defineService({
       [actor.organizationId, input.customerId ?? null, mainMethod, subtotal, input.discount, cost, input.notes ?? null, actor.userId,
         tradeTotal.toFixed(2), fee, fulfillment, (paidCents / 100).toFixed(2), paymentStatus, branchId],
     );
+    if (input.handoverDate) {
+      await requireHandoverReady(tx);
+      await tx.query("UPDATE controle_vendas_estoque.sales SET handover_date = $2 WHERE id = $1", [rows[0]!.id, input.handoverDate]);
+    }
     const sale = { ...rows[0]!, paymentStatus, paidTotal: (paidCents / 100).toFixed(2), toPay: (toPayCents / 100).toFixed(2) };
     for (const p of payments) {
       await tx.query(
@@ -343,8 +384,9 @@ export const createSale = defineService({
     // acompanhamento mesmo que o caixa não tenha informado nada.
     // O que foi vendido sem estoque entra como a etapa Encomenda, com o que pedir.
     const owed = lines.filter((l) => l.backorder > 0).map((l) => `${fmtQty(l.backorder)} × ${l.product.name}`);
-    const extra: { name: string; notes?: string; cost?: string }[] = owed.length > 0 ? [{ name: ORDER_STEP, notes: `Pedir: ${owed.join("; ")}` }] : [];
-    if (fulfillment === "delivery") extra.push({ name: DELIVERY_STEP, cost: input.followup?.deliveryCost });
+    const extra: { name: string; notes?: string; cost?: string; scheduledFor?: string }[] = owed.length > 0 ? [{ name: ORDER_STEP, notes: `Pedir: ${owed.join("; ")}` }] : [];
+    // Na entrega, o dia combinado vira o prazo da etapa Entrega (se não veio outro).
+    if (fulfillment === "delivery") extra.push({ name: DELIVERY_STEP, cost: input.followup?.deliveryCost, scheduledFor: input.handoverDate ?? undefined });
     // Sem o recurso de entregas, a venda não abre etapas (o que faltou fica em backorder_qty).
     if (deliveriesOn) await insertFollowup(tx, actor, sale.id, ids, input.followup ?? {}, extra, fulfillment === "pickup" ? [DELIVERY_STEP] : []);
 
@@ -465,8 +507,10 @@ export const receiveSalePayment = defineService({
     );
     const status: PaymentStatus = amount === open ? "paid" : "partial";
     await tx.query(
-      "UPDATE controle_vendas_estoque.sales SET paid_total = paid_total + $2::numeric, payment_status = $3 WHERE id = $1",
-      [input.saleId, (amount / 100).toFixed(2), status],
+      // Venda a combinar ganha a forma no primeiro recebimento.
+      `UPDATE controle_vendas_estoque.sales SET paid_total = paid_total + $2::numeric, payment_status = $3,
+              payment_method = CASE WHEN paid_total = 0 THEN $4 ELSE payment_method END WHERE id = $1`,
+      [input.saleId, (amount / 100).toFixed(2), status, input.method],
     );
     await audit({
       action: "sale.receive",
@@ -476,6 +520,31 @@ export const receiveSalePayment = defineService({
     });
     await emit("sale.payment_received", { saleId: input.saleId, amount: (amount / 100).toFixed(2), status }, { type: "sale", id: input.saleId });
     return { saleId: input.saleId, number: sale.number, paymentStatus: status, stillOpen: ((open - amount) / 100).toFixed(2) };
+  },
+});
+
+export const setHandoverDate = defineService({
+  name: "sales.set_handover_date",
+  description: "Marca, muda ou tira a data combinada para o cliente retirar (ou receber) a venda",
+  permission: "sales.create",
+  risk: 2,
+  input: z.object({ id: z.string().uuid(), handoverDate: handoverDateField }),
+  async handler({ tx, audit }, input) {
+    await requireHandoverReady(tx);
+    const { rows } = await tx.query<{ number: number }>(
+      "UPDATE controle_vendas_estoque.sales SET handover_date = $2 WHERE id = $1 RETURNING number",
+      [input.id, input.handoverDate ?? null],
+    );
+    if (!rows[0]) throw notFound("Venda");
+    await audit({
+      action: "sale.handover_date",
+      entityType: "sale",
+      entityId: input.id,
+      summary: input.handoverDate
+        ? `Venda nº ${rows[0].number}: retirada/entrega marcada para ${input.handoverDate.split("-").reverse().join("/")}`
+        : `Venda nº ${rows[0].number}: data de retirada/entrega tirada`,
+    });
+    return { id: input.id, number: rows[0].number, handoverDate: input.handoverDate ?? null };
   },
 });
 
