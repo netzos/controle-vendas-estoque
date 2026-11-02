@@ -15,9 +15,11 @@ const STATUS: Record<StockStatus, { label: string; tag: string }> = {
   ok: { label: "OK", tag: "ok" },
 };
 
-const FILTERS: { key: string; label: string; match: (s: StockStatus) => boolean }[] = [
+// Saldo negativo = vendido sem estoque (por encomenda): filtro e aviso próprios (melhoria 19).
+const FILTERS: { key: string; label: string; match: (s: StockStatus, stock: number) => boolean }[] = [
   { key: "", label: "Todos", match: () => true },
-  { key: "zerados", label: "Zerados", match: (s) => s === "out" },
+  { key: "zerados", label: "Zerados", match: (s, stock) => s === "out" && stock >= 0 },
+  { key: "sem-estoque", label: "Vendidos sem estoque", match: (_, stock) => stock < 0 },
   { key: "baixo", label: "Abaixo do mínimo", match: (s) => s === "low" },
   { key: "parados", label: "Parados", match: (s) => s === "idle" },
 ];
@@ -34,7 +36,7 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
   const abcTotal = dash.abc.reduce((a, c) => a + Number(c.revenue), 0);
   const maxCategory = Math.max(...dash.byCategory.map((c) => Number(c.value)), 0);
   const filter = FILTERS.find((f) => f.key === (params.filtro ?? "")) ?? FILTERS[0]!;
-  const shown = rows.filter((r) => filter.match(r.status));
+  const shown = rows.filter((r) => filter.match(r.status, Number(r.stockQty)));
   const maxValue = Math.max(...rows.map((r) => Number(r.costValue)), 0);
 
   return (
@@ -156,11 +158,12 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
         </section>
       </div>
 
-      <section className="card">
+      <section className="card" id="saldos">
         <div className="card-head">
+          <h2>Saldo de todos os itens</h2>
           <nav className="segmented" aria-label="Filtro">
             {FILTERS.map((f) => (
-              <Link key={f.key} href={f.key ? `/estoque?filtro=${f.key}` : "/estoque"} className={f === filter ? "active" : ""}>{f.label}</Link>
+              <Link key={f.key} href={f.key ? `/estoque?filtro=${f.key}#saldos` : "/estoque#saldos"} className={f === filter ? "active" : ""}>{f.label}</Link>
             ))}
           </nav>
           <span className="muted">{shown.length} de {rows.length}</span>
@@ -202,8 +205,8 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
                         <div className="value-bar"><div style={{ width: `${maxValue ? (Number(r.costValue) / maxValue) * 100 : 0}%` }} /></div>
                       </td>
                       <td data-label="Situação">
-                        {/* Saldo negativo = vendido por encomenda: falta pedir ao fornecedor. */}
-                        <span className={`tag ${STATUS[r.status].tag}`}>{stock < 0 ? `Encomendado · faltam ${quantity(String(-stock))}` : STATUS[r.status].label}</span>
+                        {/* Saldo negativo = vendido sem estoque (por encomenda), diferente de zerado. */}
+                        <span className={`tag ${stock < 0 ? "warn" : STATUS[r.status].tag}`}>{stock < 0 ? `Vendido sem estoque · faltam ${quantity(String(-stock))}` : STATUS[r.status].label}</span>
                       </td>
                     </tr>
                   );
