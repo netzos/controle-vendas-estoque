@@ -1,8 +1,9 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import type { z } from "zod";
-import { cancelSale, createSale, receiveSalePayment, runService } from "@erp/core";
+import { cancelSale, createSale, deleteSale, receiveSalePayment, runService, setHandoverDate, updateSale } from "@erp/core";
 import { money } from "@/lib/format";
 import { currentActor } from "@/lib/auth";
 import { db } from "@/lib/db";
@@ -27,9 +28,11 @@ export async function createSaleAction(_: FormState, form: FormData): Promise<Fo
   try {
     const sale = await runService(db(), createSale, await currentActor(), {
       customerId: optional(form, "customerId"),
-      paymentMethod: payments ? undefined : (str(form, "paymentMethod") as "pix"),
+      paymentLater: str(form, "paymentLater") === "1",
+      paymentMethod: payments || str(form, "paymentLater") === "1" ? undefined : (str(form, "paymentMethod") as "pix"),
       payments,
       installments,
+      handoverDate: str(form, "handoverDate") || null,
       fulfillment: str(form, "fulfillment") === "delivery" ? "delivery" : "pickup",
       discount: str(form, "discount"),
       notes: optional(form, "notes"),
@@ -56,6 +59,17 @@ export async function cancelSaleAction(_: FormState, form: FormData): Promise<Fo
   return perform(cancelSale, { id: str(form, "id"), reason: str(form, "reason") }, { successMessage: "Venda cancelada e itens devolvidos ao estoque.", revalidate: "/vendas" });
 }
 
+export async function deleteSaleAction(_: FormState, form: FormData): Promise<FormState> {
+  let number: number;
+  try {
+    ({ number } = await runService(db(), deleteSale, await currentActor(), { id: str(form, "id") }));
+  } catch (err) {
+    return toFormState(err);
+  }
+  revalidatePath("/", "layout");
+  redirect(`/vendas?aviso=${encodeURIComponent(`Venda nº ${number} excluída por completo.`)}`);
+}
+
 export async function receivePaymentAction(_: FormState, form: FormData): Promise<FormState> {
   // Recebe pela venda, por A receber ou pela ficha do cliente: atualiza todas.
   const state = await perform(
@@ -65,4 +79,28 @@ export async function receivePaymentAction(_: FormState, form: FormData): Promis
   );
   if (state?.ok) revalidatePath("/", "layout");
   return state;
+}
+
+export async function setHandoverDateAction(_: FormState, form: FormData): Promise<FormState> {
+  return perform(
+    setHandoverDate,
+    { id: str(form, "id"), handoverDate: str(form, "handoverDate") || null },
+    { successMessage: str(form, "handoverDate") ? "Data salva." : "Data tirada.", revalidate: "/vendas" },
+  );
+}
+
+export async function updateSaleAction(_: FormState, form: FormData): Promise<FormState> {
+  let items: { productId: string; quantity: string; unitPrice?: string }[];
+  try {
+    items = JSON.parse(str(form, "items") || "[]");
+  } catch {
+    return { ok: false, message: "Itens inválidos." };
+  }
+  try {
+    const r = await runService(db(), updateSale, await currentActor(), { id: str(form, "id"), items, reason: optional(form, "reason") });
+    revalidatePath("/", "layout");
+    return { ok: true, message: `Venda nº ${r.number} corrigida: ${money(r.total)}${Number(r.stillOpen) > 0 ? `. Falta receber ${money(r.stillOpen)}.` : ""}` };
+  } catch (err) {
+    return toFormState(err);
+  }
 }

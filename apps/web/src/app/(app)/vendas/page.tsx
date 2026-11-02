@@ -1,41 +1,53 @@
 import Link from "next/link";
-import { can, enabledFeatures, FULFILLMENTS, INSTALLMENT_STATUS_LABELS, INTERVAL_LABELS, PAYMENT_STATUS_LABELS, getOrganization, getSale, getSaleFollowup, listBranches, listSales, listStepTypes, orgDate, PAYMENT_LABELS } from "@erp/core";
+import { can, enabledFeatures, listProducts, FULFILLMENTS, INSTALLMENT_STATUS_LABELS, INTERVAL_LABELS, PAYMENT_STATUS_LABELS, getOrganization, getSale, getSaleFollowup, listBranches, listSales, listStepTypes, orgDate, PAYMENT_LABELS, PAYMENT_LATER_LABEL, handoverDateReady, isPaymentLater } from "@erp/core";
 import { requirePermission } from "@/lib/auth";
 import { query } from "@/lib/actions";
 import { db } from "@/lib/db";
 import { money, quantity } from "@/lib/format";
-import { CancelSaleForm } from "./cancel-form";
+import { CancelSaleForm, DeleteSaleForm } from "./cancel-form";
+import { Notice } from "@/components/remove-record";
 import { ReceivePaymentForm } from "./receive-form";
+import { HandoverDateForm } from "./handover-form";
+import { EditSaleForm } from "./edit-form";
 import { AddStepsForm, StepRow } from "../entregas/steps";
 
 export const metadata = { title: "Vendas" };
 
-export default async function SalesPage({ searchParams }: { searchParams: Promise<{ q?: string; id?: string; receber?: string; filial?: string }> }) {
+export default async function SalesPage({ searchParams }: { searchParams: Promise<{ q?: string; id?: string; receber?: string; filial?: string; aviso?: string }> }) {
   const actor = await requirePermission("sales.view");
   const params = await searchParams;
   const branches = can(actor, "branches.view") ? await query(listBranches, {}) : [];
   const multi = branches.length > 1;
   const branch = multi ? branches.find((b) => b.id === params.filial) : undefined;
-  const [org, sales, selected, features] = await Promise.all([
+  const [org, sales, selected, features, handoverReady] = await Promise.all([
     query(getOrganization, {}),
     query(listSales, { search: params.q || undefined, openPayment: params.receber === "1", branchId: branch?.id }),
     params.id ? query(getSale, { id: params.id }).catch(() => null) : null,
     enabledFeatures(db(), actor.organizationId),
+    handoverDateReady(db()),
   ]);
   const seesSteps = features.has("deliveries") && can(actor, "deliveries.view");
   const [followup, today, stepTypes] = selected && seesSteps
     ? await Promise.all([query(getSaleFollowup, { saleId: selected.id }), query(orgDate, {}), query(listStepTypes, {})])
     : [null, "", []];
   const canSteps = can(actor, "deliveries.manage");
+  // Corrigir itens: venda concluída e ainda não paga por inteiro (melhoria 17).
+  const canEdit = !!selected && selected.status === "completed" && can(actor, "sales.create") && !actor.platformView &&
+    !(selected.paymentStatus === "paid" && Number(selected.paidTotal) > 0);
+  const editProducts = canEdit ? await query(listProducts, { limit: 500 }) : [];
   const fmt = new Intl.DateTimeFormat("pt-BR", { timeZone: org.timezone, dateStyle: "short", timeStyle: "short" });
-  const day = (d: string) => d.split("-").reverse().join("/");
+  // "2026-11-02" → "02/11"; o ano só aparece quando não é o atual.
+  const year = String(new Date().getFullYear());
+  const day = (d: string) => { const [y, m, dd] = d.split("-"); return y === year ? `${dd}/${m}` : `${dd}/${m}/${y}`; };
+  const handoverWord = (f: string) => (f === "delivery" ? "Entrega" : "Retirada");
 
   return (
     <>
       <div className="page-header">
         <h1>Vendas</h1>
-        <p>Todas as vendas registradas. Cancelar uma venda devolve os itens ao estoque.</p>
+        <p>Todas as vendas registradas. Cancelar uma venda devolve os itens ao estoque e guarda o histórico; excluir apaga a venda de vez.</p>
       </div>
+      <Notice text={params.aviso} />
 
       {selected && (
         <section className="card">
@@ -49,7 +61,8 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
             </span>
           </div>
           <p className="muted">
-            {fmt.format(selected.soldAt)} · {FULFILLMENTS[selected.fulfillment]} · {selected.customerName ?? "Consumidor"} · por {selected.userName}
+            {fmt.format(selected.soldAt)} · {FULFILLMENTS[selected.fulfillment]}
+            {selected.handoverDate && <> em <b>{day(selected.handoverDate)}</b></>} · {selected.customerName ?? "Consumidor"} · por {selected.userName}
           </p>
           <div className="table-wrap">
             <table>
@@ -96,6 +109,26 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
             </span>
             <span className="cart-grand">{money(selected.total)}</span>
           </div>
+          {canEdit && (
+            <EditSaleForm
+              key={`${selected.id}-${selected.total}`}
+              saleId={selected.id}
+              canChangePrice={can(actor, "sales.change_price")}
+              items={[...selected.items.reduce((m, i) => {
+                const prev = m.get(i.productId);
+                m.set(i.productId, { productId: i.productId, name: i.productName, quantity: String(Number(i.quantity) + Number(prev?.quantity ?? 0)), unitPrice: String(Number(i.unitPrice)) });
+                return m;
+              }, new Map<string, { productId: string; name: string; quantity: string; unitPrice: string }>()).values()]}
+              products={editProducts.filter((p) => p.status === "active").map((p) => ({ id: p.id, name: p.name, price: String(Number(p.salePrice)) }))}
+            />
+          )}
+          {handoverReady && selected.status === "completed" && can(actor, "sales.create") && (
+            <HandoverDateForm
+              saleId={selected.id}
+              value={selected.handoverDate}
+              label={selected.fulfillment === "delivery" ? "Data da entrega" : "Data da retirada"}
+            />
+          )}
           <h3 className="form-section">Pagamento</h3>
           {selected.installments.length > 0 && (
             <>
@@ -122,7 +155,7 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
             </>
           )}
           {selected.payments.length === 0 ? (
-            <p className="muted">Nada recebido ainda.</p>
+            <p className="muted">{isPaymentLater(selected) ? "Forma de pagamento a combinar. Nada recebido ainda." : "Nada recebido ainda."}</p>
           ) : (
             <ul className="pay-list">
               {selected.payments.map((p) => (
@@ -168,6 +201,7 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
           {selected.status === "completed" && canSteps && <AddStepsForm saleId={selected.id} hasFollowup={!!followup} today={today} stepNames={stepTypes.map((t) => t.name)} />}
           {selected.status === "cancelled" && <p className="muted">Cancelada: {selected.cancelReason}</p>}
           {selected.status === "completed" && can(actor, "sales.cancel") && <CancelSaleForm id={selected.id} />}
+          {can(actor, "sales.cancel") && <DeleteSaleForm id={selected.id} number={selected.number} />}
         </section>
       )}
 
@@ -196,7 +230,7 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
           <div className="table-wrap">
             <table className="cards">
               <thead>
-                <tr><th>Nº</th><th>Data</th><th>Cliente</th>{multi && <th>Filial</th>}<th>Pagamento</th><th className="num">Itens</th><th className="num">Total</th><th>Situação</th></tr>
+                <tr><th>Nº</th><th>Data</th><th>Cliente</th>{multi && <th>Filial</th>}<th>Pagamento</th>{handoverReady && <th>Retirada</th>}<th className="num">Itens</th><th className="num">Total</th><th>Situação</th></tr>
               </thead>
               <tbody>
                 {sales.map((s) => (
@@ -208,12 +242,21 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
                     <td data-label="Pagamento">
                       {s.status === "completed" && s.paymentStatus !== "paid" ? (
                         <span className={`tag pay-tag ${s.paymentStatus}`}>
-                          {s.installmentCount > 0 ? `${s.installmentCount}x · falta ${money(Number(s.total) - Number(s.tradeInTotal) - Number(s.paidTotal))}` : s.paymentStatus === "partial" ? `Parcial · falta ${money(Number(s.total) - Number(s.tradeInTotal) - Number(s.paidTotal))}` : "A receber"}
+                          {s.installmentCount > 0
+                            ? `${s.installmentCount}x · falta ${money(Number(s.total) - Number(s.tradeInTotal) - Number(s.paidTotal))}`
+                            : s.paymentStatus === "partial"
+                            ? `Parcial · falta ${money(Number(s.total) - Number(s.tradeInTotal) - Number(s.paidTotal))}`
+                            : isPaymentLater(s) ? `${PAYMENT_LATER_LABEL} · a receber` : "A receber"}
                         </span>
                       ) : (
                         PAYMENT_LABELS[s.paymentMethod]
                       )}
                     </td>
+                    {handoverReady && (
+                      <td data-label={handoverWord(s.fulfillment)}>
+                        {s.handoverDate ? <>{handoverWord(s.fulfillment)} {day(s.handoverDate)}</> : <span className="muted">—</span>}
+                      </td>
+                    )}
                     <td data-label="Itens" className="num sm-hide">{s.itemCount}</td>
                     <td data-label="Total" className="num"><strong className={s.status === "cancelled" ? "strike muted" : ""}>{money(s.total)}</strong></td>
                     <td data-label="Situação"><span className={`tag ${s.status === "completed" ? "ok" : "off"}`}>{s.status === "completed" ? "Concluída" : "Cancelada"}</span></td>

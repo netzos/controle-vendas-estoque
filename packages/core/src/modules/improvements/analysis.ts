@@ -2,8 +2,16 @@ import type { Db, Tx } from "@erp/db";
 import { recordAiUsage } from "../../usage.ts";
 import { withTenant } from "@erp/db";
 import { AppError, forbidden } from "../../errors.ts";
-import { defaultNetsModel, NETS_MODEL, netsConfigured, type NetsModel } from "../nets/service.ts";
-import { commentImprovement, decideImprovement, getImprovement, IMPROVEMENT_MODULES, type ImprovementViewer } from "./service.ts";
+import { defaultNetsModel, NETS_FAST_MODEL, NETS_MODEL, netsConfigured, type NetsModel } from "../nets/service.ts";
+import {
+  commentImprovement,
+  decideImprovement,
+  getImprovement,
+  improvementForAiAnalysis,
+  IMPROVEMENT_MODULES,
+  recordAiImprovementAnalysis,
+  type ImprovementViewer,
+} from "./service.ts";
 
 // Análise da IA sobre todos os pedidos abertos da plataforma: sugere quais
 // juntar, resume o que cada empresa precisa e aponta prioridades. Só sugere;
@@ -187,4 +195,46 @@ export async function executeImprovementAnalysis(db: Db, viewer: ImprovementView
     tx.query("UPDATE controle_vendas_estoque.improvement_analyses SET executed_at = now(), executed_by = $2 WHERE id = $1", [analysisId, viewer.userId]),
   );
   return out;
+}
+
+const SINGLE_SYSTEM = `Você é a IA do netzsales, um sistema de vendas e estoque usado por pequenas empresas de ramos diferentes (lojas, fazendas, revendas). O netzsales tem: Vender (registrar venda, à vista, parcelada, dividida em formas de pagamento, entrega ou retirada), Vendas (lista e ficha da venda), Produtos e estoque, Clientes, Financeiro (a receber, comissões), Painel com gráficos, Netz (assistente no painel e no Telegram que registra vendas por conversa) e Ajustes.
+Um cliente acabou de pedir uma melhoria. Escreva a análise para o administrador decidir se aprova. Use exatamente estes três títulos, cada um com 1 a 4 frases simples, em português do Brasil, sem markdown além dos títulos:
+Contexto: o que a pessoa vive hoje no sistema e por que isso atrapalha.
+Explicação: o que ela está pedindo, com suas palavras, e se serve para outras empresas também (o sistema é genérico, nunca sob medida para um ramo).
+Alteração proposta: o que mudar no netzsales, em quais telas, e como saber que ficou pronto.`;
+
+/**
+ * Logo que um cliente pede uma melhoria, a IA escreve contexto, explicação e
+ * alteração proposta na conversa do pedido, e o pedido entra em análise na aba
+ * Melhorias do administrador. Nunca derruba quem pediu: se a IA falhar, o
+ * pedido fica como novo e a conferência de hora em hora analisa.
+ */
+export async function analyzeNewImprovementWithAI(db: Db, id: string, model: NetsModel = defaultNetsModel): Promise<boolean> {
+  try {
+    if (model === defaultNetsModel && !netsConfigured()) return false;
+    const { item, already } = await improvementForAiAnalysis(db, id);
+    if (already || item.status !== "new") return false;
+    const moduleLabel = IMPROVEMENT_MODULES.find((m) => m.key === item.module)?.label ?? item.module;
+    const response = await model({
+      model: NETS_FAST_MODEL,
+      max_tokens: 1200,
+      system: SINGLE_SYSTEM,
+      messages: [
+        {
+          role: "user",
+          content: `Empresa: ${item.organizationName ?? "equipe netzsales"}\nPedido por: ${item.createdByName}\nParte do sistema: ${moduleLabel}\nTítulo: ${item.title}\n\n${item.body.slice(0, 4000)}`,
+        },
+      ],
+    });
+    if (item.organizationId) {
+      await recordAiUsage(db, { organizationId: item.organizationId, userId: item.createdBy }, "improvements_analysis", response.model ?? NETS_FAST_MODEL, response.usage);
+    }
+    const text = response.content.map((b) => (b.type === "text" ? b.text : "")).join("").trim();
+    if (!text) return false;
+    await recordAiImprovementAnalysis(db, id, `Análise da IA\n\n${text}`);
+    return true;
+  } catch (err) {
+    console.error("[melhorias] análise automática falhou", err);
+    return false;
+  }
 }

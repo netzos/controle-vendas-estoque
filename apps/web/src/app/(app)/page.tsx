@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { can, enabledFeatures, FULFILLMENTS, getOrganization, listBranches, listCustomers, listReceivables, PAYMENT_LABELS, salesDashboard, stepCounts, stockOverview, telegramConfigured, telegramOrganizationOf, type SalesPeriod } from "@erp/core";
+import { redirect } from "next/navigation";
+import { can, enabledFeatures, isPlatformDeveloper, FULFILLMENTS, getOrganization, listBranches, listCustomers, listReceivables, PAYMENT_LABELS, salesDashboard, stepCounts, stockOverview, telegramConfigured, telegramOrganizationOf, type SalesPeriod } from "@erp/core";
 import { currentActor } from "@/lib/auth";
 import { query } from "@/lib/actions";
 import { money, quantity } from "@/lib/format";
@@ -18,6 +19,8 @@ const PERIODS: { key: SalesPeriod; label: string; previous: string }[] = [
 
 export default async function HomePage({ searchParams }: { searchParams: Promise<{ periodo?: string; filial?: string }> }) {
   const actor = await currentActor();
+  // Modo gestor: a conta da plataforma não tem painel de vendas, começa na Plataforma.
+  if (!actor.platformView && (await isPlatformDeveloper(db(), actor.userId))) redirect("/plataforma");
   const params = await searchParams;
   const period = PERIODS.find((p) => p.key === params.periodo) ?? PERIODS[0]!;
   const canSales = can(actor, "sales.view");
@@ -48,7 +51,12 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
 
   // "Precisa de você": o que pede ação hoje, no mesmo espírito do cartão do Painel da plataforma.
   const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
-  const owed = stock?.rows.filter((r) => Number(r.stockQty) < 0).length ?? 0;
+  // Encomenda (melhoria 14): só fala em fornecedor quando o produto tem fornecedor.
+  // Produção própria (açaí colhido) é "falta providenciar", com as etapas da empresa.
+  const owedRows = stock?.rows.filter((r) => Number(r.stockQty) < 0) ?? [];
+  const owed = owedRows.length;
+  const owedSupplier = owedRows.filter((r) => r.hasSupplier).length;
+  const owedOther = owed - owedSupplier;
   const out = (stock?.rows.filter((r) => r.status === "out").length ?? 0) - owed;
   const low = stock?.rows.filter((r) => r.status === "low").length ?? 0;
   const needs: { href: string; text: string; action: string; tone: "bad" | "warn" }[] = [];
@@ -56,7 +64,8 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   if (steps && steps.today > 0) needs.push({ href: "/entregas?filtro=today", text: `${plural(steps.today, "entrega ou serviço", "entregas ou serviços")} para hoje`, action: "Ver", tone: "warn" });
   if (late && late.late.count > 0) needs.push({ href: "/financeiro/receber?filtro=late", text: `${money(late.late.amount)} vencido em ${plural(late.late.count, "parcela", "parcelas")}`, action: "Cobrar", tone: "bad" });
   if (dash && dash.receivable.count > 0) needs.push({ href: "/financeiro/receber", text: `${money(dash.receivable.amount)} na rua, em ${plural(dash.receivable.count, "venda", "vendas")}`, action: "Ver", tone: "warn" });
-  if (owed > 0) needs.push({ href: "/estoque?filtro=zerados", text: `${plural(owed, "produto vendido por encomenda", "produtos vendidos por encomenda")}, falta pedir ao fornecedor`, action: "Ver", tone: "bad" });
+  if (owedSupplier > 0) needs.push({ href: "/estoque?filtro=sem-estoque#saldos", text: `${plural(owedSupplier, "produto vendido por encomenda", "produtos vendidos por encomenda")}, falta pedir ao fornecedor`, action: "Ver", tone: "bad" });
+  if (owedOther > 0) needs.push({ href: "/estoque?filtro=sem-estoque#saldos", text: `${plural(owedOther, "produto vendido por encomenda", "produtos vendidos por encomenda")}, falta providenciar (sem fornecedor)`, action: "Ver", tone: "bad" });
   if (out > 0) needs.push({ href: "/estoque?filtro=zerados", text: `${plural(out, "produto zerado", "produtos zerados")}`, action: "Repor", tone: "bad" });
   if (fewCustomers) needs.push({ href: "/primeiros-passos", text: "Primeiros passos: traga seus clientes de uma planilha, quando quiser", action: "Ver", tone: "warn" });
   if (low > 0) needs.push({ href: "/estoque?filtro=baixo", text: `${plural(low, "produto abaixo do mínimo", "produtos abaixo do mínimo")}`, action: "Repor", tone: "warn" });

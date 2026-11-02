@@ -4,6 +4,7 @@ import { withTransaction } from "@erp/db";
 import { z } from "zod";
 import { AppError, parseInput } from "../errors.ts";
 import { appUrl, mailConfigured, sendMail } from "../mail.ts";
+import { telegramApi, telegramConfigured, type TelegramApi } from "../modules/telegram/api.ts";
 import { hashPassword, MIN_PASSWORD_LENGTH } from "./password.ts";
 import { hashToken, normalizeEmail } from "./session.ts";
 
@@ -32,33 +33,47 @@ async function issueToken(tx: Tx | Db, userId: string, purpose: TokenPurpose, mi
 }
 
 /**
- * Pede um link de nova senha. A resposta é sempre a mesma, exista o e-mail ou
- * não, para não revelar quem tem conta. mailEnabled avisa a tela quando o
- * envio ainda não foi configurado.
+ * Pede um link de nova senha. O link vai por e-mail (quando o envio está
+ * configurado) e também pelo Telegram, para quem ligou a conta ao bot; assim a
+ * recuperação funciona mesmo sem e-mail. A resposta é sempre a mesma, exista o
+ * e-mail ou não, para não revelar quem tem conta. enabled avisa a tela quando
+ * nenhum dos dois caminhos está ativo.
  */
-export async function requestPasswordReset(db: Db, rawEmail: string): Promise<{ mailEnabled: boolean }> {
-  if (!mailConfigured()) return { mailEnabled: false };
+export async function requestPasswordReset(
+  db: Db,
+  rawEmail: string,
+  deps: { telegram?: TelegramApi | null } = {},
+): Promise<{ enabled: boolean }> {
+  const mailOn = mailConfigured();
+  const telegram = deps.telegram !== undefined ? deps.telegram : telegramConfigured() ? telegramApi : null;
+  if (!mailOn && !telegram) return { enabled: false };
   const email = normalizeEmail(rawEmail);
   if (!/^[^@\s]+@[^@\s]+$/.test(email)) throw new AppError("invalid_input", "E-mail inválido.");
-  const { rows } = await db.query<{ id: string; name: string; recent: number }>(
+  const { rows } = await db.query<{ id: string; name: string; recent: number; chats: string[] }>(
     `SELECT u.id, u.name,
             (SELECT count(*)::int FROM controle_vendas_estoque.password_tokens t
-              WHERE t.user_id = u.id AND t.purpose = 'reset' AND t.created_at > now() - interval '1 hour') AS recent
+              WHERE t.user_id = u.id AND t.purpose = 'reset' AND t.created_at > now() - interval '1 hour') AS recent,
+            ARRAY(SELECT DISTINCT l.chat_id::text FROM controle_vendas_estoque.telegram_links l
+                   WHERE l.user_id = u.id AND l.status = 'active') AS chats
        FROM controle_vendas_estoque.users u WHERE u.email = $1 AND u.status = 'active'`,
     [email],
   );
   const user = rows[0];
-  if (!user || user.recent >= MAX_RESETS_PER_HOUR) return { mailEnabled: true };
+  if (!user || user.recent >= MAX_RESETS_PER_HOUR) return { enabled: true };
+  const chats = telegram ? user.chats : [];
+  if (!mailOn && chats.length === 0) return { enabled: true };
   const token = await issueToken(db, user.id, "reset", RESET_TTL_MINUTES);
   const link = `${appUrl()}/redefinir-senha?token=${token}`;
-  await sendMail({
-    to: email,
-    subject: "Redefinir sua senha do netzsales",
-    text:
-      `Olá, ${user.name}.\n\nPara criar uma nova senha, abra o link abaixo. Ele vale por ${RESET_TTL_MINUTES} minutos e só pode ser usado uma vez.\n\n${link}\n\n` +
-      "Se você não pediu, pode ignorar este e-mail: sua senha continua a mesma.",
-  });
-  return { mailEnabled: true };
+  const text =
+    `Olá, ${user.name}.\n\nPara criar uma nova senha, abra o link abaixo. Ele vale por ${RESET_TTL_MINUTES} minutos e só pode ser usado uma vez.\n\n${link}\n\n` +
+    "Se você não pediu, pode ignorar esta mensagem: sua senha continua a mesma.";
+  // Um caminho que falha não impede o outro; a falha fica só no log.
+  const sends: Promise<unknown>[] = [];
+  if (mailOn) sends.push(sendMail({ to: email, subject: "Redefinir sua senha do netzsales", text }));
+  for (const chatId of chats) sends.push(telegram!.call("sendMessage", { chat_id: chatId, text, link_preview_options: { is_disabled: true } }));
+  const results = await Promise.allSettled(sends);
+  for (const r of results) if (r.status === "rejected") console.error("password reset send failed", r.reason instanceof Error ? r.reason.message : r.reason);
+  return { enabled: true };
 }
 
 export async function sendInvite(tx: Tx, params: { userId: string; email: string; name: string; organizationId: string; organizationName: string }) {

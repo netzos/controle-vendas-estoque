@@ -6,7 +6,7 @@ export type ItemType = "stock" | "made_to_order" | "service" | "production";
 // Como o item é vendido. Define se o estoque é controlado.
 export const ITEM_TYPES: Record<ItemType, { label: string; hint: string; tracksStock: boolean }> = {
   stock: { label: "Produto em estoque", hint: "Você compra, guarda e vende. Quando acabar, pode seguir vendendo por encomenda.", tracksStock: true },
-  made_to_order: { label: "Só por encomenda", hint: "Não guarda em estoque. Cada venda abre a etapa Encomenda.", tracksStock: false },
+  made_to_order: { label: "Só por encomenda (não consome estoque)", hint: "Não guarda em estoque: a venda não baixa saldo e o produto nunca aparece como zerado. Cada venda abre a etapa Encomenda.", tracksStock: false },
   service: { label: "Serviço", hint: "Mão de obra, taxa, entrega. Não tem estoque.", tracksStock: false },
   production: { label: "Produção própria", hint: "Você mesmo produz, colhe ou fabrica. Tem estoque e pode vender por encomenda.", tracksStock: true },
 };

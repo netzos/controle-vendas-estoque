@@ -14,6 +14,7 @@ import {
   createImprovement,
   decideImprovement,
   editImprovement,
+  VERSION_MARK,
   getImprovement,
   improvementViewer,
   listImprovements,
@@ -130,7 +131,10 @@ describe("melhorias", () => {
     assert.ok(edited.body.startsWith("Problema (por quê)"));
     assert.deepEqual(edited.details?.criterios, ["Filtra por período", "Mostra total por vendedor"]);
     const d = await getImprovement(t.app, seller, item.id);
-    assert.match(d.messages.at(-1)!.body, /^Pedido corrigido: problema, proposta, critérios\. Detalhei melhor\.$/);
+    // A versão anterior fica guardada na linha do tempo (melhoria 15).
+    const [note, previous] = d.messages.at(-1)!.body.split(VERSION_MARK);
+    assert.match(note!, /^Pedido corrigido: problema, proposta, critérios\. Detalhei melhor\.$/);
+    assert.equal(previous, "Relatório de comissões\n\nTexto inicial");
 
     await decideImprovement(t.app, dev, item.id, "reject", "Fora do escopo agora.");
     await assert.rejects(editImprovement(t.app, seller, item.id, { title: "Novo título" }), rejectsWith("conflict"));
@@ -177,7 +181,7 @@ describe("melhorias", () => {
 
     // Pela Netz, pelo número: só complemento, ou complemento + texto novo.
     const listed = await agentListImprovements(t.app, sellerActor);
-    assert.ok(listed.some((i) => i.number === item.number && i.status === "approved"));
+    assert.ok(listed.some((i) => i.number === item.number && i.status === "received")); // a Netz fala com a empresa: aprovado aparece como recebido
     await agentComplementImprovement(t.app, sellerActor, { number: Number(item.number), complement: "Tem que ser uma conversa natural." });
     const after1 = await getImprovement(t.app, seller, item.id);
     assert.equal(after1.messages.at(-1)!.body, "Complemento: Tem que ser uma conversa natural.");

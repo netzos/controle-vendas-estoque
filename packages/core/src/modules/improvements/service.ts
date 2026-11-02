@@ -29,6 +29,8 @@ export type ImprovementSource = "site" | "telegram" | "erp_ai" | "claude";
 export type AuthorKind = "person" | "erp_ai" | "claude";
 
 export const AI_NAME = "IA do sistema";
+/** Separa, numa mensagem de correção, a nota da versão anterior do pedido. */
+export const VERSION_MARK = "\n\n--- Versão anterior ---\n";
 export const CLAUDE_NAME = "Claude";
 export const AGENT_DAILY_LIMIT = 20;
 const OPEN: ImprovementStatus[] = ["new", "analysis", "approved", "building"];
@@ -133,13 +135,33 @@ async function load(tx: Tx, id: string, lock = false): Promise<Improvement> {
   return rows[0];
 }
 
-async function messages(tx: Tx, id: string): Promise<ImprovementMessage[]> {
+/**
+ * Mensagens internas: a análise (da IA ou do Claude) e a decisão do administrador.
+ * A empresa que pediu não vê nada disso: para ela o pedido só foi recebido,
+ * está em desenvolvimento ou ficou pronto. Quem aprova é só o administrador geral.
+ */
+const INTERNAL_MESSAGE = `(
+  (m.author_kind IN ('claude', 'erp_ai') AND m.body ~* '^\\s*an[aá]lise')
+  OR (m.author_kind = 'person' AND m.author_id IS NOT NULL AND controle_vendas_estoque.is_platform_developer(m.author_id)
+      AND m.body ~* '^\\s*(aprovado|recusado)\\.')
+)`;
+
+async function messages(tx: Tx, id: string, internal = true): Promise<ImprovementMessage[]> {
   const { rows } = await tx.query<ImprovementMessage>(
-    `SELECT id, author_kind AS kind, author_name AS name, body, created_at AS at
-       FROM controle_vendas_estoque.improvement_messages WHERE improvement_id = $1 ORDER BY created_at, id`,
-    [id],
+    `SELECT m.id, m.author_kind AS kind, m.author_name AS name, m.body, m.created_at AS at
+       FROM controle_vendas_estoque.improvement_messages m
+      WHERE m.improvement_id = $1 AND ($2 OR NOT ${INTERNAL_MESSAGE}) ORDER BY m.created_at, m.id`,
+    [id, internal],
   );
   return rows;
+}
+
+/** Situação como a empresa vê: sem "em análise" nem "aprovado". */
+export type CustomerImprovementStatus = "received" | "building" | "published" | "closed";
+export function customerImprovementStatus(status: ImprovementStatus): CustomerImprovementStatus {
+  if (status === "building" || status === "published") return status;
+  if (status === "rejected") return "closed";
+  return "received";
 }
 
 async function addMessage(tx: Tx, id: string, kind: AuthorKind, authorId: string | null, name: string, text: string) {
@@ -212,8 +234,10 @@ async function queryList(tx: Tx, filters: ImprovementFilters) {
   return rows;
 }
 
-export async function getImprovement(db: Db, viewer: ImprovementViewer, id: string) {
-  return asViewer(db, viewer, async (tx) => ({ item: await load(tx, id), messages: await messages(tx, id) }));
+/** `internal: false` = a visão da empresa, sem a análise e sem a decisão do administrador. */
+export async function getImprovement(db: Db, viewer: ImprovementViewer, id: string, opts: { internal?: boolean } = {}) {
+  const internal = opts.internal ?? true;
+  return asViewer(db, viewer, async (tx) => ({ item: await load(tx, id), messages: await messages(tx, id, internal) }));
 }
 
 // Pedido pelo painel ---------------------------------------------------------
@@ -261,9 +285,14 @@ export async function editImprovement(db: Db, viewer: ImprovementViewer, id: str
       throw forbidden("Só quem fez o pedido ou o desenvolvedor pode corrigi-lo.");
     }
     const expected = item.version;
+    const before = { title: item.title, body: item.body };
     const changed = applyEdit(item, input);
-    const note = editNote(changed, input.comment ?? "");
+    let note = editNote(changed, input.comment ?? "");
     if (!note) throw new AppError("invalid_input", "Nada foi alterado.");
+    // Melhoria 15: o texto anterior fica guardado na linha do tempo do pedido.
+    if (before.title !== item.title || before.body !== item.body) {
+      note = `${note}${VERSION_MARK}${clip(before.title, 200)}\n\n${clip(before.body, 4000)}`;
+    }
     if (changed.length) await save(tx, item, expected);
     await addMessage(tx, id, "person", viewer.userId, viewer.userName, note);
     return load(tx, id);
@@ -413,7 +442,8 @@ export async function agentListImprovements(db: Db, actor: Actor) {
         WHERE organization_id = $1 AND status = ANY($2) ORDER BY number DESC LIMIT 50`,
       [actor.organizationId, OPEN],
     );
-    return rows;
+    // A Netz fala com a empresa: ela não sabe de "em análise" nem de "aprovado".
+    return rows.map((r) => ({ ...r, status: customerImprovementStatus(r.status) }));
   });
 }
 
@@ -499,6 +529,34 @@ export async function claudeMoveImprovement(
     await save(tx, item, expected);
     if (text) await addMessage(tx, id, "claude", null, CLAUDE_NAME, text);
     return load(tx, id);
+  });
+}
+
+/**
+ * Análise automática da IA logo que o pedido chega: fica na conversa do pedido
+ * e o pedido vai para "Em análise", pronto para o administrador aprovar ou recusar.
+ */
+export async function recordAiImprovementAnalysis(db: Db, id: string, text: string) {
+  const bodyText = clip(text.trim(), 5000);
+  if (!bodyText) return;
+  return asClaude(db, async (tx) => {
+    const item = await load(tx, id, true);
+    await addMessage(tx, id, "erp_ai", null, AI_NAME, bodyText);
+    if (item.status === "new") {
+      await tx.query("UPDATE controle_vendas_estoque.improvements SET status = 'analysis', version = version + 1 WHERE id = $1 AND status = 'new'", [id]);
+    }
+  });
+}
+
+/** O que a IA precisa saber do pedido para analisar (sem permissão de pessoa: roda em segundo plano). */
+export async function improvementForAiAnalysis(db: Db, id: string) {
+  return asClaude(db, async (tx) => {
+    const item = await load(tx, id);
+    const { rows } = await tx.query<{ already: boolean }>(
+      `SELECT EXISTS (SELECT 1 FROM controle_vendas_estoque.improvement_messages WHERE improvement_id = $1 AND author_kind = 'erp_ai' AND body LIKE 'Análise da IA%') AS already`,
+      [id],
+    );
+    return { item, already: rows[0]!.already };
   });
 }
 

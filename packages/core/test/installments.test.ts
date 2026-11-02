@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { after, before, describe, it } from "node:test";
 import {
-  AppError, cancelSale, createCustomer, createProduct, createSale, dueDates, getSale, listReceivables, listUnits, receiveSalePayment, runService,
+  AppError, cancelSale, updateSale, createCustomer, createProduct, createSale, dueDates, getSale, listReceivables, listUnits, receiveSalePayment, runService,
   splitCents, type Actor,
 } from "../src/index.ts";
 import { actorFor, seedCompany, setupTestDb, type TestDb } from "./helpers.ts";
@@ -85,6 +85,9 @@ describe("venda parcelada e dinheiro na rua", () => {
     const r = await runService(t.app, listReceivables, owner, { customerId: joao });
     assert.equal(r.items.length, 1);
     assert.equal(r.items[0]!.status, "open");
+    // Corrigir a venda parcelada sem mudar o valor pode; mudando o valor, não.
+    await runService(t.app, updateSale, owner, { id: sale.id, items: [{ productId: relogio, quantity: "1" }] });
+    await assert.rejects(runService(t.app, updateSale, owner, { id: sale.id, items: [{ productId: relogio, quantity: "2" }] }), /parcelada/);
     assert.equal(r.late.amount, "0.00");
     // Venda cancelada sai do dinheiro na rua.
     await runService(t.app, cancelSale, owner, { id: sale.id, reason: "desistiu" });

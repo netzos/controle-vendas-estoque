@@ -61,6 +61,10 @@ const VOICE_MAX_MS = 4 * 60 * 1000;
 function useVoice(onText: (text: string) => void, onError: (message: string) => void) {
   const [supported, setSupported] = useState(false);
   const [state, setState] = useState<VoiceState>("idle");
+  // Melhoria 16: o que o navegador entende enquanto a pessoa fala. O texto
+  // final continua sendo o da transcrição do servidor, que é mais precisa.
+  const [live, setLive] = useState("");
+  const recognition = useRef<LiveRecognition | null>(null);
   const recorder = useRef<MediaRecorder | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   // A gravação termina depois de outros renders: usa sempre os callbacks mais novos.
@@ -69,7 +73,44 @@ function useVoice(onText: (text: string) => void, onError: (message: string) => 
   useEffect(() => {
     setSupported(typeof window.MediaRecorder !== "undefined" && !!navigator.mediaDevices?.getUserMedia);
   }, []);
-  useEffect(() => () => recorder.current?.stream.getTracks().forEach((t) => t.stop()), []);
+  useEffect(() => () => {
+    recorder.current?.stream.getTracks().forEach((t) => t.stop());
+    recognition.current?.abort();
+  }, []);
+
+  const startLive = () => {
+    const Ctor = (window as unknown as { SpeechRecognition?: LiveRecognitionCtor; webkitSpeechRecognition?: LiveRecognitionCtor }).SpeechRecognition ??
+      (window as unknown as { webkitSpeechRecognition?: LiveRecognitionCtor }).webkitSpeechRecognition;
+    setLive("");
+    if (!Ctor) return;
+    try {
+      const rec = new Ctor();
+      rec.lang = "pt-BR";
+      rec.continuous = true;
+      rec.interimResults = true;
+      rec.onresult = (e) => {
+        let text = "";
+        for (let i = 0; i < e.results.length; i++) text += e.results[i]![0]!.transcript;
+        setLive(text.trim());
+      };
+      rec.onerror = () => {};
+      // Alguns navegadores param sozinhos depois de um silêncio: volta a ouvir enquanto grava.
+      rec.onend = () => {
+        if (recognition.current === rec && recorder.current?.state === "recording") {
+          try { rec.start(); } catch { /* já parou */ }
+        }
+      };
+      recognition.current = rec;
+      rec.start();
+    } catch {
+      recognition.current = null;
+    }
+  };
+  const stopLive = () => {
+    const rec = recognition.current;
+    recognition.current = null;
+    try { rec?.stop(); } catch { /* já parou */ }
+  };
 
   const upload = async (blob: Blob) => {
     setState("sending");
@@ -82,12 +123,14 @@ function useVoice(onText: (text: string) => void, onError: (message: string) => 
       handlers.current.onError(err instanceof Error ? err.message : "Não consegui transcrever o áudio.");
     } finally {
       setState("idle");
+      setLive("");
     }
   };
 
   const toggle = async () => {
     if (state === "recording") {
       clearTimeout(timer.current);
+      stopLive();
       recorder.current?.stop();
       return;
     }
@@ -105,6 +148,7 @@ function useVoice(onText: (text: string) => void, onError: (message: string) => 
       if (e.data.size) chunks.push(e.data);
     };
     r.onstop = () => {
+      stopLive();
       stream.getTracks().forEach((t) => t.stop());
       recorder.current = null;
       const blob = new Blob(chunks, { type: r.mimeType || "audio/webm" });
@@ -114,10 +158,26 @@ function useVoice(onText: (text: string) => void, onError: (message: string) => 
     recorder.current = r;
     r.start();
     setState("recording");
+    startLive();
     timer.current = setTimeout(() => r.state === "recording" && r.stop(), VOICE_MAX_MS);
   };
-  return { supported, state, toggle };
+  return { supported, state, toggle, live };
 }
+
+// Reconhecimento de voz do navegador (Chrome, Edge, Safari). Onde não existe,
+// a gravação funciona como antes, só sem o texto ao vivo.
+interface LiveRecognition {
+  lang: string;
+  continuous: boolean;
+  interimResults: boolean;
+  onresult: ((e: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null;
+  onerror: (() => void) | null;
+  onend: (() => void) | null;
+  start(): void;
+  stop(): void;
+  abort(): void;
+}
+type LiveRecognitionCtor = new () => LiveRecognition;
 
 // A Netz em todas as telas: arrastável, minimiza sem perder o rascunho e sabe
 // qual tela está aberta. Mesmo esquema do Netz no NetOS.
@@ -293,6 +353,9 @@ export function NetsBubble() {
             {pending && <div className="nets-msg assistant"><div className="nets-bubble-text nets-typing" aria-label="A Netz está respondendo"><i /><i /><i /></div></div>}
           </div>
           {error && <p className="nets-error" role="alert">{error}</p>}
+          {voice.state !== "idle" && voice.live && (
+            <p className="nets-live" aria-live="polite">{voice.live}{voice.state === "sending" ? " …" : ""}</p>
+          )}
           <form className="nets-composer" onSubmit={(e) => { e.preventDefault(); void send(); }}>
             <textarea
               value={draft}

@@ -1,7 +1,7 @@
 import type { NavIcon } from "@/lib/navigation";
 
 // Ícones de traço simples (24×24), no estilo do layout de referência.
-const PATHS: Record<NavIcon | "logout" | "logo" | "search" | "mic" | "send" | "minus" | "stop" | "menu", string> = {
+const PATHS: Record<NavIcon | "logout" | "logo" | "search" | "mic" | "send" | "minus" | "stop" | "menu" | "chevron", string> = {
   home: "M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z",
   plus: "M12 5v14M5 12h14",
   users: "M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM2 21v-1a6 6 0 0 1 6-6h2a6 6 0 0 1 6 6v1M16 3.5a4 4 0 0 1 0 7.5M22 21v-1a6 6 0 0 0-4-5.6",
@@ -25,6 +25,7 @@ const PATHS: Record<NavIcon | "logout" | "logo" | "search" | "mic" | "send" | "m
   minus: "M5 12h14",
   stop: "M7 7h10v10H7z",
   menu: "M4 7h16M4 12h16M4 17h16",
+  chevron: "M9 6l6 6-6 6",
 };
 
 export function Icon({ name, size = 22 }: { name: keyof typeof PATHS; size?: number }) {

@@ -2,8 +2,10 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { after } from "next/server";
 import {
   analyzeImprovementsWithAI,
+  analyzeNewImprovementWithAI,
   executeImprovementAnalysis,
   commentImprovement,
   improvementIdByNumber,
@@ -39,6 +41,11 @@ export async function createImprovementAction(_: FormState, form: FormData): Pro
   } catch (err) {
     return toFormState(err);
   }
+  // A IA analisa logo depois de responder à pessoa; o pedido chega ao administrador já analisado.
+  const created = id;
+  after(async () => {
+    if (await analyzeNewImprovementWithAI(db(), created)) revalidate();
+  });
   revalidate();
   redirect(`/melhorias?id=${id}&criado=1`);
 }
