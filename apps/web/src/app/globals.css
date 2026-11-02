@@ -721,7 +721,7 @@ summary .edit-hint { float: right; font-size: 13px; color: var(--muted); font-we
 .pos-name { padding-right: 26px; }
 .pos-bar { display: none; }
 @media (max-width: 860px) {
-  .pos-bar { position: fixed; left: 12px; right: 12px; bottom: calc(76px + env(safe-area-inset-bottom, 0px)); z-index: 30; display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 14px 12px 18px; border-radius: 18px; background: var(--accent); color: #fff; box-shadow: 0 10px 28px rgba(15, 17, 21, .3); }
+  .pos-bar { position: fixed; left: 12px; right: 12px; bottom: calc(92px + env(safe-area-inset-bottom, 0px)); z-index: 30; display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 14px 12px 18px; border-radius: 18px; background: var(--accent); color: #fff; box-shadow: 0 10px 28px rgba(15, 17, 21, .3); }
   .pos-bar:hover { text-decoration: none; }
   .pos-bar span { display: flex; flex-direction: column; font-size: 12.5px; line-height: 1.2; opacity: .95; }
   .pos-bar b { font-size: 19px; font-weight: 600; }
@@ -921,3 +921,62 @@ summary .edit-hint { float: right; font-size: 13px; color: var(--muted); font-we
 @media (max-width: 460px) {
   .mobile-brand strong { display: none; }
 }
+
+/* ===== Vidro claro (02/11/2026) =====
+   Pedido: "muito preto, mais suave, mais vidro". Superfícies translúcidas com desfoque,
+   item ativo em pílula de vidro branco (não mais preta). O preto fica para botões de ação,
+   textos e a logo. */
+:root {
+  --glass: rgba(255, 255, 255, .62);
+  --glass-strong: rgba(255, 255, 255, .82);
+  --glass-line: rgba(255, 255, 255, .85);
+  --glass-edge: rgba(15, 17, 21, .07);
+  --glass-blur: blur(22px) saturate(170%);
+  --glass-shadow: 0 1px 0 rgba(255, 255, 255, .8) inset, 0 0 0 1px var(--glass-edge), 0 18px 40px -22px rgba(30, 41, 59, .35);
+  --pill: linear-gradient(180deg, rgba(255, 255, 255, .98), rgba(255, 255, 255, .78));
+  --pill-shadow: 0 1px 0 #fff inset, 0 0 0 1px rgba(15, 17, 21, .08), 0 6px 16px -6px rgba(30, 41, 59, .3);
+}
+body {
+  background:
+    radial-gradient(900px 620px at 8% -8%, rgba(203, 213, 228, .95) 0%, transparent 62%),
+    radial-gradient(760px 520px at 96% 4%, rgba(226, 232, 240, .95) 0%, transparent 60%),
+    radial-gradient(900px 700px at 70% 108%, rgba(209, 217, 230, .9) 0%, transparent 60%),
+    linear-gradient(180deg, #eef1f6, #e7ebf2);
+  background-attachment: fixed;
+}
+/* Menu lateral */
+.side { background: linear-gradient(180deg, rgba(255, 255, 255, .58), rgba(255, 255, 255, .34)); -webkit-backdrop-filter: blur(28px) saturate(180%); backdrop-filter: blur(28px) saturate(180%); border-color: var(--glass-line);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, .9) inset, 0 0 0 1px var(--glass-edge), 0 30px 60px -24px rgba(30, 41, 59, .35); }
+.side-search { background: rgba(255, 255, 255, .5); border-color: rgba(255, 255, 255, .8); box-shadow: 0 0 0 1px var(--glass-edge); }
+.side-item:hover, .side-tree a:hover, .side-user:hover, .side-caret:hover, .side-logout:hover { background: rgba(255, 255, 255, .55); }
+.side-item.active { color: var(--text); font-weight: 600; background: var(--pill); border-color: transparent; box-shadow: var(--pill-shadow); }
+.side-item.active small { color: var(--faint); }
+.side-item.active + .side-caret { color: var(--muted); }
+.side-item.active + .side-caret:hover { background: rgba(15, 17, 21, .06); color: var(--text); }
+.side-item.primary:not(.active) { background: rgba(255, 255, 255, .45); border-color: rgba(15, 17, 21, .28); }
+.side-tree { border-left-color: rgba(15, 17, 21, .1); }
+.side-tree a.active { background: rgba(255, 255, 255, .7); box-shadow: 0 0 0 1px var(--glass-edge); }
+.side .avatar { color: var(--text); background: var(--pill); box-shadow: var(--pill-shadow); }
+.side-toggle { background: var(--glass-strong); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); border-color: var(--glass-line); }
+.side-toggle:hover { background: #fff; color: var(--text); }
+/* Barra do celular e "Mais" */
+.mbar-item.active { color: var(--text); font-weight: 600; background: var(--pill); box-shadow: var(--pill-shadow); }
+.mbar-item.primary:not(.active) { box-shadow: inset 0 0 0 1.5px rgba(15, 17, 21, .3); }
+.more-panel nav a { background: rgba(255, 255, 255, .55); box-shadow: 0 0 0 1px var(--glass-edge); }
+.more-panel nav a.active { background: var(--pill); color: var(--text); font-weight: 600; box-shadow: var(--pill-shadow); }
+/* Cartões, abas e seletores de vidro */
+.card, .kpi { background: var(--glass); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); border-color: var(--glass-line); box-shadow: var(--glass-shadow); }
+.tabs, .segmented, .org-name, .org-select { background: rgba(255, 255, 255, .5); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); border-color: var(--glass-line); box-shadow: 0 0 0 1px var(--glass-edge); }
+.tabs a.active, .segmented a.active, .segmented button.active, .segmented span.active { background: var(--pill); color: var(--text); font-weight: 600; box-shadow: var(--pill-shadow); }
+.tabs a:hover, .segmented a:hover, .segmented button:hover { background: rgba(255, 255, 255, .6); }
+.card .segmented { background: rgba(15, 17, 21, .04); box-shadow: none; }
+input, select, textarea { background: rgba(255, 255, 255, .55); border-color: rgba(15, 17, 21, .09); }
+input:focus, select:focus, textarea:focus { background: #fff; }
+button.secondary, .button.secondary { background: rgba(255, 255, 255, .6); border-color: rgba(15, 17, 21, .1); }
+button.secondary:hover, .button.secondary:hover { background: #fff; }
+tr.clickable:hover td { background: rgba(255, 255, 255, .55); }
+th, td { border-bottom-color: rgba(15, 17, 21, .07); }
+/* Destaque (Faturamento): grafite suave em vez de preto chapado */
+.kpi.hero { background: linear-gradient(145deg, #3b414b 0%, #23272e 100%); border-color: rgba(255, 255, 255, .12); box-shadow: 0 1px 0 rgba(255, 255, 255, .14) inset, 0 20px 40px -20px rgba(15, 17, 21, .55); }
+.nets-fab { background: linear-gradient(180deg, #2f343c, #15181d); }
+td small.unit { display: inline; font-size: 12.5px; }
