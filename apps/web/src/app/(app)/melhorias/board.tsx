@@ -1,5 +1,6 @@
 import Link from "next/link";
 import {
+  customerImprovementStatus,
   getImprovement,
   latestImprovementAnalysis,
   listPlatformOrganizations,
@@ -9,6 +10,7 @@ import {
   isAppError,
   listImprovements,
   type AuthorKind,
+  type CustomerImprovementStatus,
   type Improvement,
   type ImprovementModule,
   type ImprovementSource,
@@ -31,6 +33,14 @@ const STATUS_LABEL: Record<ImprovementStatus, string> = {
 const STATUS_TONE: Record<ImprovementStatus, string> = {
   new: "", analysis: "", approved: "ok", building: "ok", published: "ok", rejected: "off",
 };
+// A empresa nunca vê "em análise" nem "aprovado": quem decide é só o administrador geral.
+const CUSTOMER_LABEL: Record<CustomerImprovementStatus, string> = {
+  received: "Recebido",
+  building: "Em desenvolvimento",
+  published: "Pronto",
+  closed: "Encerrado",
+};
+const CUSTOMER_TONE: Record<CustomerImprovementStatus, string> = { received: "", building: "ok", published: "ok", closed: "off" };
 const SOURCE_LABEL: Record<ImprovementSource, string> = {
   site: "Pelo painel",
   telegram: "Pelo Telegram",
@@ -80,7 +90,7 @@ export async function ImprovementsBoard({ mode, searchParams }: { mode: "company
   let detail: Awaited<ReturnType<typeof getImprovement>> | null = null;
   if (sp.id) {
     try {
-      detail = await getImprovement(db(), viewer, sp.id);
+      detail = await getImprovement(db(), viewer, sp.id, { internal: platform });
     } catch (err) {
       if (!isAppError(err)) throw err;
     }
@@ -92,6 +102,13 @@ export async function ImprovementsBoard({ mode, searchParams }: { mode: "company
     return `${base}?${q}`;
   };
   const d = detail?.item;
+  const statusTag = (status: ImprovementStatus) =>
+    platform ? (
+      <span className={`tag ${STATUS_TONE[status]}`}>{STATUS_LABEL[status]}</span>
+    ) : (
+      <span className={`tag ${CUSTOMER_TONE[customerImprovementStatus(status)]}`}>{CUSTOMER_LABEL[customerImprovementStatus(status)]}</span>
+    );
+  const tabs = platform ? TABS : TABS.map((t) => (t.key === "publicados" ? { ...t, label: "Prontos" } : t.key === "recusados" ? { ...t, label: "Encerrados" } : t));
   const canCorrect = d && !d.mergedInto && (platform || d.createdBy === viewer.userId) && (d.status === "new" || d.status === "analysis" || d.status === "approved");
   const mergeTargets = platform && d && !d.mergedInto ? all.filter((i) => i.id !== d.id && (i.status === "new" || i.status === "analysis" || i.status === "approved" || i.status === "building")) : [];
 
@@ -107,15 +124,25 @@ export async function ImprovementsBoard({ mode, searchParams }: { mode: "company
         ) : (
           <p>
             Falta alguma coisa ou algo está confuso? Peça aqui, do seu jeito. Qualquer pessoa da empresa pode pedir, e a equipe
-            netzsales responde, decide e avisa aqui quando estiver pronto.
+            netzsales recebe e avisa aqui quando estiver pronto.
           </p>
         )}
       </div>
       <ol className="imp-steps card">
         <li><b>Pedido</b><span>{platform ? "painel ou IA" : "você pede aqui ou pela Netz"}</span></li>
-        <li><b>Análise</b><span>{platform ? "Claude responde" : "a equipe estuda"}</span></li>
-        <li><b>Decisão</b><span>{platform ? "desenvolvedor aprova" : "a equipe decide"}</span></li>
-        <li><b>Publicação</b><span>{platform ? "Claude desenvolve e avisa" : "fica pronto e você é avisado"}</span></li>
+        {platform ? (
+          <>
+            <li><b>Análise</b><span>Claude responde</span></li>
+            <li><b>Decisão</b><span>desenvolvedor aprova</span></li>
+            <li><b>Publicação</b><span>Claude desenvolve e avisa</span></li>
+          </>
+        ) : (
+          <>
+            <li><b>Recebido</b><span>a equipe netzsales recebe</span></li>
+            <li><b>Em desenvolvimento</b><span>a equipe trabalha nele</span></li>
+            <li><b>Pronto</b><span>você é avisado aqui</span></li>
+          </>
+        )}
       </ol>
       {!platform && viewer.isDeveloper && (
         <p className="muted">Aqui aparecem só os pedidos desta empresa. Para ver os de todas e decidir, use <Link href="/plataforma/melhorias">Plataforma › Melhorias</Link>.</p>
@@ -190,7 +217,7 @@ export async function ImprovementsBoard({ mode, searchParams }: { mode: "company
         <section className="card imp-list">
           <div className="imp-toolbar">
             <nav className="imp-tabs" aria-label="Situação">
-              {TABS.map((t) => (
+              {tabs.map((t) => (
                 <Link key={t.key} href={href({ aba: t.key, id: undefined })} className={t.key === tab.key ? "active" : ""}>
                   {t.label} <span>{all.filter((i) => (t.has as readonly string[]).includes(i.status) && (!moduleFilter || i.module === moduleFilter)).length}</span>
                 </Link>
@@ -222,7 +249,7 @@ export async function ImprovementsBoard({ mode, searchParams }: { mode: "company
                   <Link href={href({ id: i.id })} className={i.id === sp.id ? "active" : ""}>
                     <span className="imp-row-head">
                       <span>
-                        <span className={`tag ${STATUS_TONE[i.status]}`}>{STATUS_LABEL[i.status]}</span>{" "}
+                        {statusTag(i.status)}{" "}
                         <span className="tag">{moduleLabel(i.module)}</span>
                       </span>
                       <time>{fmt.format(new Date(i.updatedAt))}</time>
@@ -232,8 +259,8 @@ export async function ImprovementsBoard({ mode, searchParams }: { mode: "company
                       {origin(i)}
                       {platform && i.organizations.length ? ` · ${i.organizations.join(", ")}` : ""}
                       {i.mergedInto ? ` · juntado ao #${i.mergedIntoNumber}` : ""}
-                      {i.messages ? ` · ${i.messages} ${i.messages === 1 ? "mensagem" : "mensagens"}` : ""}
-                      {i.last ? ` · última de ${authorLabel(i.last.kind, i.last.name)}` : ""}
+                      {platform && i.messages ? ` · ${i.messages} ${i.messages === 1 ? "mensagem" : "mensagens"}` : ""}
+                      {platform && i.last ? ` · última de ${authorLabel(i.last.kind, i.last.name)}` : ""}
                     </small>
                   </Link>
                 </li>
@@ -255,7 +282,7 @@ export async function ImprovementsBoard({ mode, searchParams }: { mode: "company
               {sp.criado === "1" && <div className="alert success">Pedido registrado. A equipe netzsales responde aqui em breve.</div>}
               <div className="imp-row-head">
                 <span>
-                  <span className={`tag ${STATUS_TONE[d.status]}`}>{STATUS_LABEL[d.status]}</span>{" "}
+                  {statusTag(d.status)}{" "}
                   {platform ? (
                     <form action={moveImprovementAction} className="imp-inline">
                       <input type="hidden" name="id" value={d.id} />
@@ -276,7 +303,7 @@ export async function ImprovementsBoard({ mode, searchParams }: { mode: "company
                 {platform && d.organizations.length ? ` · ${d.organizations.join(", ")}` : ""}
                 {platform && d.requests > 1 ? ` · pedido ${d.requests} vezes` : ""}
                 {d.mergedInto ? ` · juntado ao pedido #${d.mergedIntoNumber}, que trata da mesma necessidade` : ""}
-                {d.decidedByName && d.decidedAt ? ` · ${d.status === "rejected" ? "recusado" : "aprovado"} por ${d.decidedByName} em ${fmt.format(new Date(d.decidedAt))}` : ""}
+                {platform && d.decidedByName && d.decidedAt ? ` · ${d.status === "rejected" ? "recusado" : "aprovado"} por ${d.decidedByName} em ${fmt.format(new Date(d.decidedAt))}` : ""}
               </p>
               <p className="imp-body">{d.body}</p>
               {d.link && (

@@ -177,7 +177,7 @@ describe("melhorias", () => {
 
     // Pela Netz, pelo número: só complemento, ou complemento + texto novo.
     const listed = await agentListImprovements(t.app, sellerActor);
-    assert.ok(listed.some((i) => i.number === item.number && i.status === "approved"));
+    assert.ok(listed.some((i) => i.number === item.number && i.status === "received")); // a Netz fala com a empresa: aprovado aparece como recebido
     await agentComplementImprovement(t.app, sellerActor, { number: Number(item.number), complement: "Tem que ser uma conversa natural." });
     const after1 = await getImprovement(t.app, seller, item.id);
     assert.equal(after1.messages.at(-1)!.body, "Complemento: Tem que ser uma conversa natural.");
