@@ -43,8 +43,11 @@ let other: Actor;
 let lata: string;
 let guarda: string;
 let ar: string;
-const today = new Date().toISOString().slice(0, 10);
-const daysAgo = (n: number) => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
+// Datas no fuso da empresa (São Paulo), como o sistema calcula "hoje".
+// Em UTC, entre 21h e meia-noite de Brasília o dia já virou e os testes quebravam.
+const spDate = (d: Date) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(d);
+const today = spDate(new Date());
+const daysAgo = (n: number) => spDate(new Date(Date.now() - n * 86400000));
 
 before(async () => {
   t = await setupTestDb();
