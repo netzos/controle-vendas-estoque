@@ -165,7 +165,7 @@ export default async function ProductsPage({
                       </td>
                       <td data-label="Código" className="sm-hide">{p.sku}</td>
                       <td data-label="Categoria" className="sm-hide">{p.categoryName}</td>
-                      <td data-label="Preço" className="num"><span>{money(p.salePrice)} <small className="muted">/ {p.unitCode}</small></span></td>
+                      <td data-label="Preço" className="num"><span>{money(p.salePrice)} <small className="muted unit">/ {p.unitCode}</small></span></td>
                       <td data-label="Custo" className="num sm-hide">{money(p.costPrice)}</td>
                       <td data-label="Margem" className="num">{margin === null ? "—" : `${quantity(margin.toFixed(1), 1)}%`}</td>
                       <td data-label="Estoque" className="num">
