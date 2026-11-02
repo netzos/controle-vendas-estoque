@@ -847,3 +847,9 @@ summary .edit-hint { float: right; font-size: 13px; color: var(--muted); font-we
 .summary-card:hover { border-color: var(--text); text-decoration: none; }
 .summary-card h2 { margin: 0 0 6px; }
 .small-note { font-size: 13px; margin: 12px 0 0; }
+
+/* Data de retirada/entrega na venda */
+.handover-field { margin: 12px 0 0; }
+.handover-form { display: flex; flex-direction: column; gap: 6px; margin: 12px 0; }
+.handover-form label { font-weight: 500; font-size: 14px; }
+.handover-form input[type="date"] { width: auto; }
