@@ -360,6 +360,11 @@ export const updateProduct = defineService({
         input.supplierId ?? null, input.salePrice, input.costPrice, input.minStock, input.status, ITEM_TYPES[input.itemType].tracksStock,
         input.itemType, JSON.stringify(custom), input.afterSaleSteps, input.backorder],
     );
+    // Melhoria 19: passou a não consumir estoque. O saldo antigo (às vezes negativo,
+    // de vendas por encomenda) deixa de valer e zera, para não reaparecer se voltar a controlar.
+    if (current.trackStock && !ITEM_TYPES[input.itemType].tracksStock && Number(current.stockQty) !== 0) {
+      await tx.query("UPDATE controle_vendas_estoque.products SET stock_qty = 0 WHERE id = $1", [input.id]);
+    }
     await ensureStepTypes(tx, actor.organizationId, input.afterSaleSteps);
     const after = (await getProduct(tx, input.id))!;
     const fields: string[] = (["sku", "barcode", "name", "description", "categoryId", "unitId", "supplierId", "salePrice", "costPrice", "minStock", "trackStock", "itemType", "backorder", "status"] as const)
