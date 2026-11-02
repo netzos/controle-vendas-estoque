@@ -352,6 +352,7 @@ button.block { width: 100%; justify-content: center; padding: 15px; font-size: 1
   .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
   .kpi-grid.compact { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .kpi-grid .kpi.hero { grid-column: 1 / -1; }
+  .kpi-grid:not(.compact) > .kpi.hero:first-child ~ .kpi:nth-child(4):last-child { grid-column: 1 / -1; }
   .kpi { padding: 16px; }
   .kpi-value { font-size: 22px; }
   .span-2 { grid-column: auto; }
@@ -778,10 +779,34 @@ summary .edit-hint { float: right; font-size: 13px; color: var(--muted); font-we
 .onboarding-step.done h2::after { content: " ✓"; color: var(--success); }
 
 /* Painel (aba de gráficos) */
-.panel-filters { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 0 0 18px; }
-.panel-filters form { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-.panel-filters input[type="date"], .panel-filters select { width: auto; padding: 7px 10px; border-radius: 10px; font-size: 14px; }
-.panel-tabs { margin-bottom: 14px; }
+.panel-toolbar { display: flex; gap: 10px 14px; align-items: center; justify-content: space-between; flex-wrap: wrap; margin: 0 0 18px; }
+.panel-tabs { margin: 0; }
+.period-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.period-picker { position: relative; }
+.period-button { display: inline-flex; align-items: center; gap: 8px; padding: 9px 14px; border-radius: 14px; background: var(--surface); color: var(--text); border: 1px solid var(--border); font: inherit; font-size: 14px; cursor: pointer; white-space: nowrap; }
+.period-button:hover { border-color: var(--faint); }
+.period-button .period-name { font-weight: 600; }
+.period-button .period-range { color: var(--muted); }
+.period-button .chev { color: var(--muted); transition: transform .15s; }
+.period-button[aria-expanded="true"] .chev { transform: rotate(180deg); }
+.period-pop { position: absolute; right: 0; top: calc(100% + 6px); z-index: 30; width: 300px; padding: 6px; background: var(--surface); border: 1px solid var(--border); border-radius: 16px; box-shadow: 0 10px 30px rgba(16, 24, 40, .12); }
+.period-pop ul { list-style: none; margin: 0; padding: 0; }
+.period-pop li button { display: flex; width: 100%; justify-content: space-between; align-items: center; padding: 9px 12px; border: none; background: none; border-radius: 10px; font: inherit; font-size: 14px; color: var(--text); cursor: pointer; text-align: left; }
+.period-pop li button:hover { background: var(--surface-2); }
+.period-pop li button.active { font-weight: 600; }
+.period-pop li:last-child { border-top: 1px solid var(--border); margin-top: 4px; padding-top: 4px; }
+.period-custom { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; padding: 8px 6px 4px; }
+.period-custom label { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; color: var(--muted); margin: 0; }
+.period-custom input { width: 100%; min-width: 0; padding: 7px 8px; border-radius: 10px; font-size: 14px; }
+.period-custom button { grid-column: 1 / -1; justify-content: center; padding: 10px 14px; }
+.period-select { width: auto; padding: 9px 12px; border-radius: 14px; font-size: 14px; }
+@media (max-width: 640px) {
+  .panel-toolbar { flex-direction: column; align-items: stretch; }
+  .period-bar, .period-picker, .period-button { width: 100%; }
+  .period-button .chev { margin-left: auto; }
+  .period-pop { left: 0; right: 0; width: auto; }
+  .period-select { flex: 1; }
+}
 .line-chart { margin: 0; }
 .line-plot { position: relative; padding-top: 22px; border-bottom: 1px solid var(--border); }
 .line-plot::before { content: ""; position: absolute; left: 0; right: 0; top: 22px; border-top: 1px dashed var(--border); }
