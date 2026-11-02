@@ -502,6 +502,34 @@ export async function claudeMoveImprovement(
   });
 }
 
+/**
+ * Análise automática da IA logo que o pedido chega: fica na conversa do pedido
+ * e o pedido vai para "Em análise", pronto para o administrador aprovar ou recusar.
+ */
+export async function recordAiImprovementAnalysis(db: Db, id: string, text: string) {
+  const bodyText = clip(text.trim(), 5000);
+  if (!bodyText) return;
+  return asClaude(db, async (tx) => {
+    const item = await load(tx, id, true);
+    await addMessage(tx, id, "erp_ai", null, AI_NAME, bodyText);
+    if (item.status === "new") {
+      await tx.query("UPDATE controle_vendas_estoque.improvements SET status = 'analysis', version = version + 1 WHERE id = $1 AND status = 'new'", [id]);
+    }
+  });
+}
+
+/** O que a IA precisa saber do pedido para analisar (sem permissão de pessoa: roda em segundo plano). */
+export async function improvementForAiAnalysis(db: Db, id: string) {
+  return asClaude(db, async (tx) => {
+    const item = await load(tx, id);
+    const { rows } = await tx.query<{ already: boolean }>(
+      `SELECT EXISTS (SELECT 1 FROM controle_vendas_estoque.improvement_messages WHERE improvement_id = $1 AND author_kind = 'erp_ai' AND body LIKE 'Análise da IA%') AS already`,
+      [id],
+    );
+    return { item, already: rows[0]!.already };
+  });
+}
+
 export async function claudeCreateImprovement(db: Db, raw: z.input<typeof createInput>) {
   const input = parseInput(createInput, raw);
   return asClaude(db, async (tx) => {
