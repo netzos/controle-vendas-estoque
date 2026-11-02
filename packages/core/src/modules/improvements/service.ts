@@ -29,6 +29,8 @@ export type ImprovementSource = "site" | "telegram" | "erp_ai" | "claude";
 export type AuthorKind = "person" | "erp_ai" | "claude";
 
 export const AI_NAME = "IA do sistema";
+/** Separa, numa mensagem de correção, a nota da versão anterior do pedido. */
+export const VERSION_MARK = "\n\n--- Versão anterior ---\n";
 export const CLAUDE_NAME = "Claude";
 export const AGENT_DAILY_LIMIT = 20;
 const OPEN: ImprovementStatus[] = ["new", "analysis", "approved", "building"];
@@ -283,9 +285,14 @@ export async function editImprovement(db: Db, viewer: ImprovementViewer, id: str
       throw forbidden("Só quem fez o pedido ou o desenvolvedor pode corrigi-lo.");
     }
     const expected = item.version;
+    const before = { title: item.title, body: item.body };
     const changed = applyEdit(item, input);
-    const note = editNote(changed, input.comment ?? "");
+    let note = editNote(changed, input.comment ?? "");
     if (!note) throw new AppError("invalid_input", "Nada foi alterado.");
+    // Melhoria 15: o texto anterior fica guardado na linha do tempo do pedido.
+    if (before.title !== item.title || before.body !== item.body) {
+      note = `${note}${VERSION_MARK}${clip(before.title, 200)}\n\n${clip(before.body, 4000)}`;
+    }
     if (changed.length) await save(tx, item, expected);
     await addMessage(tx, id, "person", viewer.userId, viewer.userName, note);
     return load(tx, id);

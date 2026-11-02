@@ -987,3 +987,8 @@ td small.unit { display: inline; font-size: 12.5px; }
 
 /* Texto ao vivo enquanto a pessoa fala com a Netz (melhoria 16) */
 .nets-live { margin: 0 12px 6px; padding: 8px 12px; border: 1px dashed var(--border); border-radius: 12px; font-size: 14px; color: var(--muted); max-height: 120px; overflow-y: auto; }
+
+/* Linha do tempo do pedido de melhoria: versão anterior fechada (melhoria 15) */
+.imp-version { margin-top: 6px; font-size: 13px; }
+.imp-version summary { cursor: pointer; color: var(--muted); }
+.imp-version p { white-space: pre-wrap; border-left: 2px solid var(--border); padding-left: 10px; color: var(--muted); }

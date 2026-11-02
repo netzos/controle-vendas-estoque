@@ -14,6 +14,7 @@ import {
   createImprovement,
   decideImprovement,
   editImprovement,
+  VERSION_MARK,
   getImprovement,
   improvementViewer,
   listImprovements,
@@ -130,7 +131,10 @@ describe("melhorias", () => {
     assert.ok(edited.body.startsWith("Problema (por quê)"));
     assert.deepEqual(edited.details?.criterios, ["Filtra por período", "Mostra total por vendedor"]);
     const d = await getImprovement(t.app, seller, item.id);
-    assert.match(d.messages.at(-1)!.body, /^Pedido corrigido: problema, proposta, critérios\. Detalhei melhor\.$/);
+    // A versão anterior fica guardada na linha do tempo (melhoria 15).
+    const [note, previous] = d.messages.at(-1)!.body.split(VERSION_MARK);
+    assert.match(note!, /^Pedido corrigido: problema, proposta, critérios\. Detalhei melhor\.$/);
+    assert.equal(previous, "Relatório de comissões\n\nTexto inicial");
 
     await decideImprovement(t.app, dev, item.id, "reject", "Fora do escopo agora.");
     await assert.rejects(editImprovement(t.app, seller, item.id, { title: "Novo título" }), rejectsWith("conflict"));

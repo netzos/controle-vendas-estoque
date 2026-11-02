@@ -15,6 +15,7 @@ import {
   type ImprovementModule,
   type ImprovementSource,
   type ImprovementStatus,
+  VERSION_MARK,
 } from "@erp/core";
 import { currentActor } from "@/lib/auth";
 import { query } from "@/lib/actions";
@@ -310,13 +311,28 @@ export async function ImprovementsBoard({ mode, searchParams }: { mode: "company
                 <p><a href={d.link} target="_blank" rel="noreferrer">Ver a mudança publicada</a></p>
               )}
               {canCorrect && <CorrectForm item={d} />}
+              <h3 className="form-section">Linha do tempo</h3>
               <ol className="imp-thread">
-                {detail!.messages.map((m) => (
-                  <li key={m.id} className={`from-${m.kind}`}>
-                    <div><b>{authorLabel(m.kind, m.name)}</b> <time>{fmt.format(new Date(m.at))}</time></div>
-                    <p>{m.body}</p>
-                  </li>
-                ))}
+                <li className="from-start">
+                  <div><b>{d.createdByName}</b> <time>{fmt.format(new Date(d.createdAt))}</time></div>
+                  <p>Fez o pedido.</p>
+                </li>
+                {detail!.messages.map((m) => {
+                  // Correção do texto: a versão anterior fica guardada, fechada (melhoria 15).
+                  const [note, previous] = m.body.split(VERSION_MARK);
+                  return (
+                    <li key={m.id} className={`from-${m.kind}`}>
+                      <div><b>{authorLabel(m.kind, m.name)}</b> <time>{fmt.format(new Date(m.at))}</time></div>
+                      <p>{note}</p>
+                      {previous && (
+                        <details className="imp-version">
+                          <summary>Ver a versão anterior</summary>
+                          <p>{previous}</p>
+                        </details>
+                      )}
+                    </li>
+                  );
+                })}
               </ol>
               {detail!.messages.length === 0 && <p className="muted">Ainda sem conversa. A equipe netzsales responde aqui em breve.</p>}
               {platform && !d.mergedInto && (d.status === "new" || d.status === "analysis") && <DecideForm id={d.id} />}
