@@ -4,7 +4,9 @@ import {
   analyzeImprovementsWithAI,
   analyzeNewImprovementWithAI,
   AppError,
+  commentImprovement,
   createImprovement,
+  customerImprovementStatus,
   decideImprovement,
   enabledFeatures,
   executeImprovementAnalysis,
@@ -51,6 +53,21 @@ before(async () => {
 after(() => t.close());
 
 describe("melhorias na plataforma", () => {
+  it("a empresa não vê a análise nem a aprovação, só recebido, em desenvolvimento ou pronto", async () => {
+    const p = await createImprovement(t.app, a, { title: "Recibo no WhatsApp", body: "Quero mandar o recibo.", module: "comercial" });
+    await t.owner.query(
+      `INSERT INTO controle_vendas_estoque.improvement_messages (improvement_id, author_kind, author_name, body) VALUES ($1, 'claude', 'Claude', 'Análise do Claude\n\nRisco: baixo.')`,
+      [p.id],
+    );
+    await commentImprovement(t.app, dev, p.id, "Vamos fazer ainda esta semana.");
+    await decideImprovement(t.app, dev, p.id, "approve", "Prioridade alta.");
+    const company = await getImprovement(t.app, a, p.id, { internal: false });
+    assert.deepEqual(company.messages.map((m) => m.body), ["Vamos fazer ainda esta semana."]);
+    assert.equal(customerImprovementStatus(company.item.status), "received");
+    const platform = await getImprovement(t.app, dev, p.id);
+    assert.equal(platform.messages.length, 3);
+  });
+
   it("juntar pedidos parecidos de empresas diferentes conta no principal e segue a decisão", async () => {
     const pa = await createImprovement(t.app, a, { title: "Venda parcelada", body: "Quero parcelar as vendas.", module: "comercial" });
     const pb = await createImprovement(t.app, b, { title: "Parcelas na venda", body: "Preciso vender em parcelas.", module: "comercial" });

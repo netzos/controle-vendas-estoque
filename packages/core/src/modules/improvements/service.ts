@@ -133,13 +133,33 @@ async function load(tx: Tx, id: string, lock = false): Promise<Improvement> {
   return rows[0];
 }
 
-async function messages(tx: Tx, id: string): Promise<ImprovementMessage[]> {
+/**
+ * Mensagens internas: a análise (da IA ou do Claude) e a decisão do administrador.
+ * A empresa que pediu não vê nada disso: para ela o pedido só foi recebido,
+ * está em desenvolvimento ou ficou pronto. Quem aprova é só o administrador geral.
+ */
+const INTERNAL_MESSAGE = `(
+  (m.author_kind IN ('claude', 'erp_ai') AND m.body ~* '^\\s*an[aá]lise')
+  OR (m.author_kind = 'person' AND m.author_id IS NOT NULL AND controle_vendas_estoque.is_platform_developer(m.author_id)
+      AND m.body ~* '^\\s*(aprovado|recusado)\\.')
+)`;
+
+async function messages(tx: Tx, id: string, internal = true): Promise<ImprovementMessage[]> {
   const { rows } = await tx.query<ImprovementMessage>(
-    `SELECT id, author_kind AS kind, author_name AS name, body, created_at AS at
-       FROM controle_vendas_estoque.improvement_messages WHERE improvement_id = $1 ORDER BY created_at, id`,
-    [id],
+    `SELECT m.id, m.author_kind AS kind, m.author_name AS name, m.body, m.created_at AS at
+       FROM controle_vendas_estoque.improvement_messages m
+      WHERE m.improvement_id = $1 AND ($2 OR NOT ${INTERNAL_MESSAGE}) ORDER BY m.created_at, m.id`,
+    [id, internal],
   );
   return rows;
+}
+
+/** Situação como a empresa vê: sem "em análise" nem "aprovado". */
+export type CustomerImprovementStatus = "received" | "building" | "published" | "closed";
+export function customerImprovementStatus(status: ImprovementStatus): CustomerImprovementStatus {
+  if (status === "building" || status === "published") return status;
+  if (status === "rejected") return "closed";
+  return "received";
 }
 
 async function addMessage(tx: Tx, id: string, kind: AuthorKind, authorId: string | null, name: string, text: string) {
@@ -212,8 +232,10 @@ async function queryList(tx: Tx, filters: ImprovementFilters) {
   return rows;
 }
 
-export async function getImprovement(db: Db, viewer: ImprovementViewer, id: string) {
-  return asViewer(db, viewer, async (tx) => ({ item: await load(tx, id), messages: await messages(tx, id) }));
+/** `internal: false` = a visão da empresa, sem a análise e sem a decisão do administrador. */
+export async function getImprovement(db: Db, viewer: ImprovementViewer, id: string, opts: { internal?: boolean } = {}) {
+  const internal = opts.internal ?? true;
+  return asViewer(db, viewer, async (tx) => ({ item: await load(tx, id), messages: await messages(tx, id, internal) }));
 }
 
 // Pedido pelo painel ---------------------------------------------------------
@@ -413,7 +435,8 @@ export async function agentListImprovements(db: Db, actor: Actor) {
         WHERE organization_id = $1 AND status = ANY($2) ORDER BY number DESC LIMIT 50`,
       [actor.organizationId, OPEN],
     );
-    return rows;
+    // A Netz fala com a empresa: ela não sabe de "em análise" nem de "aprovado".
+    return rows.map((r) => ({ ...r, status: customerImprovementStatus(r.status) }));
   });
 }
 
