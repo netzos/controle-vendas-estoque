@@ -28,7 +28,7 @@ export function visibleNavigation(actor: Actor, developer: boolean, features: Se
   if (manager) {
     return NAVIGATION.flatMap((g) => g.items)
       .filter((i) => i.developerOnly && i.phase <= CURRENT_PHASE && MANAGER_MENU[i.href])
-      .map((i) => ({ label: i.label, ...MANAGER_MENU[i.href]!, items: [i] }));
+      .map((i) => ({ label: i.label, area: "Plataforma" as const, ...MANAGER_MENU[i.href]!, items: [i] }));
   }
   return NAVIGATION.map((g) => ({
     ...g,
