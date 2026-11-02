@@ -50,14 +50,20 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
 
   // "Precisa de você": o que pede ação hoje, no mesmo espírito do cartão do Painel da plataforma.
   const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
-  const owed = stock?.rows.filter((r) => Number(r.stockQty) < 0).length ?? 0;
+  // Encomenda (melhoria 14): só fala em fornecedor quando o produto tem fornecedor.
+  // Produção própria (açaí colhido) é "falta providenciar", com as etapas da empresa.
+  const owedRows = stock?.rows.filter((r) => Number(r.stockQty) < 0) ?? [];
+  const owed = owedRows.length;
+  const owedSupplier = owedRows.filter((r) => r.hasSupplier).length;
+  const owedOther = owed - owedSupplier;
   const out = (stock?.rows.filter((r) => r.status === "out").length ?? 0) - owed;
   const low = stock?.rows.filter((r) => r.status === "low").length ?? 0;
   const needs: { href: string; text: string; action: string; tone: "bad" | "warn" }[] = [];
   if (steps && steps.late > 0) needs.push({ href: "/entregas?filtro=late", text: `${plural(steps.late, "entrega ou serviço atrasado", "entregas ou serviços atrasados")}`, action: "Resolver", tone: "bad" });
   if (steps && steps.today > 0) needs.push({ href: "/entregas?filtro=today", text: `${plural(steps.today, "entrega ou serviço", "entregas ou serviços")} para hoje`, action: "Ver", tone: "warn" });
   if (dash && dash.receivable.count > 0) needs.push({ href: "/vendas?receber=1", text: `${money(dash.receivable.amount)} para receber em ${plural(dash.receivable.count, "venda", "vendas")}`, action: "Ver", tone: "warn" });
-  if (owed > 0) needs.push({ href: "/estoque?filtro=zerados", text: `${plural(owed, "produto vendido por encomenda", "produtos vendidos por encomenda")}, falta pedir ao fornecedor`, action: "Ver", tone: "bad" });
+  if (owedSupplier > 0) needs.push({ href: "/estoque?filtro=zerados", text: `${plural(owedSupplier, "produto vendido por encomenda", "produtos vendidos por encomenda")}, falta pedir ao fornecedor`, action: "Ver", tone: "bad" });
+  if (owedOther > 0) needs.push({ href: "/estoque?filtro=zerados", text: `${plural(owedOther, "produto vendido por encomenda", "produtos vendidos por encomenda")}, falta providenciar (sem fornecedor)`, action: "Ver", tone: "bad" });
   if (out > 0) needs.push({ href: "/estoque?filtro=zerados", text: `${plural(out, "produto zerado", "produtos zerados")}`, action: "Repor", tone: "bad" });
   if (fewCustomers) needs.push({ href: "/primeiros-passos", text: "Primeiros passos: traga seus clientes de uma planilha, quando quiser", action: "Ver", tone: "warn" });
   if (low > 0) needs.push({ href: "/estoque?filtro=baixo", text: `${plural(low, "produto abaixo do mínimo", "produtos abaixo do mínimo")}`, action: "Repor", tone: "warn" });

@@ -383,8 +383,21 @@ export const createSale = defineService({
     // Produtos com etapas depois da venda (entrega, instalação...) abrem o
     // acompanhamento mesmo que o caixa não tenha informado nada.
     // O que foi vendido sem estoque entra como a etapa Encomenda, com o que pedir.
-    const owed = lines.filter((l) => l.backorder > 0).map((l) => `${fmtQty(l.backorder)} × ${l.product.name}`);
-    const extra: { name: string; notes?: string; cost?: string; scheduledFor?: string }[] = owed.length > 0 ? [{ name: ORDER_STEP, notes: `Pedir: ${owed.join("; ")}` }] : [];
+    // Melhoria 14: sem fornecedor (produção própria, ex.: açaí colhido), a nota
+    // da Encomenda não fala em pedir ao fornecedor.
+    const backordered = lines.filter((l) => l.backorder > 0);
+    const withSupplier = new Set(
+      backordered.length
+        ? (await tx.query<{ id: string }>(
+            "SELECT DISTINCT product_id AS id FROM controle_vendas_estoque.supplier_products WHERE product_id = ANY($1::uuid[])",
+            [backordered.map((l) => l.productId)],
+          )).rows.map((r) => r.id)
+        : [],
+    );
+    const toOrder = backordered.filter((l) => withSupplier.has(l.productId)).map((l) => `${fmtQty(l.backorder)} × ${l.product.name}`);
+    const toPrepare = backordered.filter((l) => !withSupplier.has(l.productId)).map((l) => `${fmtQty(l.backorder)} × ${l.product.name}`);
+    const owedNote = [toOrder.length ? `Pedir ao fornecedor: ${toOrder.join("; ")}` : "", toPrepare.length ? `Providenciar: ${toPrepare.join("; ")}` : ""].filter(Boolean).join(" · ");
+    const extra: { name: string; notes?: string; cost?: string; scheduledFor?: string }[] = owedNote ? [{ name: ORDER_STEP, notes: owedNote }] : [];
     // Na entrega, o dia combinado vira o prazo da etapa Entrega (se não veio outro).
     if (fulfillment === "delivery") extra.push({ name: DELIVERY_STEP, cost: input.followup?.deliveryCost, scheduledFor: input.handoverDate ?? undefined });
     // Sem o recurso de entregas, a venda não abre etapas (o que faltou fica em backorder_qty).

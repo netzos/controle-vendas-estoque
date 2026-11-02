@@ -173,6 +173,8 @@ export interface StockRow {
   coverageDays: number | null;
   lastSaleAt: Date | null;
   status: StockStatus;
+  /** Tem fornecedor ligado (Fornecedores › produtos). Sem fornecedor, encomenda não é "pedir ao fornecedor". */
+  hasSupplier: boolean;
 }
 
 export interface StockOverview {
@@ -218,7 +220,8 @@ export const stockOverview = defineService({
               coalesce(sold.qty, 0)::text AS "soldQty30",
               round(coalesce(sold.qty, 0) / 30.0, 3)::text AS "avgDaily",
               CASE WHEN coalesce(sold.qty, 0) > 0 THEN round(greatest(p.stock_qty, 0) / (sold.qty / 30.0), 1)::text END AS coverage,
-              ls.at AS "lastSaleAt"
+              ls.at AS "lastSaleAt",
+              EXISTS (SELECT 1 FROM controle_vendas_estoque.supplier_products sp WHERE sp.product_id = p.id) AS "hasSupplier"
          FROM controle_vendas_estoque.products p
          JOIN controle_vendas_estoque.units u ON u.id = p.unit_id
          LEFT JOIN controle_vendas_estoque.categories c ON c.id = p.category_id
