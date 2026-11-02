@@ -921,3 +921,8 @@ summary .edit-hint { float: right; font-size: 13px; color: var(--muted); font-we
 @media (max-width: 460px) {
   .mobile-brand strong { display: none; }
 }
+
+/* Corrigir itens de uma venda (melhoria 17) */
+.edit-sale td input { width: 6.5em; text-align: right; }
+.edit-sale-add { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+.edit-sale-add select { flex: 1 1 200px; }
