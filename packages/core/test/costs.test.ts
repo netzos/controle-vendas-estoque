@@ -9,6 +9,8 @@ import {
   createCostType,
   createProduct,
   createSale,
+  createSupplier,
+  setSupplierProduct,
   createSaleFollowup,
   createStepType,
   getSale,
@@ -117,7 +119,7 @@ describe("depois da venda", () => {
     // Guarda-roupa é só por encomenda: a venda já nasce com a etapa Encomenda.
     // Sem endereço é retirada no local (padrão), então a etapa Entrega sai.
     assert.deepEqual(f!.steps.map((x) => [x.name, x.status]), [["Encomenda", "pending"], ["Instalação", "pending"], ["Montagem", "pending"]]);
-    assert.equal(f!.steps[0]!.notes, "Pedir: 1 × Guarda-roupa");
+    assert.equal(f!.steps[0]!.notes, "Providenciar: 1 × Guarda-roupa");
     // Produto sem etapas: venda sem acompanhamento.
     const plain = await runService(t.app, createSale, owner, { paymentMethod: "pix", items: [{ productId: lata, quantity: "1" }] });
     assert.equal(await runService(t.app, getSaleFollowup, owner, { saleId: plain.id }), null);
@@ -231,7 +233,14 @@ describe("encomenda quando acaba e lista de etapas", () => {
     // O saldo fica negativo: 1 vendido que ainda precisa chegar.
     assert.equal((await runService(t.app, listProducts, owner, { search: "Relógio" }))[0]!.stockQty, "-1.000");
     const f = await runService(t.app, getSaleFollowup, owner, { saleId: sale.id });
-    assert.deepEqual(f!.steps.map((x) => [x.name, x.notes]), [["Encomenda", "Pedir: 1 × Relógio"]]);
+    // Sem fornecedor (produção própria): não fala em pedir ao fornecedor (melhoria 14).
+    assert.deepEqual(f!.steps.map((x) => [x.name, x.notes]), [["Encomenda", "Providenciar: 1 × Relógio"]]);
+    // Com fornecedor ligado ao produto: "Pedir ao fornecedor".
+    const sup = await runService(t.app, createSupplier, owner, { name: "Relojoaria Atacado" });
+    await runService(t.app, setSupplierProduct, owner, { supplierId: sup.id, productId: relogio.id, agreedPrice: "150" });
+    const again = await runService(t.app, createSale, owner, { paymentMethod: "pix", items: [{ productId: relogio.id, quantity: "1" }] });
+    const f2 = await runService(t.app, getSaleFollowup, owner, { saleId: again.id });
+    assert.deepEqual(f2!.steps.map((x) => [x.name, x.notes]), [["Encomenda", "Pedir ao fornecedor: 1 × Relógio"]]);
 
     // Com estoque suficiente, nada de encomenda.
     const raro = await runService(t.app, createProduct, owner, { sku: "RARO", name: "Peça rara", unitId: un, salePrice: "900", costPrice: "0", minStock: "0", initialStock: "1", backorder: false });
