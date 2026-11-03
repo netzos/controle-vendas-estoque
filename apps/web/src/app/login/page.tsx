@@ -6,6 +6,7 @@ import { isSetupDone } from "@erp/core";
 import { db } from "@/lib/db";
 import { currentSession } from "@/lib/auth";
 import { LoginForm } from "./login-form";
+import { InstallApp } from "@/components/install-app";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Entrar" };
@@ -15,6 +16,8 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
   if (await currentSession()) redirect("/");
   return (
     <main className="auth-page">
+      <div className="auth-stack">
+      <InstallApp />
       <div className="card auth-card">
         <div className="auth-brand"><LogoMark size={48} /><strong>{BRAND_NAME}</strong></div>
         <h1>Entrar</h1>
@@ -22,6 +25,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
         {(await searchParams).senha === "nova" && <div className="alert success" role="status">Senha salva. Entre com a senha nova.</div>}
         <LoginForm />
         <p className="muted auth-footer">Ainda não tem conta? <Link href="/criar-conta">Criar conta</Link></p>
+      </div>
       </div>
     </main>
   );
