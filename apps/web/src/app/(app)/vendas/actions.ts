@@ -3,7 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import type { z } from "zod";
-import { cancelSale, createSale, deleteSale, receiveSalePayment, runService, setHandoverDate, updateSale } from "@erp/core";
+import { cancelSale, createCustomer, createSale, deleteSale, getOrganization, getSale, receiveSalePayment, runService, setHandoverDate, updateSale } from "@erp/core";
+import { receiptLink } from "@/lib/receipt";
 import { money } from "@/lib/format";
 import { currentActor } from "@/lib/auth";
 import { db } from "@/lib/db";
@@ -26,8 +27,16 @@ export async function createSaleAction(_: FormState, form: FormData): Promise<Fo
     return { ok: false, message: "Itens inválidos." };
   }
   try {
-    const sale = await runService(db(), createSale, await currentActor(), {
-      customerId: optional(form, "customerId"),
+    const actor = await currentActor();
+    // Cliente novo digitado na própria venda: cadastra antes (nome e telefone).
+    let customerId = optional(form, "customerId");
+    const newName = str(form, "newCustomerName").trim();
+    if (!customerId && newName) {
+      const created = await runService(db(), createCustomer, actor, { name: newName, phone: optional(form, "newCustomerPhone") });
+      customerId = created.id;
+    }
+    const sale = await runService(db(), createSale, actor, {
+      customerId,
       paymentLater: str(form, "paymentLater") === "1",
       paymentMethod: payments || str(form, "paymentLater") === "1" ? undefined : (str(form, "paymentMethod") as "pix"),
       payments,
@@ -42,6 +51,9 @@ export async function createSaleAction(_: FormState, form: FormData): Promise<Fo
     });
     revalidatePath("/", "layout");
     const open = Number(sale.toPay) - Number(sale.paidTotal);
+    // Recibo pronto para o WhatsApp do cliente.
+    const [detail, org] = await Promise.all([runService(db(), getSale, actor, { id: sale.id }), runService(db(), getOrganization, actor, {})]);
+    const link = receiptLink(detail, org.name, org.timezone);
     return {
       ok: true,
       message: `Venda nº ${sale.number} registrada: ${money(sale.total)}${
@@ -49,6 +61,7 @@ export async function createSaleAction(_: FormState, form: FormData): Promise<Fo
           ? `. ${sale.installments.length === 1 ? `A receber ${money(open)}` : `${sale.installments.length} parcelas, total ${money(open)}`}, 1º vencimento ${sale.installments[0]!.dueDate.split("-").reverse().join("/")}.`
           : sale.paymentStatus !== "paid" ? `. Falta receber ${money(open)}.` : ""
       }`,
+      link,
     };
   } catch (err) {
     return toFormState(err);

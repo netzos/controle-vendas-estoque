@@ -47,6 +47,7 @@ export function SaleForm({
   stepDefaults,
   defaultFulfillment,
   handoverReady,
+  canCreateCustomer,
 }: {
   products: PosProduct[];
   /** Endereço e telefone do cadastro preenchem a entrega quando o cliente é escolhido. */
@@ -59,6 +60,8 @@ export function SaleForm({
   defaultFulfillment: Fulfillment;
   /** A data de retirada só aparece depois da migração 0034. */
   handoverReady: boolean;
+  /** Pode cadastrar cliente novo direto na venda. */
+  canCreateCustomer: boolean;
 }) {
   const [state, action] = useActionState(createSaleAction, null);
   const [search, setSearch] = useState("");
@@ -70,6 +73,10 @@ export function SaleForm({
   // Parcelado / a prazo: as linhas de split viram a entrada (pode não ter) e o resto vira parcelas.
   const [plan, setPlan] = useState<{ count: string; interval: InstallmentInterval; firstDue: string } | null>(null);
   const [discount, setDiscount] = useState("");
+  // Cliente: escolhido do cadastro, novo (só o nome e o telefone) ou nenhum (consumidor).
+  const [customerId, setCustomerId] = useState("");
+  const [customerSearch, setCustomerSearch] = useState("");
+  const [newCustomer, setNewCustomer] = useState<{ name: string; phone: string } | null>(null);
   // Dia combinado para o cliente retirar (ou receber, na entrega).
   const [handover, setHandover] = useState("");
   // Preço negociado por item; vazio = preço do cadastro.
@@ -97,6 +104,9 @@ export function SaleForm({
       setPlan(null);
       setHandover("");
       setPayment("");
+      setCustomerId("");
+      setCustomerSearch("");
+      setNewCustomer(null);
     }
   }, [state]);
 
@@ -141,6 +151,21 @@ export function SaleForm({
   const setDraft = (n: string, patch: Partial<StepDraft>) => setStepDrafts((d) => ({ ...d, [n]: { ...draftOf(n), ...patch } }));
   const setTrade = (key: number, patch: Partial<(typeof trades)[number]>) => setTrades((ts) => ts.map((t) => (t.key === key ? { ...t, ...patch } : t)));
 
+  const chosen = customers.find((c) => c.id === customerId);
+  const digitsOf = (v: string) => v.replace(/\D/g, "");
+  const cterm = customerSearch.trim().toLowerCase();
+  const cdigits = digitsOf(cterm);
+  const customerMatches = cterm
+    ? customers.filter((c) => c.name.toLowerCase().includes(cterm) || (cdigits.length >= 3 && digitsOf(c.phone).includes(cdigits))).slice(0, 6)
+    : [];
+  const pickCustomer = (id: string) => {
+    setCustomerId(id);
+    setCustomerSearch("");
+    setNewCustomer(null);
+    const c = customers.find((x) => x.id === id);
+    if (c) setAfter((a) => ({ ...a, address: a.address || c.address, recipient: a.recipient || c.name, phone: a.phone || c.phone }));
+  };
+
   const add = (id: string) => setCart((c) => ({ ...c, [id]: String(toNumber(c[id] ?? "0") + 1).replace(".", ",") }));
   const dec = (id: string) =>
     setCart((c) => {
@@ -168,6 +193,9 @@ export function SaleForm({
         <input type="hidden" name="paymentMethod" value={payment} />
       )}
       <input type="hidden" name="handoverDate" value={handover} />
+      <input type="hidden" name="customerId" value={customerId} />
+      {newCustomer && <input type="hidden" name="newCustomerName" value={newCustomer.name} />}
+      {newCustomer && <input type="hidden" name="newCustomerPhone" value={newCustomer.phone} />}
       <input type="hidden" name="fulfillment" value={way} />
       {hasAfter && (
         <input
@@ -219,6 +247,68 @@ export function SaleForm({
       <section className="card pos-cart" id="venda">
         <h2>Venda</h2>
         <FormMessage state={state} />
+        {state?.ok && state.link && (
+          <a className="button secondary block receipt-button" href={state.link} target="_blank" rel="noreferrer">Mandar recibo pelo WhatsApp</a>
+        )}
+
+        <div className="customer-pick">
+          <label htmlFor="customerSearch">Cliente</label>
+          {chosen || newCustomer ? (
+            <div className="customer-chosen">
+              <span>
+                <b>{chosen ? chosen.name : newCustomer!.name}</b>
+                {chosen?.phone && <small className="muted"> · {chosen.phone}</small>}
+                {newCustomer && <small className="muted"> · cliente novo</small>}
+              </span>
+              <button type="button" className="link-button" onClick={() => { setCustomerId(""); setNewCustomer(null); }}>Trocar</button>
+            </div>
+          ) : (
+            <>
+              <input
+                id="customerSearch"
+                type="search"
+                autoComplete="off"
+                placeholder="Nome ou telefone · em branco = consumidor"
+                value={customerSearch}
+                onChange={(e) => setCustomerSearch(e.target.value)}
+              />
+              {cterm && (
+                <ul className="customer-matches">
+                  {customerMatches.map((c) => (
+                    <li key={c.id}>
+                      <button type="button" onClick={() => pickCustomer(c.id)}>
+                        <span>{c.name}</span>
+                        {c.phone && <small className="muted">{c.phone}</small>}
+                      </button>
+                    </li>
+                  ))}
+                  {canCreateCustomer && customerSearch.trim().length >= 2 && (
+                    <li>
+                      <button
+                        type="button"
+                        className="new-customer"
+                        onClick={() => {
+                          const isPhone = cdigits.length >= 8 && cdigits.length === cterm.replace(/[\s()+-]/g, "").length;
+                          setNewCustomer({ name: isPhone ? "" : customerSearch.trim(), phone: isPhone ? customerSearch.trim() : "" });
+                          setCustomerSearch("");
+                        }}
+                      >
+                        + Cadastrar “{customerSearch.trim()}” como cliente novo
+                      </button>
+                    </li>
+                  )}
+                  {customerMatches.length === 0 && !canCreateCustomer && <li className="muted small-text">Nenhum cliente com esse nome.</li>}
+                </ul>
+              )}
+            </>
+          )}
+          {newCustomer && (
+            <div className="grid-2 new-customer-fields">
+              <input aria-label="Nome do cliente novo" placeholder="Nome" value={newCustomer.name} onChange={(e) => setNewCustomer({ ...newCustomer, name: e.target.value })} />
+              <input aria-label="WhatsApp do cliente novo" placeholder="WhatsApp (opcional)" inputMode="tel" value={newCustomer.phone} onChange={(e) => setNewCustomer({ ...newCustomer, phone: e.target.value })} />
+            </div>
+          )}
+        </div>
         {lines.length === 0 ? (
           <p className="chart-empty">Toque nos produtos para adicionar.</p>
         ) : (
@@ -393,7 +483,7 @@ export function SaleForm({
                 </label>
               </div>
             )}
-            {plan && <p className="muted small-text">Escolha o cliente abaixo para saber quem deve. {split.length === 0 ? "Sem entrada." : "Entrada:"}</p>}
+            {plan && <p className="muted small-text">Escolha o cliente lá em cima para saber quem deve. {split.length === 0 ? "Sem entrada." : "Entrada:"}</p>}
             {split.map((row, i) => (
               <div className="split-row" key={row.key}>
                 <select aria-label="Forma de pagamento" value={row.method} onChange={(e) => setSplitRow(row.key, { method: e.target.value })}>
@@ -437,21 +527,6 @@ export function SaleForm({
         )}
 
         <div className="grid-2">
-          <div className="field">
-            <label htmlFor="customerId">Cliente (opcional)</label>
-            <select
-              id="customerId"
-              name="customerId"
-              defaultValue=""
-              onChange={(e) => {
-                const c = customers.find((x) => x.id === e.target.value);
-                if (c) setAfter((a) => ({ ...a, address: a.address || c.address, recipient: a.recipient || c.name, phone: a.phone || c.phone }));
-              }}
-            >
-              <option value="">Consumidor</option>
-              {customers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
-          </div>
           <div className="field">
             <label htmlFor="discount">Desconto (R$)</label>
             <input id="discount" name="discount" inputMode="decimal" placeholder="0,00" value={discount} onChange={(e) => setDiscount(e.target.value)} />

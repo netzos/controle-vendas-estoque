@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { can, enabledFeatures, listProducts, FULFILLMENTS, INSTALLMENT_STATUS_LABELS, INTERVAL_LABELS, PAYMENT_STATUS_LABELS, getOrganization, getSale, getSaleFollowup, listBranches, listSales, listStepTypes, orgDate, PAYMENT_LABELS, PAYMENT_LATER_LABEL, handoverDateReady, isPaymentLater } from "@erp/core";
+import { can, enabledFeatures, listProducts, resolveRange, summarizeSales, type PaymentMethod, FULFILLMENTS, INSTALLMENT_STATUS_LABELS, INTERVAL_LABELS, PAYMENT_STATUS_LABELS, getOrganization, getSale, getSaleFollowup, listBranches, listSales, listStepTypes, orgDate, PAYMENT_LABELS, PAYMENT_LATER_LABEL, handoverDateReady, isPaymentLater } from "@erp/core";
 import { requirePermission } from "@/lib/auth";
 import { query } from "@/lib/actions";
 import { db } from "@/lib/db";
@@ -10,26 +10,68 @@ import { ReceivePaymentForm } from "./receive-form";
 import { HandoverDateForm } from "./handover-form";
 import { EditSaleForm } from "./edit-form";
 import { AddStepsForm, StepRow } from "../entregas/steps";
+import { PeriodPicker } from "@/components/period-picker";
+import { receiptLink } from "@/lib/receipt";
+
+type ListParams = { q?: string; receber?: string; filial?: string; periodo?: string; de?: string; ate?: string; forma?: string };
+
+// Períodos da lista; "Todas as datas" é o padrão (a busca acha qualquer venda).
+const PERIODS = [
+  { key: "all", label: "Todas as datas" },
+  { key: "today", label: "Hoje" },
+  { key: "7d", label: "Últimos 7 dias" },
+  { key: "30d", label: "Últimos 30 dias" },
+  { key: "month", label: "Este mês" },
+  { key: "last_month", label: "Mês passado" },
+  { key: "year", label: "Este ano" },
+] as const;
+const DAY = /^\d{4}-\d{2}-\d{2}$/;
+const METHODS: PaymentMethod[] = ["pix", "cash", "debit", "credit", "other"];
+
+function listLink(p: ListParams, change: ListParams = {}) {
+  const q = new URLSearchParams(Object.entries({ ...p, ...change }).filter((e): e is [string, string] => !!e[1]));
+  return q.size ? `/vendas?${q}` : "/vendas";
+}
 
 export const metadata = { title: "Vendas" };
 
-export default async function SalesPage({ searchParams }: { searchParams: Promise<{ q?: string; id?: string; receber?: string; filial?: string; aviso?: string }> }) {
+export default async function SalesPage({ searchParams }: { searchParams: Promise<ListParams & { id?: string; aviso?: string }> }) {
   const actor = await requirePermission("sales.view");
   const params = await searchParams;
   const branches = can(actor, "branches.view") ? await query(listBranches, {}) : [];
   const multi = branches.length > 1;
   const branch = multi ? branches.find((b) => b.id === params.filial) : undefined;
-  const [org, sales, selected, features, handoverReady] = await Promise.all([
+  // Período da lista: datas escolhidas, um período pronto ou todas as datas.
+  const today = await query(orgDate, {});
+  const custom = !!(params.de && params.ate && DAY.test(params.de) && DAY.test(params.ate));
+  const periodKey = custom ? "custom" : PERIODS.some((p) => p.key === params.periodo) ? params.periodo! : "all";
+  let range: { from: string; to: string } | null = null;
+  try {
+    range = periodKey === "all" ? null : resolveRange(today, { period: periodKey as "today", from: params.de, to: params.ate });
+  } catch {
+    range = null; // datas inválidas (mais de 3 anos): mostra todas
+  }
+  const method = METHODS.find((m) => m === params.forma);
+  const filters = {
+    search: params.q || undefined,
+    openPayment: params.receber === "1",
+    branchId: branch?.id,
+    from: range?.from,
+    to: range?.to,
+    paymentMethod: method,
+  };
+  const [org, sales, totals, selected, features, handoverReady] = await Promise.all([
     query(getOrganization, {}),
-    query(listSales, { search: params.q || undefined, openPayment: params.receber === "1", branchId: branch?.id }),
+    query(listSales, filters),
+    query(summarizeSales, filters),
     params.id ? query(getSale, { id: params.id }).catch(() => null) : null,
     enabledFeatures(db(), actor.organizationId),
     handoverDateReady(db()),
   ]);
   const seesSteps = features.has("deliveries") && can(actor, "deliveries.view");
-  const [followup, today, stepTypes] = selected && seesSteps
-    ? await Promise.all([query(getSaleFollowup, { saleId: selected.id }), query(orgDate, {}), query(listStepTypes, {})])
-    : [null, "", []];
+  const [followup, stepTypes] = selected && seesSteps
+    ? await Promise.all([query(getSaleFollowup, { saleId: selected.id }), query(listStepTypes, {})])
+    : [null, []];
   const canSteps = can(actor, "deliveries.manage");
   // Corrigir itens: venda concluída e ainda não paga por inteiro (melhoria 17).
   const canEdit = !!selected && selected.status === "completed" && can(actor, "sales.create") && !actor.platformView &&
@@ -39,6 +81,9 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
   // "2026-11-02" → "02/11"; o ano só aparece quando não é o atual.
   const year = String(new Date().getFullYear());
   const day = (d: string) => { const [y, m, dd] = d.split("-"); return y === year ? `${dd}/${m}` : `${dd}/${m}/${y}`; };
+  const keep: ListParams = { q: params.q, receber: params.receber, filial: params.filial, forma: params.forma };
+  const current: ListParams = { ...keep, periodo: periodKey === "all" || periodKey === "custom" ? undefined : periodKey, de: custom ? params.de : undefined, ate: custom ? params.ate : undefined };
+  const rangeText = range ? (range.from === range.to ? day(range.from) : `${day(range.from)} a ${day(range.to)}`) : "";
   const handoverWord = (f: string) => (f === "delivery" ? "Entrega" : "Retirada");
 
   return (
@@ -64,6 +109,13 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
             {fmt.format(selected.soldAt)} · {FULFILLMENTS[selected.fulfillment]}
             {selected.handoverDate && <> em <b>{day(selected.handoverDate)}</b></>} · {selected.customerName ?? "Consumidor"} · por {selected.userName}
           </p>
+          {selected.status === "completed" && (
+            <p>
+              <a className="button secondary small" href={receiptLink(selected, org.name, org.timezone)} target="_blank" rel="noreferrer">
+                Mandar recibo pelo WhatsApp{selected.customerPhone ? "" : " (escolher contato)"}
+              </a>
+            </p>
+          )}
           <div className="table-wrap">
             <table>
               <thead><tr><th>Produto</th><th className="num">Qtd.</th><th className="num">Preço</th><th className="num">Total</th></tr></thead>
@@ -210,6 +262,7 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
           <form>
             <input type="search" name="q" defaultValue={params.q ?? ""} placeholder="Buscar pelo número ou pelo cliente" aria-label="Buscar vendas" />
             {params.receber === "1" && <input type="hidden" name="receber" value="1" />}
+            {(["periodo", "de", "ate", "forma"] as const).map((k) => current[k] && <input key={k} type="hidden" name={k} value={current[k]} />)}
             {multi && (
               <select name="filial" defaultValue={branch?.id ?? ""} aria-label="Filial">
                 <option value="">Todas as filiais</option>
@@ -219,13 +272,41 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
             <button type="submit" className="secondary">Buscar</button>
           </form>
           <nav className="segmented" aria-label="Filtro de pagamento">
-            <Link href="/vendas" className={params.receber === "1" ? "" : "active"}>Todas</Link>
-            <Link href="/vendas?receber=1" className={params.receber === "1" ? "active" : ""}>Falta receber</Link>
+            <Link href={listLink(current, { receber: undefined })} className={params.receber === "1" ? "" : "active"}>Todas</Link>
+            <Link href={listLink(current, { receber: "1" })} className={params.receber === "1" ? "active" : ""}>Falta receber</Link>
           </nav>
-          {can(actor, "sales.create") && <Link className="button" href="/vendas/nova">+ Nova venda</Link>}
+          {can(actor, "sales.create") && <Link className="button hide-mobile" href="/vendas/nova">+ Nova venda</Link>}
         </div>
+        <div className="list-period">
+          <PeriodPicker
+            options={[...PERIODS]}
+            current={periodKey}
+            label={periodKey === "custom" ? "Período escolhido" : PERIODS.find((p) => p.key === periodKey)!.label}
+            range={rangeText}
+            from={range?.from ?? today}
+            to={range?.to ?? today}
+            links={Object.fromEntries(PERIODS.map((p) => [p.key, listLink(keep, { periodo: p.key === "all" ? undefined : p.key })]))}
+            customLink={listLink(keep)}
+            selects={[{
+              label: "Forma de pagamento",
+              all: "Todas as formas",
+              value: method ?? "",
+              options: METHODS.map((m) => ({ id: m, name: PAYMENT_LABELS[m] })),
+              links: Object.fromEntries([["", listLink(current, { forma: undefined })], ...METHODS.map((m) => [m, listLink(current, { forma: m })])]),
+            }]}
+          />
+          <p className="list-totals">
+            <span><b>{money(totals.total)}</b> em {totals.count} {totals.count === 1 ? "venda" : "vendas"}</span>
+            <span>Recebido <b>{money(totals.received)}</b></span>
+            {Number(totals.open) > 0 && <Link href={listLink(current, { receber: "1" })}>Falta receber <b>{money(totals.open)}</b></Link>}
+            {totals.cancelled > 0 && <span className="muted">{totals.cancelled} {totals.cancelled === 1 ? "cancelada" : "canceladas"} fora da soma</span>}
+          </p>
+        </div>
+        {totals.count + totals.cancelled > sales.length && (
+          <p className="muted small-text">Mostrando as {sales.length} mais recentes. O total acima soma todas.</p>
+        )}
         {sales.length === 0 ? (
-          <p className="muted">{params.receber === "1" ? "Nenhuma venda com pagamento em aberto." : params.q ? "Nenhuma venda encontrada." : "Nenhuma venda registrada ainda."}</p>
+          <p className="muted">{params.receber === "1" ? "Nenhuma venda com pagamento em aberto." : params.q || range || method ? "Nenhuma venda encontrada com esses filtros." : "Nenhuma venda registrada ainda."}</p>
         ) : (
           <div className="table-wrap">
             <table className="cards">

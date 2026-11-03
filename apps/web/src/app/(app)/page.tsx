@@ -1,28 +1,20 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { can, enabledFeatures, isPlatformDeveloper, FULFILLMENTS, getOrganization, listBranches, listCustomers, listReceivables, PAYMENT_LABELS, salesDashboard, stepCounts, stockOverview, telegramConfigured, telegramOrganizationOf, type SalesPeriod } from "@erp/core";
+import { can, enabledFeatures, isPlatformDeveloper, getOrganization, listBranches, listCustomers, listReceivables, PAYMENT_LABELS, salesDashboard, stepCounts, stockOverview, telegramConfigured, telegramOrganizationOf } from "@erp/core";
 import { currentActor } from "@/lib/auth";
 import { query } from "@/lib/actions";
 import { money, quantity } from "@/lib/format";
-import { BarChart, Kpi, RankList } from "@/components/charts";
+import { Kpi, RankList } from "@/components/charts";
 import { db } from "@/lib/db";
 import { TelegramButton } from "./assistente/telegram/forms";
 
 export const metadata = { title: "Início" };
 
-const PERIODS: { key: SalesPeriod; label: string; previous: string }[] = [
-  { key: "today", label: "Hoje", previous: "ontem" },
-  { key: "7d", label: "7 dias", previous: "7 dias anteriores" },
-  { key: "30d", label: "30 dias", previous: "30 dias anteriores" },
-  { key: "month", label: "Este mês", previous: "mês passado" },
-];
-
-export default async function HomePage({ searchParams }: { searchParams: Promise<{ periodo?: string; filial?: string }> }) {
+export default async function HomePage({ searchParams }: { searchParams: Promise<{ filial?: string }> }) {
   const actor = await currentActor();
   // Modo gestor: a conta da plataforma não tem painel de vendas, começa na Plataforma.
   if (!actor.platformView && (await isPlatformDeveloper(db(), actor.userId))) redirect("/plataforma");
   const params = await searchParams;
-  const period = PERIODS.find((p) => p.key === params.periodo) ?? PERIODS[0]!;
   const canSales = can(actor, "sales.view");
   const canStock = can(actor, "stock.view");
   const features = await enabledFeatures(db(), actor.organizationId);
@@ -31,13 +23,11 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   // Empresa com mais de uma filial: o painel pode mostrar uma só.
   const branches = canSales && can(actor, "branches.view") ? await query(listBranches, {}) : [];
   const branch = branches.length > 1 ? branches.find((b) => b.id === params.filial) : undefined;
-  const link = (p: { periodo?: string; filial?: string }) => {
-    const q = new URLSearchParams(Object.entries(p).filter((e): e is [string, string] => !!e[1]));
-    return q.size ? `/?${q}` : "/";
-  };
+  // O Início é o dia de hoje; a análise por período fica no Painel.
+  const link = (filial?: string) => (filial ? `/?filial=${filial}` : "/");
   const [org, dash, stock, steps, telegramPending, fewCustomers, late] = await Promise.all([
     query(getOrganization, {}),
-    canSales ? query(salesDashboard, { period: period.key, branchId: branch?.id }) : null,
+    canSales ? query(salesDashboard, { period: "today", branchId: branch?.id }) : null,
     canStock ? query(stockOverview, {}) : null,
     features.has("deliveries") && can(actor, "deliveries.view") ? query(stepCounts, {}) : null,
     // Cartão de boas-vindas da Netz no Telegram até a pessoa ligar a conta.
@@ -46,6 +36,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
     can(actor, "customers.manage") && !actor.platformView ? query(listCustomers, { limit: 5 }).then((c) => c.length < 5) : false,
     canSales ? query(listReceivables, { filter: "late", limit: 1 }) : null,
   ]);
+  const todayLabel = new Intl.DateTimeFormat("pt-BR", { timeZone: org.timezone, weekday: "long", day: "2-digit", month: "2-digit" }).format(new Date()).replace(/^./, (c) => c.toUpperCase());
   const timeFmt = new Intl.DateTimeFormat("pt-BR", { timeZone: org.timezone, hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" });
   const alerts = stock?.rows.filter((r) => r.status === "out" || r.status === "low").sort((a, b) => Number(a.stockQty) - Number(b.stockQty)) ?? [];
 
@@ -75,27 +66,21 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
       <div className="page-header dash-header">
         <div>
           <h1>{org.name}</h1>
-          <p>Olá, {actor.userName.split(" ")[0]}. {canSales ? `Vendas de ${period.label.toLowerCase()}.` : ""}</p>
+          <p>
+            Olá, {actor.userName.split(" ")[0]}. {todayLabel}.
+            {canSales && <> <Link href="/painel" className="muted-link">Ver semana, mês ou ano no Painel →</Link></>}
+          </p>
         </div>
         <div className="dash-actions">
-          {canSales && (
-            <nav className="segmented" aria-label="Período">
-              {PERIODS.map((p) => (
-                <Link key={p.key} href={link({ periodo: p.key === "today" ? undefined : p.key, filial: branch?.id })} className={p.key === period.key ? "active" : ""}>
-                  {p.label}
-                </Link>
-              ))}
-            </nav>
-          )}
           {branches.length > 1 && (
             <nav className="segmented" aria-label="Filial">
-              <Link href={link({ periodo: params.periodo })} className={branch ? "" : "active"}>Todas</Link>
+              <Link href={link()} className={branch ? "" : "active"}>Todas</Link>
               {branches.map((b) => (
-                <Link key={b.id} href={link({ periodo: params.periodo, filial: b.id })} className={branch?.id === b.id ? "active" : ""}>{b.name}</Link>
+                <Link key={b.id} href={link(b.id)} className={branch?.id === b.id ? "active" : ""}>{b.name}</Link>
               ))}
             </nav>
           )}
-          {can(actor, "sales.create") && <Link className="button" href="/vendas/nova">+ Nova venda</Link>}
+          {can(actor, "sales.create") && <Link className="button hide-mobile" href="/vendas/nova">+ Nova venda</Link>}
         </div>
       </div>
 
@@ -131,7 +116,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
       {dash && (
         <>
           <div className="kpi-grid">
-            <Kpi hero label="Faturamento" value={money(dash.current.revenue)} current={Number(dash.current.revenue)} previous={Number(dash.previous.revenue)} sub={`vs. ${period.previous}`} />
+            <Kpi hero label="Faturamento" value={money(dash.current.revenue)} current={Number(dash.current.revenue)} previous={Number(dash.previous.revenue)} sub="hoje · comparado com ontem" />
             <Kpi label="Vendas" value={String(dash.current.count)} current={dash.current.count} previous={dash.previous.count} sub={`${quantity(dash.current.items)} itens`} />
             <Kpi label="Ticket médio" value={money(dash.current.ticket)} current={Number(dash.current.ticket)} previous={Number(dash.previous.ticket)} />
             {canCosts ? (
@@ -154,63 +139,10 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
           </div>
 
           <div className="dash-grid">
-            <section className="card span-2">
-              <div className="card-head">
-                <h2>{period.key === "today" ? "Faturamento por hora" : "Faturamento por dia"}</h2>
-                <span className="muted">{money(dash.current.revenue)}</span>
-              </div>
-              <BarChart
-                data={dash.series.map((s) => ({ label: s.label, value: Number(s.revenue), detail: `${s.count} ${s.count === 1 ? "venda" : "vendas"}` }))}
-                format={money}
-                emptyText="Nenhuma venda no período ainda."
-              />
-            </section>
-
             <section className="card">
-              <div className="card-head">
-                <h2>Mais vendidos</h2>
-                <Link href="/vendas" className="muted">Ver vendas</Link>
-              </div>
+              <div className="card-head"><h2>Formas de pagamento hoje</h2></div>
               <RankList
-                emptyText="Os produtos mais vendidos aparecem aqui."
-                rows={dash.topProducts.map((p) => ({
-                  key: p.productId,
-                  label: p.name,
-                  value: money(p.revenue),
-                  sub: `${quantity(p.quantity)} ${p.unitCode} · ${p.share}% do faturamento`,
-                  ratio: Number(p.revenue) / Number(dash.topProducts[0]!.revenue),
-                }))}
-              />
-            </section>
-
-{features.has("deliveries") && (
-            <section className="card">
-              <div className="card-head"><h2>Retirada x entrega</h2></div>
-              {(() => {
-                const f = dash.fulfillment;
-                const max = Math.max(f.pickup.count, f.delivery.count, 1);
-                return (
-                  <RankList
-                    emptyText="Sem vendas no período."
-                    rows={(["pickup", "delivery"] as const).filter((k) => f[k].count > 0).map((k) => ({
-                      key: k,
-                      label: FULFILLMENTS[k],
-                      value: `${f[k].count} ${f[k].count === 1 ? "venda" : "vendas"}`,
-                      sub: k === "delivery"
-                        ? `${money(f[k].revenue)} · frete cobrado ${money(f[k].fees)} · transporte ${money(f[k].transport)}`
-                        : money(f[k].revenue),
-                      ratio: f[k].count / max,
-                    }))}
-                  />
-                );
-              })()}
-            </section>
-            )}
-
-            <section className="card">
-              <div className="card-head"><h2>Formas de pagamento</h2></div>
-              <RankList
-                emptyText="Sem vendas no período."
+                emptyText="Nenhuma venda hoje ainda."
                 rows={dash.payments.map((p) => ({
                   key: p.method,
                   label: PAYMENT_LABELS[p.method],
