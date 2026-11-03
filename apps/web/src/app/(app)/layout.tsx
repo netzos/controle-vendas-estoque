@@ -4,6 +4,7 @@ import { currentActor } from "@/lib/auth";
 import { managerMode, visibleNavigation } from "@/lib/nav-visible";
 import { OrganizationSwitcher, Shell } from "@/components/shell";
 import { NetsBubble } from "@/components/nets-bubble";
+import { AppStart } from "@/components/app-start";
 import Link from "next/link";
 import { Suspense } from "react";
 import { logoutAction } from "../login/actions";
@@ -76,9 +77,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       )}
       {children}
       {can(actor, "nets.use") && features.has("netz") && !manager && (
-        <Suspense fallback={null}>
-          <NetsBubble />
-        </Suspense>
+        <>
+          <AppStart />
+          <Suspense fallback={null}>
+            <NetsBubble />
+          </Suspense>
+        </>
       )}
     </Shell>
   );

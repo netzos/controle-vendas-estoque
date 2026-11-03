@@ -1035,3 +1035,51 @@ td small.unit { display: inline; font-size: 12.5px; }
 .new-customer-fields { margin-top: 4px; }
 .receipt-button { margin: 0 0 12px; justify-content: center; }
 .muted-link { color: var(--muted); text-decoration: underline; text-underline-offset: 3px; white-space: nowrap; }
+
+/* Gravação de áudio (balão e tela cheia): lixeira, tempo e enviar, como no WhatsApp */
+.nets-recording { display: flex; align-items: center; gap: 8px; padding: 10px; border-top: 1px solid var(--border); }
+.nets-rec-cancel, .nets-rec-send { flex: none; width: 40px; height: 40px; padding: 0; display: grid; place-items: center; border-radius: 50%; border: none; }
+.nets-rec-cancel { background: var(--danger-soft); color: var(--danger); }
+.nets-rec-send { background: var(--accent); color: #fff; }
+.nets-rec-info { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; font-size: 14px; }
+.nets-rec-info i { width: 10px; height: 10px; border-radius: 50%; background: var(--danger); flex: none; animation: nets-blink 1.2s infinite ease-in-out; }
+.nets-rec-info strong { font-variant-numeric: tabular-nums; flex: none; }
+.nets-rec-info span { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nets-recording.big { padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px)); border-top: 0; }
+.nets-recording.big .nets-rec-cancel { width: 52px; height: 52px; }
+.nets-recording.big .nets-rec-send { width: 60px; height: 60px; box-shadow: 0 10px 24px -8px rgba(15, 17, 21, .5); }
+.nets-recording.big .nets-rec-info { font-size: 16px; padding: 0 14px; height: 52px; border-radius: 26px; background: var(--glass-strong); box-shadow: 0 0 0 1px var(--glass-edge); }
+
+/* Tela cheia da Netz (/netz): no celular é a primeira tela do app */
+.netz-screen { display: flex; flex-direction: column; height: calc(100dvh - 140px); min-height: 420px; border-radius: var(--radius); overflow: hidden; background: var(--glass); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); box-shadow: var(--glass-shadow); }
+.netz-head { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-bottom: 1px solid rgba(15, 17, 21, .07); background: var(--glass-strong); }
+.netz-head > div { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.2; }
+.netz-head strong { font-size: 18px; }
+.netz-head span { font-size: 13px; color: var(--muted); }
+.netz-head-btn { width: 42px; height: 42px; display: grid; place-items: center; border-radius: 50%; color: var(--text); background: var(--pill); box-shadow: var(--pill-shadow); }
+.netz-screen .nets-list { background: transparent; padding: 16px 12px 8px; }
+.netz-screen .nets-bubble-text { font-size: 16px; }
+.netz-screen .nets-msg { max-width: 86%; }
+.netz-hello { margin: auto 0 0; display: grid; gap: 12px; }
+.netz-hello p { margin: 0; padding: 14px 16px; border-radius: 18px 18px 18px 6px; background: var(--surface); border: 1px solid var(--border); font-size: 16px; line-height: 1.45; }
+.netz-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.netz-chip { padding: 9px 14px; border-radius: 999px; font-size: 14.5px; font-weight: 500; color: var(--text); background: var(--glass-strong); border: 1px solid var(--glass-line); box-shadow: 0 0 0 1px var(--glass-edge); }
+.netz-composer { display: flex; align-items: flex-end; gap: 8px; padding: 10px 12px; }
+.netz-composer textarea { flex: 1; resize: none; min-height: 52px; max-height: 132px; padding: 14px 18px; font-size: 16px; line-height: 1.4; border-radius: 26px; background: #fff; border: 1px solid rgba(15, 17, 21, .1); }
+.netz-main-btn { flex: none; width: 60px; height: 60px; padding: 0; display: grid; place-items: center; border-radius: 50%; border: none; color: #fff; background: linear-gradient(180deg, #2f343c, #0f1115); box-shadow: 0 10px 24px -8px rgba(15, 17, 21, .55); }
+.netz-main-btn:disabled { opacity: .45; }
+.netz-main-btn.busy { animation: nets-blink 1.2s infinite ease-in-out; opacity: 1; }
+@media (max-width: 860px) {
+  /* Ocupa a tela do topo até a barra de botões, como um app. */
+  .netz-screen { position: fixed; z-index: 70; left: 0; right: 0; top: 0; bottom: calc(86px + env(safe-area-inset-bottom, 0px)); height: auto; min-height: 0; border-radius: 0; box-shadow: none; background: rgba(238, 241, 246, .9); }
+  .netz-head { padding-top: calc(12px + env(safe-area-inset-top, 0px)); }
+  html.kb-open .mbar { display: none; }
+  html.netz-screen-on body { overflow: hidden; }
+  /* Com a aba Netz no menu de baixo, o balão sobraria no celular. */
+  .nets-root { display: none; }
+  .mbar { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); }
+}
+/* iPhone dá zoom ao tocar em campo com letra menor que 16px: no celular, todos com 16px. */
+@media (max-width: 860px) {
+  input, select, textarea, .nets-composer textarea { font-size: 16px !important; }
+}

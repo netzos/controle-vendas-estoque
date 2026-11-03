@@ -43,6 +43,16 @@ export const CURRENT_PHASE = 2;
 
 export const NAVIGATION: NavGroup[] = [
   {
+    // No celular é a primeira tela do app: conversa com a Netz, como no ChatGPT.
+    label: "Netz",
+    short: "Netz",
+    area: "Dia a dia",
+    hint: "Fale com a Netz: ela registra, consulta e confirma com você",
+    icon: "bot",
+    mobile: true,
+    items: [{ label: "Conversa com a Netz", href: "/netz", permission: "nets.use", feature: "netz", phase: 1 }],
+  },
+  {
     label: "Início",
     short: "Início",
     area: "Dia a dia",
