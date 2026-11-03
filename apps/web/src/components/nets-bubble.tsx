@@ -1,30 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
+import { usePathname } from "next/navigation";
 import { Icon } from "./icons";
+import { NetsMessages, RecordingBar, useNetsConversation } from "./nets-chat";
 
-type Message = {
-  id: string;
-  role: "user" | "assistant";
-  body: string;
-  context: string | null;
-  status: "queued" | "processing" | "done" | "failed";
-  action: { title: string; service: string } | null;
-  actionStatus: "pending" | "running" | "done" | "failed" | "cancelled" | "expired" | null;
-  actionResult: string | null;
-};
 type Position = { right: number; bottom: number };
 
 const STORAGE = "nets-bubble-position";
 const DEFAULT: Position = { right: 20, bottom: 20 };
-const ACTION_LABEL: Record<string, string> = {
-  running: "Executando...",
-  done: "Feito",
-  failed: "Deu erro",
-  cancelled: "Cancelado",
-  expired: "Ficou sem resposta",
-};
 
 // No celular o balão fica acima da barra de menu de baixo, sem cobri-la.
 const MOBILE_BOTTOM = 84;
@@ -42,242 +26,18 @@ function readPosition(): Position {
   return mobile ? { right: 12, bottom: MOBILE_BOTTOM } : DEFAULT;
 }
 
-// **negrito** e quebras de linha; o resto como texto.
-function Rich({ text }: { text: string }) {
-  return (
-    <>
-      {text.split(/(\*\*[^*]+\*\*)/g).map((part, i) =>
-        part.startsWith("**") && part.endsWith("**") ? <strong key={i}>{part.slice(2, -2)}</strong> : <span key={i}>{part}</span>,
-      )}
-    </>
-  );
-}
-
-type VoiceState = "idle" | "recording" | "sending";
-const VOICE_MAX_MS = 4 * 60 * 1000;
-
-// Microfone: toca para gravar, toca de novo para parar. O áudio vai para o
-// servidor, que transcreve com a mesma API do Telegram e devolve o texto.
-function useVoice(onText: (text: string) => void, onError: (message: string) => void) {
-  const [supported, setSupported] = useState(false);
-  const [state, setState] = useState<VoiceState>("idle");
-  // Melhoria 16: o que o navegador entende enquanto a pessoa fala. O texto
-  // final continua sendo o da transcrição do servidor, que é mais precisa.
-  const [live, setLive] = useState("");
-  const recognition = useRef<LiveRecognition | null>(null);
-  const recorder = useRef<MediaRecorder | null>(null);
-  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  // A gravação termina depois de outros renders: usa sempre os callbacks mais novos.
-  const handlers = useRef({ onText, onError });
-  handlers.current = { onText, onError };
-  useEffect(() => {
-    setSupported(typeof window.MediaRecorder !== "undefined" && !!navigator.mediaDevices?.getUserMedia);
-  }, []);
-  useEffect(() => () => {
-    recorder.current?.stream.getTracks().forEach((t) => t.stop());
-    recognition.current?.abort();
-  }, []);
-
-  const startLive = () => {
-    const Ctor = (window as unknown as { SpeechRecognition?: LiveRecognitionCtor; webkitSpeechRecognition?: LiveRecognitionCtor }).SpeechRecognition ??
-      (window as unknown as { webkitSpeechRecognition?: LiveRecognitionCtor }).webkitSpeechRecognition;
-    setLive("");
-    if (!Ctor) return;
-    try {
-      const rec = new Ctor();
-      rec.lang = "pt-BR";
-      rec.continuous = true;
-      rec.interimResults = true;
-      rec.onresult = (e) => {
-        let text = "";
-        for (let i = 0; i < e.results.length; i++) text += e.results[i]![0]!.transcript;
-        setLive(text.trim());
-      };
-      rec.onerror = () => {};
-      // Alguns navegadores param sozinhos depois de um silêncio: volta a ouvir enquanto grava.
-      rec.onend = () => {
-        if (recognition.current === rec && recorder.current?.state === "recording") {
-          try { rec.start(); } catch { /* já parou */ }
-        }
-      };
-      recognition.current = rec;
-      rec.start();
-    } catch {
-      recognition.current = null;
-    }
-  };
-  const stopLive = () => {
-    const rec = recognition.current;
-    recognition.current = null;
-    try { rec?.stop(); } catch { /* já parou */ }
-  };
-
-  const upload = async (blob: Blob) => {
-    setState("sending");
-    try {
-      const res = await fetch("/api/nets/transcrever", { method: "POST", headers: { "content-type": blob.type || "audio/webm" }, body: blob });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error ?? "Não consegui transcrever o áudio.");
-      handlers.current.onText(data.text);
-    } catch (err) {
-      handlers.current.onError(err instanceof Error ? err.message : "Não consegui transcrever o áudio.");
-    } finally {
-      setState("idle");
-      setLive("");
-    }
-  };
-
-  const toggle = async () => {
-    if (state === "recording") {
-      clearTimeout(timer.current);
-      stopLive();
-      recorder.current?.stop();
-      return;
-    }
-    if (state !== "idle") return;
-    let stream: MediaStream;
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    } catch {
-      onError("O navegador não liberou o microfone. Permita o acesso ao microfone e tente de novo.");
-      return;
-    }
-    const r = new MediaRecorder(stream);
-    const chunks: Blob[] = [];
-    r.ondataavailable = (e) => {
-      if (e.data.size) chunks.push(e.data);
-    };
-    r.onstop = () => {
-      stopLive();
-      stream.getTracks().forEach((t) => t.stop());
-      recorder.current = null;
-      const blob = new Blob(chunks, { type: r.mimeType || "audio/webm" });
-      if (blob.size) void upload(blob);
-      else setState("idle");
-    };
-    recorder.current = r;
-    r.start();
-    setState("recording");
-    startLive();
-    timer.current = setTimeout(() => r.state === "recording" && r.stop(), VOICE_MAX_MS);
-  };
-  return { supported, state, toggle, live };
-}
-
-// Reconhecimento de voz do navegador (Chrome, Edge, Safari). Onde não existe,
-// a gravação funciona como antes, só sem o texto ao vivo.
-interface LiveRecognition {
-  lang: string;
-  continuous: boolean;
-  interimResults: boolean;
-  onresult: ((e: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null;
-  onerror: (() => void) | null;
-  onend: (() => void) | null;
-  start(): void;
-  stop(): void;
-  abort(): void;
-}
-type LiveRecognitionCtor = new () => LiveRecognition;
-
 // A Netz em todas as telas: arrastável, minimiza sem perder o rascunho e sabe
 // qual tela está aberta. Mesmo esquema do Netz no NetOS.
 export function NetsBubble() {
   const [open, setOpen] = useState(false);
   const [position, setPosition] = useState<Position>(DEFAULT);
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [loaded, setLoaded] = useState(false);
-  const [pending, setPending] = useState(false);
-  const [draft, setDraft] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const [tick, setTick] = useState(0);
   const drag = useRef<{ x: number; y: number; start: Position; moved: boolean } | null>(null);
-  const request = useRef<{ id: string; text: string } | null>(null);
   const list = useRef<HTMLDivElement>(null);
   const pathname = usePathname();
-  const search = useSearchParams();
-  const router = useRouter();
-  const voice = useVoice(
-    (heard) => void send(heard),
-    (message) => setError(message),
-  );
+  const chat = useNetsConversation(open);
+  const { draft, setDraft, busy, pending, error, setError, send, voice } = chat;
 
   useEffect(() => setPosition(readPosition()), []);
-
-  // O histórico é lido só com o balão aberto; enquanto a Netz responde, a cada 2 s.
-  useEffect(() => {
-    if (!open) return;
-    const controller = new AbortController();
-    let timer: ReturnType<typeof setTimeout>;
-    const load = async () => {
-      try {
-        const res = await fetch("/api/nets", { signal: controller.signal, cache: "no-store" });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error ?? "Não foi possível carregar a conversa.");
-        setMessages(data.messages);
-        setPending(data.pending);
-        setLoaded(true);
-        if (data.pending) timer = setTimeout(load, 2000);
-      } catch (err) {
-        if (!controller.signal.aborted) setError(err instanceof Error ? err.message : "Falha ao carregar.");
-      }
-    };
-    void load();
-    return () => {
-      controller.abort();
-      clearTimeout(timer);
-    };
-  }, [open, tick]);
-
-  useEffect(() => {
-    list.current?.scrollTo({ top: list.current.scrollHeight, behavior: "smooth" });
-  }, [messages.length, pending, open]);
-
-  const where = useCallback(() => {
-    const title = document.querySelector(".page-header h1")?.textContent?.trim();
-    const q = search.toString();
-    return [title, `${pathname}${q ? `?${q}` : ""}`].filter(Boolean).join(" · ").slice(0, 200);
-  }, [pathname, search]);
-
-  // heard = fala transcrita: vai direto, junto com o que já estiver escrito.
-  const send = async (heard?: string) => {
-    const text = (heard ? `${draft.trim()} ${heard}` : draft).trim();
-    if (busy || pending || !text) return;
-    setBusy(true);
-    setError("");
-    if (request.current?.text !== text) request.current = { id: crypto.randomUUID(), text };
-    try {
-      const res = await fetch("/api/nets", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ requestId: request.current.id, text, context: heard ? `voz transcrita · ${where()}`.slice(0, 200) : where() }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Falha ao enviar.");
-      request.current = null;
-      setDraft("");
-      setTick((v) => v + 1);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Falha ao enviar. Tente de novo.");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const decide = async (id: string, decision: "confirm" | "cancel") => {
-    setError("");
-    setMessages((ms) => ms.map((m) => (m.id === id ? { ...m, actionStatus: decision === "confirm" ? "running" : "cancelled" } : m)));
-    try {
-      const res = await fetch(`/api/nets/acoes/${id}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ decision }) });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Falha.");
-      // A tela aberta mostra o que acabou de mudar.
-      if (decision === "confirm") router.refresh();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Falha.");
-    }
-    setTick((v) => v + 1);
-  };
 
   const onPointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
     drag.current = { x: e.clientX, y: e.clientY, start: position, moved: false };
@@ -307,6 +67,9 @@ export function NetsBubble() {
     setOpen((v) => !v);
   };
 
+  // Na tela cheia da Netz o balão sobraria.
+  if (pathname === "/netz") return null;
+
   return (
     <div className="nets-root" style={{ right: position.right, bottom: position.bottom }}>
       {open && (
@@ -320,48 +83,17 @@ export function NetsBubble() {
               <Icon name="minus" size={18} />
             </button>
           </header>
-          <div className="nets-list" ref={list}>
-            {!loaded && <p className="nets-note">Carregando...</p>}
-            {loaded && messages.length === 0 && (
-              <div className="nets-empty">
-                <p>Oi! Sou a Netz. Fale comigo como falaria com alguém da equipe:</p>
-                <ul>
-                  <li>quanto vendi esta semana?</li>
-                  <li>vendi 3 latas pro João no Pix</li>
-                  <li>o que está com estoque baixo?</li>
-                </ul>
-              </div>
-            )}
-            {messages.map((m) => (
-              <div key={m.id} className={`nets-msg ${m.role}`}>
-                <div className="nets-bubble-text"><Rich text={m.body} /></div>
-                {m.action && (
-                  <div className={`nets-action ${m.actionStatus}`}>
-                    <span>{m.action.title}</span>
-                    {m.actionStatus === "pending" ? (
-                      <div className="nets-action-buttons">
-                        <button type="button" className="small" onClick={() => decide(m.id, "confirm")}>Confirmar</button>
-                        <button type="button" className="secondary small" onClick={() => decide(m.id, "cancel")}>Cancelar</button>
-                      </div>
-                    ) : (
-                      <small>{ACTION_LABEL[m.actionStatus ?? "expired"]}{m.actionStatus === "failed" && m.actionResult ? `: ${m.actionResult}` : ""}</small>
-                    )}
-                  </div>
-                )}
-              </div>
-            ))}
-            {pending && <div className="nets-msg assistant"><div className="nets-bubble-text nets-typing" aria-label="A Netz está respondendo"><i /><i /><i /></div></div>}
-          </div>
+          <NetsMessages chat={chat} listRef={list} />
           {error && <p className="nets-error" role="alert">{error}</p>}
-          {voice.state !== "idle" && voice.live && (
-            <p className="nets-live" aria-live="polite">{voice.live}{voice.state === "sending" ? " …" : ""}</p>
-          )}
+          {voice.state === "recording" ? (
+            <RecordingBar chat={chat} />
+          ) : (
           <form className="nets-composer" onSubmit={(e) => { e.preventDefault(); void send(); }}>
             <textarea
               value={draft}
               rows={2}
               maxLength={12000}
-              placeholder={voice.state === "recording" ? "Gravando... toque no quadrado para enviar" : voice.state === "sending" ? "Transcrevendo..." : "O que você precisa?"}
+              placeholder={voice.state === "sending" ? "Transcrevendo o áudio..." : "O que você precisa?"}
               disabled={busy || voice.state !== "idle"}
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={(e) => {
@@ -374,21 +106,22 @@ export function NetsBubble() {
             {voice.supported && (
               <button
                 type="button"
-                className={`nets-icon-btn${voice.state === "recording" ? " live" : ""}`}
-                aria-label={voice.state === "recording" ? "Parar e enviar" : "Falar"}
+                className="nets-icon-btn"
+                aria-label="Gravar áudio"
                 disabled={voice.state === "sending" || busy || pending}
                 onClick={() => {
                   setError("");
-                  void voice.toggle();
+                  voice.toggle();
                 }}
               >
-                <Icon name={voice.state === "recording" ? "stop" : "mic"} size={18} />
+                <Icon name="mic" size={18} />
               </button>
             )}
             <button type="submit" className="nets-send" aria-label="Enviar para a Netz" disabled={busy || pending || !draft.trim()}>
               <Icon name="send" size={18} />
             </button>
           </form>
+          )}
         </section>
       )}
       <button
