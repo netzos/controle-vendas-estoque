@@ -58,6 +58,8 @@ export const TOOL_SEARCH = "tool_search_tool_bm25";
 const ALWAYS = new Set([
   "products_list", "products_create", "customers_list", "customers_create", "suppliers_list",
   "sales_list", "sales_create", "sales_dashboard", "stock_overview", "stock_move",
+  // Dar baixa em pagamento é do dia a dia: sempre à mão, para virar cartão como a venda (pedido nº 20).
+  "sales_receive", "receivables_list",
 ]);
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
