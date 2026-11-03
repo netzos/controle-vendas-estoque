@@ -1110,3 +1110,24 @@ td small.unit { display: inline; font-size: 12.5px; }
 .nets-voice-more { flex: none; align-self: center; width: 28px; height: 28px; padding: 0; display: grid; place-items: center; border-radius: 50%; border: none; background: rgba(255, 255, 255, .12); color: #fff; }
 .nets-voice-more svg { transform: rotate(90deg); transition: transform .15s; }
 .nets-voice-more.open svg { transform: rotate(-90deg); }
+
+/* Login: faixa "Adicionar à tela de início" e passo a passo do iPhone */
+.auth-stack { width: 100%; max-width: 440px; display: grid; gap: 12px; }
+.install-bar { display: flex; align-items: center; gap: 12px; padding: 12px 10px 12px 12px; border-radius: var(--radius); background: var(--glass-strong); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); box-shadow: var(--glass-shadow); }
+.install-bar > div { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.25; }
+.install-bar strong { font-size: 15px; }
+.install-bar span { font-size: 13px; color: var(--muted); }
+.install-close { flex: none; width: 30px; height: 30px; padding: 0; border: none; background: transparent; color: var(--muted); font-size: 22px; line-height: 1; }
+.install-sheet { position: fixed; inset: 0; z-index: 100; display: flex; align-items: flex-end; justify-content: center; }
+.install-backdrop { position: absolute; inset: 0; border: none; padding: 0; border-radius: 0; background: rgba(15, 17, 21, .35); }
+.install-panel { position: relative; width: 100%; max-width: 480px; padding: 22px 20px calc(20px + env(safe-area-inset-bottom, 0px)); border-radius: 26px 26px 0 0; background: var(--surface); box-shadow: 0 -10px 40px rgba(15, 17, 21, .2); }
+.install-head { display: flex; align-items: center; gap: 14px; margin-bottom: 18px; }
+.install-head > div { display: flex; flex-direction: column; }
+.install-head strong { font-size: 19px; }
+.install-head span { font-size: 14px; color: var(--muted); }
+.install-steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; }
+.install-steps li { display: flex; gap: 12px; align-items: flex-start; font-size: 16px; line-height: 1.45; }
+.install-num { flex: none; width: 28px; height: 28px; display: grid; place-items: center; border-radius: 50%; background: var(--accent); color: #fff; font-size: 14px; font-weight: 600; }
+.install-icon { vertical-align: -4px; }
+.install-note { margin: 16px 0 14px; font-size: 13.5px; }
+.install-ok { width: 100%; height: 50px; font-size: 16px; }
