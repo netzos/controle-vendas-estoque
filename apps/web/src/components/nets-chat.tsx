@@ -40,31 +40,6 @@ function Rich({ text }: { text: string }) {
 export type VoiceState = "idle" | "recording" | "sending";
 const VOICE_MAX_MS = 4 * 60 * 1000;
 
-/**
- * iPhone e iPad: o reconhecimento de voz do Safari junto com a gravação trava a
- * tela (no app da tela de início ele falha e se religa sem parar, e o microfone
- * fica aceso). Neles gravamos só o áudio; o texto vem do servidor.
- */
-function isAppleMobile(): boolean {
-  const ua = navigator.userAgent;
-  return /iPad|iPhone|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
-}
-
-// Reconhecimento de voz do navegador (Chrome, Edge). Onde não existe ou não é
-// seguro, a gravação funciona igual, só sem o texto ao vivo.
-interface LiveRecognition {
-  lang: string;
-  continuous: boolean;
-  interimResults: boolean;
-  onresult: ((e: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null;
-  onerror: (() => void) | null;
-  onend: (() => void) | null;
-  start(): void;
-  stop(): void;
-  abort(): void;
-}
-type LiveRecognitionCtor = new () => LiveRecognition;
-
 /** Formato que o navegador grava e a transcrição aceita (o iPhone grava em mp4). */
 function recorderType(): string | undefined {
   const types = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg;codecs=opus"];
@@ -81,8 +56,6 @@ export function useVoice(onText: (text: string, audio: SpokenAudio) => void | Pr
   const [supported, setSupported] = useState(false);
   const [state, setState] = useState<VoiceState>("idle");
   const [seconds, setSeconds] = useState(0);
-  // Melhoria 16: o que o navegador entende enquanto a pessoa fala.
-  const [live, setLive] = useState("");
   // Áudio que acabou de ser gravado e está sendo transcrito: já aparece na conversa.
   const [outgoing, setOutgoing] = useState<{ url: string; seconds: number } | null>(null);
   const began = useRef(0);
@@ -93,8 +66,6 @@ export function useVoice(onText: (text: string, audio: SpokenAudio) => void | Pr
   const lastLength = useRef(0);
   const [levels, setLevels] = useState<number[]>([]);
   const meter = useRef<{ ctx: AudioContext; timer: ReturnType<typeof setInterval> } | null>(null);
-  const recognition = useRef<LiveRecognition | null>(null);
-  const restarts = useRef(0);
   const recorder = useRef<MediaRecorder | null>(null);
   const stream = useRef<MediaStream | null>(null);
   const discard = useRef(false);
@@ -107,11 +78,6 @@ export function useVoice(onText: (text: string, audio: SpokenAudio) => void | Pr
     setSupported(typeof window.MediaRecorder !== "undefined" && !!navigator.mediaDevices?.getUserMedia);
   }, []);
 
-  const stopLive = () => {
-    const rec = recognition.current;
-    recognition.current = null;
-    try { rec?.abort(); } catch { /* já parou */ }
-  };
   /** Desliga o microfone de verdade (some o ícone laranja do iPhone). */
   const release = () => {
     if (meter.current) {
@@ -121,7 +87,6 @@ export function useVoice(onText: (text: string, audio: SpokenAudio) => void | Pr
     }
     clearTimeout(limit.current);
     clearInterval(clock.current);
-    stopLive();
     stream.current?.getTracks().forEach((t) => t.stop());
     stream.current = null;
   };
@@ -130,41 +95,6 @@ export function useVoice(onText: (text: string, audio: SpokenAudio) => void | Pr
     try { if (recorder.current?.state === "recording") recorder.current.stop(); } catch { /* já parou */ }
     release();
   }, []);
-
-  const startLive = () => {
-    setLive("");
-    if (isAppleMobile()) return;
-    const w = window as unknown as { SpeechRecognition?: LiveRecognitionCtor; webkitSpeechRecognition?: LiveRecognitionCtor };
-    const Ctor = w.SpeechRecognition ?? w.webkitSpeechRecognition;
-    if (!Ctor) return;
-    restarts.current = 0;
-    try {
-      const rec = new Ctor();
-      rec.lang = "pt-BR";
-      rec.continuous = true;
-      rec.interimResults = true;
-      rec.onresult = (e) => {
-        let text = "";
-        for (let i = 0; i < e.results.length; i++) text += e.results[i]![0]!.transcript;
-        setLive(text.trim());
-      };
-      rec.onerror = () => {};
-      // Alguns navegadores param depois de um silêncio: volta a ouvir, com pausa e no máximo 5 vezes.
-      rec.onend = () => {
-        if (recognition.current !== rec || recorder.current?.state !== "recording" || restarts.current >= 5) return;
-        restarts.current += 1;
-        setTimeout(() => {
-          if (recognition.current === rec && recorder.current?.state === "recording") {
-            try { rec.start(); } catch { /* desiste do texto ao vivo */ }
-          }
-        }, 300);
-      };
-      recognition.current = rec;
-      rec.start();
-    } catch {
-      recognition.current = null;
-    }
-  };
 
   const upload = async (blob: Blob, seconds: number) => {
     setState("sending");
@@ -179,7 +109,6 @@ export function useVoice(onText: (text: string, audio: SpokenAudio) => void | Pr
       handlers.current.onError(err instanceof Error ? err.message : "Não consegui transcrever o áudio.");
     } finally {
       setState("idle");
-      setLive("");
       setOutgoing(null);
     }
   };
@@ -244,7 +173,6 @@ export function useVoice(onText: (text: string, audio: SpokenAudio) => void | Pr
     setLevels([]);
     clock.current = setInterval(() => setSeconds(Math.floor(talked() / 1000)), 250);
     startMeter(s);
-    startLive();
     limit.current = setTimeout(() => finish(true), VOICE_MAX_MS);
   };
 
@@ -297,7 +225,7 @@ export function useVoice(onText: (text: string, audio: SpokenAudio) => void | Pr
 
   const toggle = () => (state === "recording" ? finish(true) : void start());
   const cancel = () => state === "recording" && finish(false);
-  return { supported, state, toggle, start, cancel, send: () => finish(true), pause, paused, levels, live, seconds, outgoing };
+  return { supported, state, toggle, start, cancel, send: () => finish(true), pause, paused, levels, seconds, outgoing };
 }
 
 /** Histórico, envio e confirmação de ações. `active` = a conversa está na tela. */
@@ -462,34 +390,32 @@ export function NetsMessages({ chat, listRef, intro, initials }: { chat: NetsCon
 export const clock = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 
 /**
- * Gravação como no WhatsApp: em cima o tempo e a ondinha ao vivo; embaixo
- * lixeira, pausa (vermelha) e enviar.
+ * Gravação no mesmo lugar e na mesma altura do campo de mensagem (nada pula):
+ * lixeira, tempo com a ondinha ao vivo, pausa e enviar no lugar do microfone.
  */
 export function RecordingBar({ chat, big = false }: { chat: NetsConversation; big?: boolean }) {
   const { voice } = chat;
-  const bars = [...Array(Math.max(0, 40 - voice.levels.length)).fill(0), ...voice.levels] as number[];
+  const bars = [...Array(Math.max(0, 28 - voice.levels.length)).fill(0), ...voice.levels.slice(-28)] as number[];
   return (
     <div className={`nets-recording${big ? " big" : ""}${voice.paused ? " paused" : ""}`} role="group" aria-label="Gravando áudio">
-      <div className="nets-rec-top" aria-live="polite">
+      <button type="button" className="nets-rec-cancel" aria-label="Apagar o áudio" onClick={voice.cancel}>
+        <Icon name="trash" size={big ? 22 : 18} />
+      </button>
+      <div className="nets-rec-pill" aria-live="polite">
+        <i className="nets-rec-dot" aria-hidden="true" />
         <strong>{clock(voice.seconds)}</strong>
         <div className="nets-rec-wave" aria-hidden="true">
           {bars.map((v, i) => (
-            <i key={i} style={{ height: `${Math.max(3, Math.round(v * 26))}px` }} />
+            <i key={i} style={{ height: `${Math.max(3, Math.round(v * 22))}px` }} />
           ))}
         </div>
-      </div>
-      {voice.live && <p className="nets-rec-live">{voice.live}</p>}
-      <div className="nets-rec-actions">
-        <button type="button" className="nets-rec-cancel" aria-label="Apagar o áudio" onClick={voice.cancel}>
-          <Icon name="trash" size={big ? 26 : 20} />
-        </button>
         <button type="button" className="nets-rec-pause" aria-label={voice.paused ? "Continuar gravando" : "Pausar"} onClick={voice.pause}>
-          <Icon name={voice.paused ? "mic" : "pause"} size={big ? 22 : 18} />
-        </button>
-        <button type="button" className="nets-rec-send" aria-label="Enviar o áudio" onClick={voice.send}>
-          <Icon name="send" size={big ? 24 : 18} />
+          <Icon name={voice.paused ? "mic" : "pause"} size={big ? 18 : 16} />
         </button>
       </div>
+      <button type="button" className="nets-rec-send" aria-label="Enviar o áudio" onClick={voice.send}>
+        <Icon name="send" size={big ? 24 : 18} />
+      </button>
     </div>
   );
 }
