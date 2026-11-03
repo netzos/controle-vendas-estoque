@@ -35,7 +35,7 @@ export async function listNetsDeliveries(db: Db, actor: Pick<Actor, "organizatio
       at: r.at,
       painel: r.body,
       canais: (r.deliveries ?? []).map((d) => ({
-        canal: d.channel === "telegram" ? "Telegram" : d.channel,
+        canal: d.channel === "telegram" ? "Telegram" : d.channel === "whatsapp" ? "WhatsApp" : d.channel,
         texto: d.text,
         situacao: d.status === "sent" ? "entregue" : "falhou",
         erro: d.error,

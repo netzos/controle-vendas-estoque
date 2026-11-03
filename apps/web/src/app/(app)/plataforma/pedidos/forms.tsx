@@ -19,6 +19,7 @@ export function RequestDecision({ requestId, name }: { requestId: string; name: 
         <div className="alert success" role="status">
           {approved.message}
           {a.telegramLinked && ` A Netz já avisou ${a.name.split(" ")[0]} no Telegram, e a conta já está ligada lá.`}
+          {a.whatsappSent && ` A Netz já avisou ${a.name.split(" ")[0]} no WhatsApp do pedido, com o link para conversar com ela por lá.`}
         </div>
         <div className="actions">
           <a className="button" href={`https://wa.me/${a.whatsapp ?? ""}?text=${encodeURIComponent(text)}`} target="_blank" rel="noreferrer">

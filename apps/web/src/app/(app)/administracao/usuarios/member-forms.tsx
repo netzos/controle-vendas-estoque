@@ -3,7 +3,7 @@
 import { useActionState, useState } from "react";
 import type { Branch, Member, Role } from "@erp/core";
 import { Field, FormMessage, SubmitButton } from "@/components/form";
-import { addMemberAction, passwordLinkAction, telegramLinkAction, updateMemberAction } from "./actions";
+import { addMemberAction, passwordLinkAction, telegramLinkAction, updateMemberAction, whatsappLinkAction } from "./actions";
 
 function BranchPicker({ branches, selected, prefix }: { branches: Branch[]; selected: string[] | null; prefix: string }) {
   const [all, setAll] = useState(selected === null);
@@ -158,6 +158,39 @@ export function TelegramLink({ member, linked }: { member: Member; linked: boole
       <form action={action}>
         <input type="hidden" name="membershipId" value={member.membershipId} />
         <SubmitButton className="secondary" pendingText="Gerando...">{state?.url ? "Gerar outro link" : "Gerar link do Telegram"}</SubmitButton>
+      </form>
+    </div>
+  );
+}
+
+/** Link do WhatsApp da pessoa: ela toca, a conversa com a Netz abre com o código escrito, e é só enviar. */
+export function WhatsAppLink({ member, linked }: { member: Member; linked: boolean }) {
+  const [state, action] = useActionState(whatsappLinkAction, null);
+  const [copied, setCopied] = useState(false);
+  const share = state?.url
+    ? `https://wa.me/?text=${encodeURIComponent(`Olá, ${member.name}! Toque neste link para falar com a Netz, a assistente do netzsales, no WhatsApp. Depois é só enviar a mensagem que aparecer: ${state.url}`)}`
+    : null;
+  return (
+    <div className="remove-record">
+      <h3>WhatsApp</h3>
+      <p className="muted">
+        {linked ? "Já está ligado ao WhatsApp. Gere um link novo só se a pessoa trocou de número." : "Ainda não está ligado. Gere o link e mande para a pessoa: ela toca, envia a mensagem e já conversa com a Netz."}
+      </p>
+      {state?.message && <div className={`alert ${state.ok ? "success" : "error"}`}>{state.message}</div>}
+      {state?.url && (
+        <div className="link-box">
+          <input readOnly value={state.url} aria-label="Link do WhatsApp" onFocus={(e) => e.currentTarget.select()} />
+          <div className="actions">
+            <button type="button" className="secondary" onClick={() => navigator.clipboard.writeText(state.url!).then(() => setCopied(true))}>
+              {copied ? "Copiado" : "Copiar link"}
+            </button>
+            {share && <a className="button" href={share} target="_blank" rel="noreferrer">Mandar no WhatsApp</a>}
+          </div>
+        </div>
+      )}
+      <form action={action}>
+        <input type="hidden" name="membershipId" value={member.membershipId} />
+        <SubmitButton className="secondary" pendingText="Gerando...">{state?.url ? "Gerar outro link" : "Gerar link do WhatsApp"}</SubmitButton>
       </form>
     </div>
   );

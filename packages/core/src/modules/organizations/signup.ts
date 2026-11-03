@@ -7,6 +7,8 @@ import { normalizeEmail } from "../../auth/session.ts";
 import { AppError, conflict, forbidden, notFound, parseInput } from "../../errors.ts";
 import { appUrl, mailConfigured, sendMail } from "../../mail.ts";
 import { telegramConfigured } from "../telegram/api.ts";
+import { createWhatsAppInvite, notifyWhatsApp } from "../whatsapp/service.ts";
+import { whatsappConfigured, type WhatsAppApi } from "../whatsapp/gowa.ts";
 import { notifySignupRequest, createSignupTelegramLink, createTelegramInvite, linkSignupTelegramTx, notifyTelegram, signupTelegramChat, type TelegramDeps } from "../telegram/service.ts";
 import { createOrganizationTx } from "./bootstrap.ts";
 import { isPlatformDeveloper, listPlatformOrganizations } from "./platform.ts";
@@ -166,7 +168,7 @@ export async function approveSignup(
   db: Db,
   developer: { userId: string; userName: string },
   requestId: string,
-  deps: TelegramDeps = {},
+  deps: TelegramDeps & { whatsapp?: WhatsAppApi } = {},
 ): Promise<{
   organizationId: string;
   name: string;
@@ -176,6 +178,8 @@ export async function approveSignup(
   loginUrl: string;
   telegramUrl: string | null;
   telegramLinked: boolean;
+  /** A aprovação já foi avisada pelo WhatsApp do netzsales. */
+  whatsappSent: boolean;
 }> {
   await assertDeveloper(db, developer.userId);
   if (!z.string().uuid().safeParse(requestId).success) throw notFound("Pedido");
@@ -271,8 +275,22 @@ export async function approveSignup(
         (telegramUrl ? `\n\nPara falar com a Netz, sua assistente, no Telegram, toque aqui (vale 7 dias):\n\n${telegramUrl}` : ""),
     }).catch((err) => console.error("[signup] e-mail de aprovação não enviado", err));
   }
+  // Com o WhatsApp do netzsales conectado, o próprio sistema avisa no número do
+  // pedido, já com o link que liga a Netz nesse WhatsApp.
+  let whatsappSent = false;
+  if (result.whatsapp && !result.existingUser && (whatsappConfigured() || deps.whatsapp)) {
+    const wa = { api: deps.whatsapp };
+    const invite = await createWhatsAppInvite(db, result.userId, result.organizationId, wa).catch(() => null);
+    whatsappSent = await notifyWhatsApp(
+      result.whatsapp,
+      `Olá, ${result.name.split(" ")[0]}! Aqui é a Netz, a assistente do netzsales. Sua conta da ${result.organizationName} foi aprovada.\n\n` +
+        `Para usar o painel no navegador, entre com seu e-mail e a senha que você criou: ${result.loginUrl}` +
+        (invite ? `\n\nPara falar comigo por aqui, toque no link e envie a mensagem que aparecer (vale ${invite.days} dias):\n${invite.url}` : ""),
+      wa,
+    );
+  }
   const { organizationId, name, email, whatsapp, organizationName, loginUrl } = result;
-  return { organizationId, name, email, whatsapp, organizationName, loginUrl, telegramUrl, telegramLinked: !!result.telegramChat };
+  return { organizationId, name, email, whatsapp, organizationName, loginUrl, telegramUrl, telegramLinked: !!result.telegramChat, whatsappSent };
 }
 
 export async function rejectSignup(

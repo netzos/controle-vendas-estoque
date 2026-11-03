@@ -48,6 +48,7 @@ export const FEATURES = [
   },
   { key: "netz", label: "Netz no painel", description: "O balão da assistente em todas as telas.", defaultOn: true },
   { key: "telegram", label: "Telegram", description: "Conversar com a Netz pelo Telegram.", defaultOn: true },
+  { key: "whatsapp", label: "WhatsApp", description: "Conversar com a Netz pelo WhatsApp do netzsales.", defaultOn: true },
 ] as const;
 
 export type FeatureKey = (typeof FEATURES)[number]["key"];
