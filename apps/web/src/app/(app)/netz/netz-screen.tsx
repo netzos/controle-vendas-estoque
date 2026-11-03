@@ -69,6 +69,7 @@ export function NetsScreen({ firstName }: { firstName: string }) {
       <NetsMessages
         chat={chat}
         listRef={list}
+        initials={firstName.slice(0, 1).toUpperCase()}
         intro={
           <div className="netz-hello">
             <p>

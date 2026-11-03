@@ -86,6 +86,13 @@ export function useVoice(onText: (text: string, audio: SpokenAudio) => void | Pr
   // Áudio que acabou de ser gravado e está sendo transcrito: já aparece na conversa.
   const [outgoing, setOutgoing] = useState<{ url: string; seconds: number } | null>(null);
   const began = useRef(0);
+  // Pausa (como o botão vermelho do WhatsApp) e ondinha ao vivo do microfone.
+  const [paused, setPaused] = useState(false);
+  const pausedFor = useRef(0);
+  const pausedAt = useRef(0);
+  const lastLength = useRef(0);
+  const [levels, setLevels] = useState<number[]>([]);
+  const meter = useRef<{ ctx: AudioContext; timer: ReturnType<typeof setInterval> } | null>(null);
   const recognition = useRef<LiveRecognition | null>(null);
   const restarts = useRef(0);
   const recorder = useRef<MediaRecorder | null>(null);
@@ -107,6 +114,11 @@ export function useVoice(onText: (text: string, audio: SpokenAudio) => void | Pr
   };
   /** Desliga o microfone de verdade (some o ícone laranja do iPhone). */
   const release = () => {
+    if (meter.current) {
+      clearInterval(meter.current.timer);
+      void meter.current.ctx.close().catch(() => {});
+      meter.current = null;
+    }
     clearTimeout(limit.current);
     clearInterval(clock.current);
     stopLive();
@@ -174,6 +186,9 @@ export function useVoice(onText: (text: string, audio: SpokenAudio) => void | Pr
 
   const finish = (send: boolean) => {
     discard.current = !send;
+    lastLength.current = talked();
+    pausedAt.current = 0;
+    setPaused(false);
     const r = recorder.current;
     try {
       if (r && r.state !== "inactive") r.stop();
@@ -215,7 +230,7 @@ export function useVoice(onText: (text: string, audio: SpokenAudio) => void | Pr
       release();
       recorder.current = null;
       const blob = new Blob(chunks, { type: (r.mimeType || "audio/webm").split(";")[0] });
-      if (!discard.current && blob.size) void upload(blob, Math.max(1, Math.round((Date.now() - began.current) / 1000)));
+      if (!discard.current && blob.size) void upload(blob, Math.max(1, Math.round(lastLength.current / 1000)));
       else setState("idle");
     };
     stream.current = s;
@@ -224,14 +239,65 @@ export function useVoice(onText: (text: string, audio: SpokenAudio) => void | Pr
     setState("recording");
     setSeconds(0);
     began.current = Date.now();
-    clock.current = setInterval(() => setSeconds(Math.floor((Date.now() - began.current) / 1000)), 500);
+    pausedFor.current = 0;
+    setPaused(false);
+    setLevels([]);
+    clock.current = setInterval(() => setSeconds(Math.floor(talked() / 1000)), 250);
+    startMeter(s);
     startLive();
     limit.current = setTimeout(() => finish(true), VOICE_MAX_MS);
   };
 
+  /** Tempo falado, sem contar as pausas. */
+  function talked() {
+    const now = pausedAt.current || Date.now();
+    return now - began.current - pausedFor.current;
+  }
+
+  function startMeter(s: MediaStream) {
+    try {
+      const Ctx = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      if (!Ctx) return;
+      const ctx = new Ctx();
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 256;
+      ctx.createMediaStreamSource(s).connect(analyser);
+      const data = new Uint8Array(analyser.fftSize);
+      const timer = setInterval(() => {
+        if (pausedAt.current) return;
+        analyser.getByteTimeDomainData(data);
+        let peak = 0;
+        for (const v of data) peak = Math.max(peak, Math.abs(v - 128));
+        setLevels((l) => [...l.slice(-39), Math.min(1, peak / 64)]);
+      }, 100);
+      meter.current = { ctx, timer };
+    } catch {
+      // Sem ondinha ao vivo; a gravação segue normal.
+    }
+  }
+
+  const pause = () => {
+    const r = recorder.current;
+    if (!r) return;
+    try {
+      if (r.state === "recording") {
+        r.pause();
+        pausedAt.current = Date.now();
+        setPaused(true);
+      } else if (r.state === "paused") {
+        r.resume();
+        pausedFor.current += Date.now() - pausedAt.current;
+        pausedAt.current = 0;
+        setPaused(false);
+      }
+    } catch {
+      // Navegador sem pausa: continua gravando.
+    }
+  };
+
   const toggle = () => (state === "recording" ? finish(true) : void start());
   const cancel = () => state === "recording" && finish(false);
-  return { supported, state, toggle, start, cancel, send: () => finish(true), live, seconds, outgoing };
+  return { supported, state, toggle, start, cancel, send: () => finish(true), pause, paused, levels, live, seconds, outgoing };
 }
 
 /** Histórico, envio e confirmação de ações. `active` = a conversa está na tela. */
@@ -341,7 +407,7 @@ export function useNetsConversation(active: boolean) {
 export type NetsConversation = ReturnType<typeof useNetsConversation>;
 
 /** Lista de mensagens com os cartões de confirmação. */
-export function NetsMessages({ chat, listRef, intro }: { chat: NetsConversation; listRef: React.RefObject<HTMLDivElement | null>; intro?: React.ReactNode }) {
+export function NetsMessages({ chat, listRef, intro, initials }: { chat: NetsConversation; listRef: React.RefObject<HTMLDivElement | null>; intro?: React.ReactNode; initials?: string }) {
   const { messages, loaded, pending, decide } = chat;
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: "smooth" });
@@ -364,7 +430,7 @@ export function NetsMessages({ chat, listRef, intro }: { chat: NetsConversation;
       {messages.map((m) => (
         <div key={m.id} className={`nets-msg ${m.role}`}>
           {m.role === "user" && spokenLength(m.context) !== null ? (
-            <VoiceBubble id={m.id} seconds={spokenLength(m.context)!} transcript={m.body} />
+            <VoiceBubble id={m.id} seconds={spokenLength(m.context)!} transcript={m.body} initials={initials} />
           ) : (
             <div className="nets-bubble-text"><Rich text={m.body} /></div>
           )}
@@ -385,7 +451,7 @@ export function NetsMessages({ chat, listRef, intro }: { chat: NetsConversation;
       ))}
       {chat.voice.outgoing && (
         <div className="nets-msg user">
-          <VoiceBubble url={chat.voice.outgoing.url} seconds={chat.voice.outgoing.seconds} transcript={null} />
+          <VoiceBubble url={chat.voice.outgoing.url} seconds={chat.voice.outgoing.seconds} transcript={null} initials={initials} />
         </div>
       )}
       {pending && <div className="nets-msg assistant"><div className="nets-bubble-text nets-typing" aria-label="A Netz está respondendo"><i /><i /><i /></div></div>}
@@ -395,22 +461,35 @@ export function NetsMessages({ chat, listRef, intro }: { chat: NetsConversation;
 
 export const clock = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 
-/** Barra de gravação: lixeira, tempo e enviar (como no WhatsApp). */
+/**
+ * Gravação como no WhatsApp: em cima o tempo e a ondinha ao vivo; embaixo
+ * lixeira, pausa (vermelha) e enviar.
+ */
 export function RecordingBar({ chat, big = false }: { chat: NetsConversation; big?: boolean }) {
   const { voice } = chat;
+  const bars = [...Array(Math.max(0, 40 - voice.levels.length)).fill(0), ...voice.levels] as number[];
   return (
-    <div className={`nets-recording${big ? " big" : ""}`} role="group" aria-label="Gravando áudio">
-      <button type="button" className="nets-rec-cancel" aria-label="Cancelar o áudio" onClick={voice.cancel}>
-        <Icon name="trash" size={big ? 24 : 18} />
-      </button>
-      <div className="nets-rec-info" aria-live="polite">
-        <i aria-hidden="true" />
+    <div className={`nets-recording${big ? " big" : ""}${voice.paused ? " paused" : ""}`} role="group" aria-label="Gravando áudio">
+      <div className="nets-rec-top" aria-live="polite">
         <strong>{clock(voice.seconds)}</strong>
-        <span>{voice.live || "Gravando..."}</span>
+        <div className="nets-rec-wave" aria-hidden="true">
+          {bars.map((v, i) => (
+            <i key={i} style={{ height: `${Math.max(3, Math.round(v * 26))}px` }} />
+          ))}
+        </div>
       </div>
-      <button type="button" className="nets-rec-send" aria-label="Enviar o áudio" onClick={voice.send}>
-        <Icon name="send" size={big ? 26 : 18} />
-      </button>
+      {voice.live && <p className="nets-rec-live">{voice.live}</p>}
+      <div className="nets-rec-actions">
+        <button type="button" className="nets-rec-cancel" aria-label="Apagar o áudio" onClick={voice.cancel}>
+          <Icon name="trash" size={big ? 26 : 20} />
+        </button>
+        <button type="button" className="nets-rec-pause" aria-label={voice.paused ? "Continuar gravando" : "Pausar"} onClick={voice.pause}>
+          <Icon name={voice.paused ? "mic" : "pause"} size={big ? 22 : 18} />
+        </button>
+        <button type="button" className="nets-rec-send" aria-label="Enviar o áudio" onClick={voice.send}>
+          <Icon name="send" size={big ? 24 : 18} />
+        </button>
+      </div>
     </div>
   );
 }
@@ -473,7 +552,7 @@ async function findAudio(id: string): Promise<string | null> {
 const WAVE = [4, 9, 6, 12, 8, 14, 10, 6, 11, 15, 9, 5, 12, 8, 13, 7, 10, 14, 6, 9, 12, 5, 8, 11, 7, 4];
 
 /** Balão de áudio com play, ondinha, tempo e a transcrição logo abaixo. */
-function VoiceBubble({ id, url: given, seconds, transcript }: { id?: string; url?: string; seconds: number; transcript: string | null }) {
+function VoiceBubble({ id, url: given, seconds, transcript, initials }: { id?: string; url?: string; seconds: number; transcript: string | null; initials?: string }) {
   const [url, setUrl] = useState<string | null>(given ?? null);
   const [playing, setPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -516,18 +595,26 @@ function VoiceBubble({ id, url: given, seconds, transcript }: { id?: string; url
     }
   };
 
+  const knob = Math.round(progress * 100);
   return (
     <div className="nets-voice">
       <div className="nets-voice-player">
+        <span className="nets-voice-avatar" aria-hidden="true">
+          {initials || <Icon name="mic" size={18} />}
+          <i><Icon name="mic" size={11} /></i>
+        </span>
         <button type="button" className="nets-voice-play" onClick={toggle} disabled={!url} aria-label={url ? (playing ? "Pausar o áudio" : "Ouvir o áudio") : "Áudio gravado em outro aparelho"}>
-          <Icon name={url ? (playing ? "pause" : "play") : "mic"} size={18} />
+          <Icon name={playing ? "pause" : "play"} size={22} />
         </button>
-        <div className="nets-voice-wave" aria-hidden="true">
-          {WAVE.map((h, i) => (
-            <i key={i} style={{ height: h * 1.5 }} className={i / WAVE.length < progress ? "on" : ""} />
-          ))}
+        <div className="nets-voice-track">
+          <div className="nets-voice-wave" aria-hidden="true">
+            {WAVE.map((h, i) => (
+              <i key={i} style={{ height: h * 1.4 }} className={i / WAVE.length < progress ? "on" : ""} />
+            ))}
+            <b style={{ left: `${knob}%` }} />
+          </div>
+          <small>{playing || elapsed ? clock(elapsed) : seconds ? clock(seconds) : ""}</small>
         </div>
-        <small>{playing || elapsed ? clock(elapsed) : seconds ? clock(seconds) : ""}</small>
         {transcript !== null && (
           <button
             type="button"
