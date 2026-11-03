@@ -79,6 +79,7 @@ describe("Netz", () => {
     const tools = s.requests[0]!.tools as Array<{ name: string; type?: string; defer_loading?: boolean }>;
     assert.equal(tools[0]!.name, "tool_search_tool_bm25");
     assert.ok(!tools.find((d) => d.name === "sales_create")!.defer_loading);
+    assert.ok(!tools.find((d) => d.name === "sales_receive")!.defer_loading);
     assert.equal(tools.find((d) => d.name === "commissions_panel")!.defer_loading, true);
   });
 
