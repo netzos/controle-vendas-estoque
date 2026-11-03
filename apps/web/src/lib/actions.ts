@@ -9,6 +9,8 @@ export type FormState = {
   ok?: boolean;
   message?: string;
   fieldErrors?: Record<string, string>;
+  /** Link de ação depois do sucesso (ex.: recibo pelo WhatsApp). */
+  link?: string;
 } | null;
 
 // Converte erros de domínio em mensagem para o formulário. Erros inesperados

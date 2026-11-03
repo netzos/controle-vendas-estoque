@@ -21,7 +21,7 @@ export default async function NewSalePage() {
     <>
       <div className="page-header">
         <h1>Nova venda</h1>
-        <p>Toque nos produtos, escolha a forma de pagamento e finalize. O estoque baixa sozinho.</p>
+        <p>Escolha o cliente, toque nos produtos e na forma de pagamento e finalize. O estoque baixa sozinho.</p>
       </div>
       <SaleForm
         canChangePrice={can(actor, "sales.change_price")}
@@ -29,6 +29,7 @@ export default async function NewSalePage() {
         canManageSteps={features.has("deliveries") && can(actor, "deliveries.manage")}
         today={today}
         handoverReady={handoverReady}
+        canCreateCustomer={can(actor, "customers.manage")}
         defaultFulfillment={settings["sales.default_fulfillment"]}
         stepDefaults={stepTypes.map((t) => ({ name: t.name, days: t.defaultDays, responsible: t.defaultResponsible, cost: t.defaultCost }))}
         customers={customers.map((c) => ({ id: c.id, name: c.name, address: addressLine(c), phone: c.phone ?? "" }))}
