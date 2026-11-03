@@ -21,6 +21,7 @@ const DAY = 24 * 60 * 60 * 1000;
 const FEATURE_LABELS: Record<string, string> = {
   netz: "Netz (conversas com a IA)",
   telegram_audio: "Áudios no Telegram",
+  whatsapp_audio: "Áudios no WhatsApp",
   panel_audio: "Áudios no painel",
   improvements_analysis: "Análise de melhorias com IA",
   nets_guidance: "Propostas para o manual da Netz",

@@ -1,4 +1,4 @@
-import { can, enabledFeatures, isPlatformDeveloper, listPlatformOrganizations, listUserOrganizations, telegramConfigured, telegramOrganizationOf } from "@erp/core";
+import { can, enabledFeatures, isPlatformDeveloper, listPlatformOrganizations, listUserOrganizations, telegramConfigured, telegramOrganizationOf, whatsappConfigured, whatsappOrganizationOf } from "@erp/core";
 import { db } from "@/lib/db";
 import { currentActor } from "@/lib/auth";
 import { managerMode, visibleNavigation } from "@/lib/nav-visible";
@@ -9,6 +9,7 @@ import { Suspense } from "react";
 import { logoutAction } from "../login/actions";
 import { switchOrganizationAction } from "./actions";
 import { TelegramButton } from "./assistente/telegram/forms";
+import { WhatsAppButton } from "./assistente/whatsapp/forms";
 
 export const dynamic = "force-dynamic";
 
@@ -36,6 +37,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const manager = managerMode(actor, developer);
   const telegram = can(actor, "nets.use") && features.has("telegram") && telegramConfigured() && !actor.platformView && !manager;
   const telegramLinked = telegram && (await telegramOrganizationOf(db(), actor.userId)) !== null;
+  // WhatsApp do netzsales (QR Code, Plataforma › WhatsApp): mesmo botão, ao lado do Telegram.
+  const whatsapp = can(actor, "nets.use") && features.has("whatsapp") && whatsappConfigured() && !actor.platformView && !manager;
+  const whatsappLinked = whatsapp && (await whatsappOrganizationOf(db(), actor.userId)) !== null;
   const viewing = actor.platformView ? all.find((o) => o.id === actor.organizationId) : undefined;
   const navigation = visibleNavigation(actor, developer, features);
 
@@ -47,6 +51,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       viewMode={actor.platformView}
       topbar={
         <div className="topbar-actions">
+          {whatsapp && <WhatsAppButton linked={whatsappLinked} />}
           {telegram && <TelegramButton linked={telegramLinked} />}
           {/* Conta gestora: sem nome de empresa nem troca de empresa, só a Plataforma. */}
           {!manager && (

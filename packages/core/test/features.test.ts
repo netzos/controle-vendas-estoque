@@ -31,7 +31,7 @@ after(() => t.close());
 describe("recursos da empresa (Ajustes › Recursos)", () => {
   it("empresa nova nasce só com o básico; Netz e Telegram seguem as liberações", async () => {
     const on = await enabledFeatures(t.app, owner.organizationId);
-    assert.deepEqual([...on].sort(), ["netz", "telegram"]);
+    assert.deepEqual([...on].sort(), ["netz", "telegram", "whatsapp"]);
     const choices = await companyFeatureChoices(t.app, owner.organizationId);
     assert.deepEqual(choices.map((c) => [c.key, c.enabled]), [["deliveries", false], ["trade_in", false], ["costs", false], ["custom_fields", false], ["commissions", false]]);
   });

@@ -46,4 +46,6 @@ export * from "./modules/nets/person.ts";
 export * from "./modules/nets/voice.ts";
 export * from "./modules/telegram/api.ts";
 export * from "./modules/telegram/service.ts";
+export * from "./modules/whatsapp/gowa.ts";
+export * from "./modules/whatsapp/service.ts";
 export * from "./usage.ts";

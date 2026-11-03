@@ -261,6 +261,8 @@ async function systemPrompt(tx: Tx, actor: Actor): Promise<{ blocks: Anthropic.B
 const CHANNEL_NOTE: Partial<Record<Channel, string>> = {
   telegram:
     " Canal: Telegram. Escreva texto simples, sem tabelas nem markdown (asteriscos, # e | aparecem crus). Mensagens curtas. A confirmação aparece como botões Confirmar e Cancelar logo abaixo da sua resposta.",
+  whatsapp:
+    " Canal: WhatsApp. Escreva texto simples, sem tabelas nem markdown (só *negrito* com um asterisco de cada lado funciona). Mensagens curtas. O WhatsApp não tem botões: logo abaixo da sua proposta o sistema pede para a pessoa responder SIM ou NÃO.",
 };
 
 type ToolOutcome = { content: string; isError?: boolean; action?: NetsAction };
