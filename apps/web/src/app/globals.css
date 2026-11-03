@@ -1036,23 +1036,25 @@ td small.unit { display: inline; font-size: 12.5px; }
 .receipt-button { margin: 0 0 12px; justify-content: center; }
 .muted-link { color: var(--muted); text-decoration: underline; text-underline-offset: 3px; white-space: nowrap; }
 
-/* Gravação de áudio (balão e tela cheia), como no WhatsApp: tempo e ondinha; lixeira, pausa e enviar */
-.nets-recording { display: grid; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--border); }
-.nets-rec-top { display: flex; align-items: center; gap: 12px; min-height: 30px; }
-.nets-rec-top strong { flex: none; font-size: 17px; font-weight: 500; font-variant-numeric: tabular-nums; }
-.nets-rec-wave { flex: 1; min-width: 0; display: flex; align-items: center; justify-content: flex-end; gap: 2px; height: 30px; overflow: hidden; }
+/* Gravação de áudio: mesma altura e mesmo lugar do campo de mensagem, nada pula */
+.nets-recording { display: flex; align-items: center; gap: 6px; padding: 10px; border-top: 1px solid var(--border); }
+.nets-rec-pill { flex: 1; min-width: 0; height: 60px; display: flex; align-items: center; gap: 8px; padding: 0 6px 0 14px; border-radius: var(--radius-sm); background: rgba(255, 255, 255, .7); border: 1px solid rgba(15, 17, 21, .09); }
+.nets-rec-dot { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--danger); animation: nets-blink 1.2s infinite ease-in-out; }
+.nets-recording.paused .nets-rec-dot { animation: none; opacity: .4; }
+.nets-rec-pill strong { flex: none; font-size: 16px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.nets-rec-wave { flex: 1; min-width: 0; display: flex; align-items: center; justify-content: flex-end; gap: 2px; height: 26px; overflow: hidden; }
 .nets-rec-wave i { flex: none; width: 3px; border-radius: 2px; background: var(--text); transition: height .1s; }
 .nets-recording.paused .nets-rec-wave i { opacity: .35; }
-.nets-rec-live { margin: 0; font-size: 13.5px; color: var(--muted); max-height: 80px; overflow-y: auto; }
-.nets-rec-actions { display: flex; align-items: center; justify-content: space-between; }
-.nets-rec-cancel, .nets-rec-pause, .nets-rec-send { flex: none; width: 40px; height: 40px; padding: 0; display: grid; place-items: center; border-radius: 50%; }
-.nets-rec-cancel { background: transparent; border: none; color: var(--muted); }
-.nets-rec-pause { background: transparent; border: 2px solid var(--danger); color: var(--danger); }
-.nets-rec-send { background: var(--accent); color: #fff; border: none; }
-.nets-recording.big { padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px)); border-top: 0; }
-.nets-recording.big .nets-rec-top strong { font-size: 20px; }
-.nets-recording.big .nets-rec-cancel, .nets-recording.big .nets-rec-pause { width: 48px; height: 48px; }
-.nets-recording.big .nets-rec-send { width: 56px; height: 56px; box-shadow: 0 10px 24px -8px rgba(15, 17, 21, .5); }
+.nets-rec-cancel, .nets-rec-pause, .nets-rec-send { flex: none; padding: 0; display: grid; place-items: center; border-radius: 50%; }
+.nets-rec-cancel { width: 40px; height: 40px; background: transparent; border: none; color: var(--danger); }
+.nets-rec-pause { width: 34px; height: 34px; background: transparent; border: 2px solid var(--danger); color: var(--danger); }
+.nets-rec-send { width: 40px; height: 40px; background: var(--accent); color: #fff; border: none; }
+/* Tela cheia: mesmas medidas do campo "Mensagem" e do botão do microfone */
+.nets-recording.big { gap: 8px; padding: 10px 12px; border-top: 0; }
+.nets-recording.big .nets-rec-pill { height: 52px; border-radius: 26px; background: #fff; border-color: rgba(15, 17, 21, .1); }
+.nets-recording.big .nets-rec-cancel { width: 44px; height: 52px; margin-right: -4px; }
+.nets-recording.big .nets-rec-pause { width: 38px; height: 38px; }
+.nets-recording.big .nets-rec-send { width: 60px; height: 60px; background: linear-gradient(180deg, #2f343c, #0f1115); box-shadow: 0 10px 24px -8px rgba(15, 17, 21, .55); }
 
 /* Tela cheia da Netz (/netz): no celular é a primeira tela do app */
 .netz-screen { display: flex; flex-direction: column; height: calc(100dvh - 140px); min-height: 420px; border-radius: var(--radius); overflow: hidden; background: var(--glass); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); box-shadow: var(--glass-shadow); }
