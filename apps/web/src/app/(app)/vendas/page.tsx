@@ -32,11 +32,12 @@ const SITUATIONS = [
 ] as const;
 
 /** Entrega da venda: pendente enquanto o pós-venda estiver aberto; sem pós-venda, o cliente levou na hora. */
-function handoverTag(s: { fulfillment: string; followupStatus: string | null }) {
+function handoverTag(s: { fulfillment: string; followupStatus: string | null }, date?: string) {
   const delivery = s.fulfillment === "delivery";
+  const when = date ? ` · ${date}` : "";
   return s.followupStatus === "open"
-    ? <span className="tag warn">{delivery ? "Entrega pendente" : "Retirada pendente"}</span>
-    : <span className="tag ok">{delivery ? "Entregue" : "Retirado"}</span>;
+    ? <span className="tag warn">{date ? `Pendente${when}` : delivery ? "Entrega pendente" : "Retirada pendente"}</span>
+    : <span className="tag ok">{delivery ? "Entregue" : "Retirado"}{when}</span>;
 }
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
@@ -339,7 +340,7 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
           <div className="table-wrap">
             <table className="cards">
               <thead>
-                <tr><th>Nº</th><th>Data</th><th>Cliente</th>{multi && <th>Filial</th>}<th>Pagamento</th>{handoverReady && <th>Retirada</th>}<th className="num">Itens</th><th className="num">Total</th><th>{seesSteps ? "Entrega" : "Situação"}</th></tr>
+                <tr><th>Nº</th><th>Data</th><th>Cliente</th>{multi && <th>Filial</th>}<th>Pagamento</th><th>Retirada / entrega</th><th className="num">Itens</th><th className="num">Total</th></tr>
               </thead>
               <tbody>
                 {sales.map((s) => (
@@ -357,20 +358,26 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
                             ? `Parcial · falta ${money(Number(s.total) - Number(s.tradeInTotal) - Number(s.paidTotal))}`
                             : isPaymentLater(s) ? `${PAYMENT_LATER_LABEL} · a receber` : "A receber"}
                         </span>
+                      ) : s.status === "completed" ? (
+                        <span className="tag pay-tag paid">Pago · {PAYMENT_LABELS[s.paymentMethod]}</span>
                       ) : (
                         PAYMENT_LABELS[s.paymentMethod]
                       )}
                     </td>
-                    {handoverReady && (
-                      <td data-label={handoverWord(s.fulfillment)}>
-                        {s.handoverDate ? <>{handoverWord(s.fulfillment)} {day(s.handoverDate)}</> : <span className="muted">—</span>}
-                      </td>
-                    )}
+                    {/* Uma só informação de retirada/entrega: situação e, se houver, a data combinada (pedido nº 21). */}
+                    <td data-label={handoverWord(s.fulfillment)}>
+                      {s.status === "cancelled" ? (
+                        <span className="tag off">Cancelada</span>
+                      ) : seesSteps ? (
+                        handoverTag(s, s.handoverDate ? day(s.handoverDate) : undefined)
+                      ) : s.handoverDate ? (
+                        <>{day(s.handoverDate)}</>
+                      ) : (
+                        <span className="muted">Na hora</span>
+                      )}
+                    </td>
                     <td data-label="Itens" className="num sm-hide">{s.itemCount}</td>
                     <td data-label="Total" className="num"><strong className={s.status === "cancelled" ? "strike muted" : ""}>{money(s.total)}</strong></td>
-                    <td data-label={seesSteps ? "Entrega" : "Situação"}>
-                      {s.status === "cancelled" ? <span className="tag off">Cancelada</span> : seesSteps ? handoverTag(s) : <span className="tag ok">Concluída</span>}
-                    </td>
                   </tr>
                 ))}
               </tbody>
