@@ -25,6 +25,7 @@ export function PeriodPicker({
   sellers,
   seller,
   sellerLinks,
+  selects,
 }: {
   options: PeriodOption[];
   current: string;
@@ -43,6 +44,8 @@ export function PeriodPicker({
   sellers?: Choice[];
   seller?: string;
   sellerLinks?: Record<string, string>;
+  /** Outros filtros de escolha única (ex.: forma de pagamento). */
+  selects?: { label: string; all: string; value: string; options: Choice[]; links: Record<string, string> }[];
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -82,7 +85,7 @@ export function PeriodPicker({
             <path d="M4 6h16v14H4zM4 10h16M8 3v4M16 3v4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
           <span className="period-name">{label}</span>
-          <span className="period-range">{range}</span>
+          {range && <span className="period-range">{range}</span>}
           <svg className="chev" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
             <path d="m6 9 6 6 6-6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
@@ -141,6 +144,12 @@ export function PeriodPicker({
           {sellers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
         </select>
       )}
+      {selects?.map((sel) => (
+        <select key={sel.label} className="period-select" value={sel.value} aria-label={sel.label} onChange={(e) => router.push(sel.links[e.target.value] ?? sel.links[""]!)}>
+          <option value="">{sel.all}</option>
+          {sel.options.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+        </select>
+      ))}
     </div>
   );
 }

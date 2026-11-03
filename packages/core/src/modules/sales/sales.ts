@@ -9,7 +9,8 @@ import { DELIVERY_STEP, INTERVAL_LABELS, ORDER_STEP, dueDates, splitCents, type 
 import { cancelFollowup, followupInput, insertFollowup } from "./followups.ts";
 import { featureEnabled } from "../../features.ts";
 
-export type PaymentMethod = "cash" | "pix" | "credit" | "debit" | "other";
+export const PAYMENT_METHODS = ["cash", "pix", "credit", "debit", "other"] as const;
+export type PaymentMethod = (typeof PAYMENT_METHODS)[number];
 
 export const PAYMENT_LABELS: Record<PaymentMethod | "trade_in", string> = {
   pix: "Pix",
@@ -81,6 +82,8 @@ export interface Sale {
   number: number;
   customerId: string | null;
   customerName: string | null;
+  /** Telefone do cliente (recibo pelo WhatsApp). */
+  customerPhone: string | null;
   /** Filial da venda; null = da empresa toda. */
   branchId: string | null;
   branchName: string | null;
@@ -112,7 +115,7 @@ export interface Sale {
   cancelReason: string | null;
 }
 
-const SALE_COLUMNS = `s.id, s.number, s.customer_id AS "customerId", c.name AS "customerName",
+const SALE_COLUMNS = `s.id, s.number, s.customer_id AS "customerId", c.name AS "customerName", c.phone AS "customerPhone",
   s.branch_id AS "branchId", (SELECT b.name FROM controle_vendas_estoque.branches b WHERE b.id = s.branch_id) AS "branchName", s.status,
   s.payment_method AS "paymentMethod", s.subtotal::text AS subtotal, s.discount::text AS discount, s.total::text AS total,
   s.trade_in_total::text AS "tradeInTotal", s.paid_total::text AS "paidTotal", s.payment_status AS "paymentStatus",
@@ -925,31 +928,81 @@ export const updateSale = defineService({
   },
 });
 
+// Filtros da lista de vendas, usados também no total do período.
+const saleListFilters = z.object({
+  search: z.string().trim().max(100).optional(),
+  // Só as que ainda têm algo a receber (pagamento parcial ou a receber).
+  openPayment: z.boolean().default(false),
+  // Só as vendas desta filial.
+  branchId: z.string().uuid().optional(),
+  // Período, em dias do fuso da empresa (AAAA-MM-DD, os dois inclusive).
+  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe("Primeiro dia (AAAA-MM-DD)"),
+  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe("Último dia (AAAA-MM-DD)"),
+  // Forma principal de pagamento.
+  paymentMethod: z.enum(PAYMENT_METHODS).optional(),
+});
+type SaleListFilters = z.output<typeof saleListFilters>;
+
+const ORG_TZ = "(SELECT o.timezone FROM controle_vendas_estoque.organizations o WHERE o.id = controle_vendas_estoque.current_org())";
+const SALE_LIST_WHERE = `($1 = '' OR s.number::text = $1 OR lower(c.name) LIKE '%' || lower($1) || '%')
+          AND (NOT $2 OR (s.payment_status <> 'paid' AND s.status = 'completed'))
+          AND ($3::uuid IS NULL OR s.branch_id = $3)
+          AND ($4::uuid[] IS NULL OR s.branch_id IS NULL OR s.branch_id = ANY($4))
+          AND ($5::date IS NULL OR s.sold_at >= ($5::date::timestamp AT TIME ZONE ${ORG_TZ}))
+          AND ($6::date IS NULL OR s.sold_at < (($6::date + 1)::timestamp AT TIME ZONE ${ORG_TZ}))
+          AND ($7::text IS NULL OR s.payment_method = $7)`;
+function saleListParams(input: SaleListFilters, actor: { branchIds: string[] | null }): unknown[] {
+  const term = input.search?.replace(/^n[ºo°]?\s*/i, "") ?? "";
+  const [from, to] = input.from && input.to && input.from > input.to ? [input.to, input.from] : [input.from, input.to];
+  return [term, input.openPayment, input.branchId ?? null, actor.branchIds, from ?? null, to ?? null, input.paymentMethod ?? null];
+}
+
 export const listSales = defineService({
   name: "sales.list",
-  description: "Lista as vendas mais recentes, com busca pelo número ou pelo cliente",
+  description: "Lista as vendas mais recentes, com busca pelo número ou pelo cliente, período (from/to) e forma de pagamento",
   permission: "sales.view",
   risk: 1,
-  input: z.object({
-    search: z.string().trim().max(100).optional(),
-    // Só as que ainda têm algo a receber (pagamento parcial ou a receber).
-    openPayment: z.boolean().default(false),
-    // Só as vendas desta filial.
-    branchId: z.string().uuid().optional(),
+  input: saleListFilters.extend({
     limit: z.number().int().min(1).max(500).default(100),
   }),
   async handler({ tx, actor }, input) {
-    const term = input.search?.replace(/^n[ºo°]?\s*/i, "") ?? "";
     const { rows } = await tx.query<Sale>(
       `SELECT ${SALE_COLUMNS} FROM ${SALE_FROM}
-        WHERE ($1 = '' OR s.number::text = $1 OR lower(c.name) LIKE '%' || lower($1) || '%')
-          AND (NOT $3 OR (s.payment_status <> 'paid' AND s.status = 'completed'))
-          AND ($4::uuid IS NULL OR s.branch_id = $4)
-          AND ($5::uuid[] IS NULL OR s.branch_id IS NULL OR s.branch_id = ANY($5))
-        ORDER BY s.sold_at DESC LIMIT $2`,
-      [term, input.limit, input.openPayment, input.branchId ?? null, actor.branchIds],
+        WHERE ${SALE_LIST_WHERE}
+        ORDER BY s.sold_at DESC LIMIT $8`,
+      [...saleListParams(input, actor), input.limit],
     );
     return rows;
+  },
+});
+
+export interface SaleListTotals {
+  /** Vendas concluídas (canceladas ficam fora do total). */
+  count: number;
+  total: string;
+  received: string;
+  open: string;
+  cancelled: number;
+}
+
+export const summarizeSales = defineService({
+  name: "sales.summarize",
+  description: "Soma as vendas com os mesmos filtros da lista: quantas, total vendido, recebido e o que falta receber",
+  permission: "sales.view",
+  risk: 1,
+  input: saleListFilters,
+  async handler({ tx, actor }, input) {
+    const { rows } = await tx.query<SaleListTotals>(
+      `SELECT count(*) FILTER (WHERE s.status = 'completed')::int AS count,
+              coalesce(sum(s.total) FILTER (WHERE s.status = 'completed'), 0)::text AS total,
+              coalesce(sum(s.paid_total) FILTER (WHERE s.status = 'completed'), 0)::text AS received,
+              coalesce(sum(greatest(s.total - s.trade_in_total - s.paid_total, 0)) FILTER (WHERE s.status = 'completed'), 0)::text AS open,
+              count(*) FILTER (WHERE s.status = 'cancelled')::int AS cancelled
+         FROM ${SALE_FROM}
+        WHERE ${SALE_LIST_WHERE}`,
+      saleListParams(input, actor),
+    );
+    return rows[0]!;
   },
 });
 
