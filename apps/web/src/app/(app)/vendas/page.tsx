@@ -10,10 +10,11 @@ import { ReceivePaymentForm } from "./receive-form";
 import { HandoverDateForm } from "./handover-form";
 import { EditSaleForm } from "./edit-form";
 import { AddStepsForm, StepRow } from "../entregas/steps";
+import { DeliverForm } from "./deliver-form";
 import { PeriodPicker } from "@/components/period-picker";
 import { receiptLink } from "@/lib/receipt";
 
-type ListParams = { q?: string; receber?: string; filial?: string; periodo?: string; de?: string; ate?: string; forma?: string };
+type ListParams = { q?: string; receber?: string; situacao?: string; filial?: string; periodo?: string; de?: string; ate?: string; forma?: string };
 
 // Períodos da lista; "Todas as datas" é o padrão (a busca acha qualquer venda).
 const PERIODS = [
@@ -25,6 +26,19 @@ const PERIODS = [
   { key: "last_month", label: "Mês passado" },
   { key: "year", label: "Este ano" },
 ] as const;
+const SITUATIONS = [
+  { key: "entregue-sem-pagamento", value: "delivered_unpaid", label: "Entregue sem pagamento" },
+  { key: "pago-sem-entrega", value: "paid_undelivered", label: "Pago sem entrega" },
+] as const;
+
+/** Entrega da venda: pendente enquanto o pós-venda estiver aberto; sem pós-venda, o cliente levou na hora. */
+function handoverTag(s: { fulfillment: string; followupStatus: string | null }) {
+  const delivery = s.fulfillment === "delivery";
+  return s.followupStatus === "open"
+    ? <span className="tag warn">{delivery ? "Entrega pendente" : "Retirada pendente"}</span>
+    : <span className="tag ok">{delivery ? "Entregue" : "Retirado"}</span>;
+}
+
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const METHODS: PaymentMethod[] = ["pix", "cash", "debit", "credit", "other"];
 
@@ -52,6 +66,8 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
     range = null; // datas inválidas (mais de 3 anos): mostra todas
   }
   const method = METHODS.find((m) => m === params.forma);
+  // Entrega e pagamento separados (pedido nº 21).
+  const situation = SITUATIONS.find((x) => x.key === params.situacao)?.value;
   const filters = {
     search: params.q || undefined,
     openPayment: params.receber === "1",
@@ -59,6 +75,7 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
     from: range?.from,
     to: range?.to,
     paymentMethod: method,
+    situation,
   };
   const [org, sales, totals, selected, features, handoverReady] = await Promise.all([
     query(getOrganization, {}),
@@ -81,7 +98,7 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
   // "2026-11-02" → "02/11"; o ano só aparece quando não é o atual.
   const year = String(new Date().getFullYear());
   const day = (d: string) => { const [y, m, dd] = d.split("-"); return y === year ? `${dd}/${m}` : `${dd}/${m}/${y}`; };
-  const keep: ListParams = { q: params.q, receber: params.receber, filial: params.filial, forma: params.forma };
+  const keep: ListParams = { q: params.q, receber: params.receber, situacao: params.situacao, filial: params.filial, forma: params.forma };
   const current: ListParams = { ...keep, periodo: periodKey === "all" || periodKey === "custom" ? undefined : periodKey, de: custom ? params.de : undefined, ate: custom ? params.ate : undefined };
   const rangeText = range ? (range.from === range.to ? day(range.from) : `${day(range.from)} a ${day(range.to)}`) : "";
   const handoverWord = (f: string) => (f === "delivery" ? "Entrega" : "Retirada");
@@ -99,10 +116,14 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
           <div className="card-head">
             <h2>Venda nº {selected.number}</h2>
             <span>
-              {selected.status === "completed" && selected.paymentStatus !== "paid" && (
-                <span className={`tag pay-tag ${selected.paymentStatus}`}>{PAYMENT_STATUS_LABELS[selected.paymentStatus]}</span>
-              )}{" "}
-              <span className={`tag ${selected.status === "completed" ? "ok" : "off"}`}>{selected.status === "completed" ? "Concluída" : "Cancelada"}</span>
+              {selected.status === "completed" ? (
+                <>
+                  {handoverTag(selected)}{" "}
+                  <span className={`tag pay-tag ${selected.paymentStatus}`}>{selected.paymentStatus === "paid" ? "Pago" : PAYMENT_STATUS_LABELS[selected.paymentStatus]}</span>
+                </>
+              ) : (
+                <span className="tag off">Cancelada</span>
+              )}
             </span>
           </div>
           <p className="muted">
@@ -248,6 +269,9 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
               <ul className="step-list">
                 {followup.steps.map((s) => <StepRow key={s.id} step={s} today={today} canManage={canSteps} showSale={false} />)}
               </ul>
+              {followup.status === "open" && selected.status === "completed" && canSteps && !actor.platformView && (
+                <DeliverForm saleId={selected.id} fulfillment={selected.fulfillment} />
+              )}
             </>
           )}
           {selected.status === "completed" && canSteps && <AddStepsForm saleId={selected.id} hasFollowup={!!followup} today={today} stepNames={stepTypes.map((t) => t.name)} />}
@@ -262,6 +286,7 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
           <form>
             <input type="search" name="q" defaultValue={params.q ?? ""} placeholder="Buscar pelo número ou pelo cliente" aria-label="Buscar vendas" />
             {params.receber === "1" && <input type="hidden" name="receber" value="1" />}
+            {situation && <input type="hidden" name="situacao" value={params.situacao} />}
             {(["periodo", "de", "ate", "forma"] as const).map((k) => current[k] && <input key={k} type="hidden" name={k} value={current[k]} />)}
             {multi && (
               <select name="filial" defaultValue={branch?.id ?? ""} aria-label="Filial">
@@ -272,8 +297,11 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
             <button type="submit" className="secondary">Buscar</button>
           </form>
           <nav className="segmented" aria-label="Filtro de pagamento">
-            <Link href={listLink(current, { receber: undefined })} className={params.receber === "1" ? "" : "active"}>Todas</Link>
-            <Link href={listLink(current, { receber: "1" })} className={params.receber === "1" ? "active" : ""}>Falta receber</Link>
+            <Link href={listLink(current, { receber: undefined, situacao: undefined })} className={params.receber === "1" || situation ? "" : "active"}>Todas</Link>
+            <Link href={listLink(current, { receber: "1", situacao: undefined })} className={params.receber === "1" && !situation ? "active" : ""}>Falta receber</Link>
+            {seesSteps && SITUATIONS.map((x) => (
+              <Link key={x.key} href={listLink(current, { receber: undefined, situacao: x.key })} className={params.situacao === x.key ? "active" : ""}>{x.label}</Link>
+            ))}
           </nav>
           {can(actor, "sales.create") && <Link className="button hide-mobile" href="/vendas/nova">+ Nova venda</Link>}
         </div>
@@ -306,12 +334,12 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
           <p className="muted small-text">Mostrando as {sales.length} mais recentes. O total acima soma todas.</p>
         )}
         {sales.length === 0 ? (
-          <p className="muted">{params.receber === "1" ? "Nenhuma venda com pagamento em aberto." : params.q || range || method ? "Nenhuma venda encontrada com esses filtros." : "Nenhuma venda registrada ainda."}</p>
+          <p className="muted">{situation ? "Nenhuma venda nessa situação." : params.receber === "1" ? "Nenhuma venda com pagamento em aberto." : params.q || range || method ? "Nenhuma venda encontrada com esses filtros." : "Nenhuma venda registrada ainda."}</p>
         ) : (
           <div className="table-wrap">
             <table className="cards">
               <thead>
-                <tr><th>Nº</th><th>Data</th><th>Cliente</th>{multi && <th>Filial</th>}<th>Pagamento</th>{handoverReady && <th>Retirada</th>}<th className="num">Itens</th><th className="num">Total</th><th>Situação</th></tr>
+                <tr><th>Nº</th><th>Data</th><th>Cliente</th>{multi && <th>Filial</th>}<th>Pagamento</th>{handoverReady && <th>Retirada</th>}<th className="num">Itens</th><th className="num">Total</th><th>{seesSteps ? "Entrega" : "Situação"}</th></tr>
               </thead>
               <tbody>
                 {sales.map((s) => (
@@ -340,7 +368,9 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
                     )}
                     <td data-label="Itens" className="num sm-hide">{s.itemCount}</td>
                     <td data-label="Total" className="num"><strong className={s.status === "cancelled" ? "strike muted" : ""}>{money(s.total)}</strong></td>
-                    <td data-label="Situação"><span className={`tag ${s.status === "completed" ? "ok" : "off"}`}>{s.status === "completed" ? "Concluída" : "Cancelada"}</span></td>
+                    <td data-label={seesSteps ? "Entrega" : "Situação"}>
+                      {s.status === "cancelled" ? <span className="tag off">Cancelada</span> : seesSteps ? handoverTag(s) : <span className="tag ok">Concluída</span>}
+                    </td>
                   </tr>
                 ))}
               </tbody>

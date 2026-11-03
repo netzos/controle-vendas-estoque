@@ -447,6 +447,39 @@ export const updateSaleStep = defineService({
   },
 });
 
+/** Marca a venda como entregue (ou retirada): todas as etapas que faltam ficam feitas (pedido nº 21). */
+export const completeSaleFollowup = defineService({
+  name: "followups.complete",
+  description: "Marca a venda como entregue/retirada: conclui de uma vez todas as etapas pós-venda que ainda faltam",
+  permission: "deliveries.manage",
+  risk: 2,
+  input: z.object({ saleId: z.string().uuid() }),
+  async handler({ tx, audit }, input) {
+    const f = await tx.query<{ id: string; number: number; fulfillment: string }>(
+      `SELECT f.id, s.number, s.fulfillment FROM controle_vendas_estoque.sale_followups f
+         JOIN controle_vendas_estoque.sales s ON s.id = f.sale_id
+        WHERE f.sale_id = $1 AND s.status = 'completed' FOR UPDATE OF f`,
+      [input.saleId],
+    );
+    const row = f.rows[0];
+    if (!row) throw notFound("Acompanhamento da venda");
+    const done = await tx.query<{ name: string }>(
+      `UPDATE controle_vendas_estoque.sale_steps SET status = 'done', done_at = now()
+        WHERE followup_id = $1 AND status IN ('pending', 'in_progress') RETURNING name`,
+      [row.id],
+    );
+    await refreshFollowup(tx, row.id);
+    const word = row.fulfillment === "delivery" ? "entregue" : "retirada";
+    await audit({
+      action: "followup.complete",
+      entityType: "sale",
+      entityId: input.saleId,
+      summary: `Venda nº ${row.number} marcada como ${word}${done.rows.length ? ` (${done.rows.map((r) => r.name).join(", ")} feita)` : ""}`,
+    });
+    return { saleId: input.saleId, number: row.number, stepsDone: done.rows.length };
+  },
+});
+
 // Venda cancelada: etapas que ainda não terminaram são canceladas. Custos já
 // pagos continuam lançados.
 export async function cancelFollowup(tx: Tx, saleId: string) {

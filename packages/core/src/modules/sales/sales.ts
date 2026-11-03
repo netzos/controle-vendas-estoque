@@ -940,21 +940,29 @@ const saleListFilters = z.object({
   to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe("Último dia (AAAA-MM-DD)"),
   // Forma principal de pagamento.
   paymentMethod: z.enum(PAYMENT_METHODS).optional(),
+  // Entrega e pagamento separados (pedido nº 21): entregue mas falta receber, ou pago mas falta entregar.
+  situation: z.enum(["delivered_unpaid", "paid_undelivered"]).optional()
+    .describe("delivered_unpaid = entregue/retirada e falta receber; paid_undelivered = paga e falta entregar/retirar"),
 });
 type SaleListFilters = z.output<typeof saleListFilters>;
 
 const ORG_TZ = "(SELECT o.timezone FROM controle_vendas_estoque.organizations o WHERE o.id = controle_vendas_estoque.current_org())";
+// Entrega pendente = acompanhamento pós-venda ainda aberto. Sem acompanhamento, o cliente levou na hora.
+const OPEN_FOLLOWUP = `EXISTS (SELECT 1 FROM controle_vendas_estoque.sale_followups f WHERE f.sale_id = s.id AND f.status = 'open')`;
 const SALE_LIST_WHERE = `($1 = '' OR s.number::text = $1 OR lower(c.name) LIKE '%' || lower($1) || '%')
           AND (NOT $2 OR (s.payment_status <> 'paid' AND s.status = 'completed'))
           AND ($3::uuid IS NULL OR s.branch_id = $3)
           AND ($4::uuid[] IS NULL OR s.branch_id IS NULL OR s.branch_id = ANY($4))
           AND ($5::date IS NULL OR s.sold_at >= ($5::date::timestamp AT TIME ZONE ${ORG_TZ}))
           AND ($6::date IS NULL OR s.sold_at < (($6::date + 1)::timestamp AT TIME ZONE ${ORG_TZ}))
-          AND ($7::text IS NULL OR s.payment_method = $7)`;
+          AND ($7::text IS NULL OR s.payment_method = $7)
+          AND ($8::text IS NULL OR (s.status = 'completed' AND CASE $8
+                WHEN 'delivered_unpaid' THEN s.payment_status <> 'paid' AND NOT ${OPEN_FOLLOWUP}
+                ELSE s.payment_status = 'paid' AND ${OPEN_FOLLOWUP} END))`;
 function saleListParams(input: SaleListFilters, actor: { branchIds: string[] | null }): unknown[] {
   const term = input.search?.replace(/^n[ºo°]?\s*/i, "") ?? "";
   const [from, to] = input.from && input.to && input.from > input.to ? [input.to, input.from] : [input.from, input.to];
-  return [term, input.openPayment, input.branchId ?? null, actor.branchIds, from ?? null, to ?? null, input.paymentMethod ?? null];
+  return [term, input.openPayment, input.branchId ?? null, actor.branchIds, from ?? null, to ?? null, input.paymentMethod ?? null, input.situation ?? null];
 }
 
 export const listSales = defineService({
@@ -969,7 +977,7 @@ export const listSales = defineService({
     const { rows } = await tx.query<Sale>(
       `SELECT ${SALE_COLUMNS} FROM ${SALE_FROM}
         WHERE ${SALE_LIST_WHERE}
-        ORDER BY s.sold_at DESC LIMIT $8`,
+        ORDER BY s.sold_at DESC LIMIT $9`,
       [...saleListParams(input, actor), input.limit],
     );
     return rows;
