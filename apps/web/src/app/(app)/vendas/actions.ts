@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import type { z } from "zod";
-import { cancelSale, createCustomer, createSale, deleteSale, getOrganization, getSale, receiveSalePayment, runService, setHandoverDate, updateSale } from "@erp/core";
+import { cancelSale, completeSaleFollowup, createCustomer, createSale, deleteSale, getOrganization, getSale, receiveSalePayment, runService, setHandoverDate, updateSale } from "@erp/core";
 import { receiptLink } from "@/lib/receipt";
 import { money } from "@/lib/format";
 import { currentActor } from "@/lib/auth";
@@ -116,4 +116,12 @@ export async function updateSaleAction(_: FormState, form: FormData): Promise<Fo
   } catch (err) {
     return toFormState(err);
   }
+}
+
+export async function completeFollowupAction(_: FormState, form: FormData): Promise<FormState> {
+  return perform(
+    completeSaleFollowup,
+    { saleId: str(form, "saleId") },
+    { successMessage: str(form, "word") === "delivery" ? "Venda marcada como entregue." : "Venda marcada como retirada.", revalidate: "/vendas" },
+  );
 }

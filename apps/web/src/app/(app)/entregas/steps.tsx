@@ -13,8 +13,8 @@ const tone: Record<StepStatus, string> = { pending: "", in_progress: "run", done
 
 // Próximo passo de cada situação, em um toque.
 const NEXT: Record<StepStatus, { status: StepStatus; label: string }[]> = {
-  pending: [{ status: "in_progress", label: "Começar" }, { status: "done", label: "Concluir" }],
-  in_progress: [{ status: "done", label: "Concluir" }],
+  pending: [{ status: "in_progress", label: "Começar" }, { status: "done", label: "Marcar feita" }],
+  in_progress: [{ status: "done", label: "Marcar feita" }],
   done: [{ status: "in_progress", label: "Reabrir" }],
   cancelled: [{ status: "pending", label: "Reabrir" }],
 };
