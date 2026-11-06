@@ -182,6 +182,9 @@ export const createSale = defineService({
       .default(false)
       .describe("true quando a forma de pagamento ainda não foi definida (combinar na retirada/entrega). A venda fica toda a receber e a forma é escolhida no recebimento (sales_receive). Não pergunte a forma se a pessoa disse que vai combinar depois."),
     handoverDate: handoverDateField.describe("Dia combinado para o cliente retirar (ou receber, se for entrega), AAAA-MM-DD. Opcional."),
+    // Melhoria 23: venda que aconteceu em outro dia (lançada depois). A data de
+    // lançamento (created_at) continua sendo agora, para auditoria.
+    soldOn: handoverDateField.describe("Dia em que a venda aconteceu, AAAA-MM-DD, só quando foi antes de hoje (venda retroativa: ontem, dia 5...). Omitido = agora."),
     discount: decimalField(2, "Desconto").default("0"),
     // Parcelado / a prazo: o que vier em payments é a entrada; o resto vira
     // parcelas com vencimento. "single" = uma data só (fiado com data combinada).
@@ -352,18 +355,33 @@ export const createSale = defineService({
     // Forma principal: a de maior valor (a venda antiga só tinha uma).
     const mainMethod = [...payments].sort((a, b) => Number(b.amount) - Number(a.amount))[0]?.method ?? (input.paymentLater ? "other" : input.paymentMethod ?? "other");
 
+    // Venda retroativa: meio-dia do dia informado, no fuso da empresa. Hoje = agora.
+    let soldAt: string | null = null;
+    if (input.soldOn) {
+      const d = await tx.query<{ today: string; at: string | null }>(
+        `SELECT (now() AT TIME ZONE o.timezone)::date::text AS today,
+                CASE WHEN $1::date < (now() AT TIME ZONE o.timezone)::date
+                     THEN (($1::date + time '12:00') AT TIME ZONE o.timezone)::text END AS at
+           FROM controle_vendas_estoque.organizations o WHERE o.id = $2`,
+        [input.soldOn, actor.organizationId],
+      );
+      if (input.soldOn > d.rows[0]!.today) throw new AppError("invalid_input", "A data da venda não pode ser no futuro.");
+      soldAt = d.rows[0]!.at;
+    }
+
     // Número sequencial por empresa, sem buracos por concorrência.
     await tx.query("SELECT pg_advisory_xact_lock(hashtext('sales:' || $1))", [actor.organizationId]);
     const { rows } = await tx.query<{ id: string; number: number; total: string }>(
       `INSERT INTO controle_vendas_estoque.sales
          (organization_id, number, customer_id, payment_method, subtotal, discount, total, cost_total, notes, created_by, trade_in_total, delivery_fee, fulfillment,
-          paid_total, payment_status, branch_id, down_payment, installment_count, installment_interval, first_due_date)
+          paid_total, payment_status, branch_id, down_payment, installment_count, installment_interval, first_due_date, sold_at)
        VALUES ($1, (SELECT coalesce(max(number), 0) + 1 FROM controle_vendas_estoque.sales WHERE organization_id = $1),
-               $2, $3, $4, $5, $4::numeric - $5::numeric + $10::numeric, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+               $2, $3, $4, $5, $4::numeric - $5::numeric + $10::numeric, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18,
+               coalesce($19::timestamptz, now()))
        RETURNING id, number, total::text AS total`,
       [actor.organizationId, input.customerId ?? null, mainMethod, subtotal, input.discount, cost, input.notes ?? null, actor.userId,
         tradeTotal.toFixed(2), fee, fulfillment, (paidCents / 100).toFixed(2), paymentStatus, branchId,
-        plan ? (paidCents / 100).toFixed(2) : "0", parcels.length, plan?.interval ?? null, plan?.firstDue ?? null],
+        plan ? (paidCents / 100).toFixed(2) : "0", parcels.length, plan?.interval ?? null, plan?.firstDue ?? null, soldAt],
     );
     for (const [i, cents] of parcels.entries()) {
       await tx.query(
@@ -384,8 +402,9 @@ export const createSale = defineService({
     };
     for (const p of payments) {
       await tx.query(
-        `INSERT INTO controle_vendas_estoque.sale_payments (organization_id, sale_id, method, amount, created_by) VALUES ($1, $2, $3, $4, $5)`,
-        [actor.organizationId, sale.id, p.method, p.amount, actor.userId],
+        `INSERT INTO controle_vendas_estoque.sale_payments (organization_id, sale_id, method, amount, created_by, paid_at)
+         VALUES ($1, $2, $3, $4, $5, coalesce($6::timestamptz, now()))`,
+        [actor.organizationId, sale.id, p.method, p.amount, actor.userId, soldAt],
       );
     }
 
@@ -461,7 +480,7 @@ export const createSale = defineService({
       action: "sale.create",
       entityType: "sale",
       entityId: sale.id,
-      summary: `Venda nº ${sale.number} de R$ ${sale.total}${tradeTotal > 0 ? ` (R$ ${tradeTotal.toFixed(2)} em troca)` : ""}${paymentStatus !== "paid" ? ` · falta receber R$ ${((toPayCents - paidCents) / 100).toFixed(2)}` : ""}${parcels.length > 0 ? ` em ${parcels.length}x (${INTERVAL_LABELS[plan!.interval].toLowerCase()}, 1º vencimento ${plan!.firstDue})` : ""}`,
+      summary: `Venda nº ${sale.number} de R$ ${sale.total}${soldAt ? ` feita em ${input.soldOn!.split("-").reverse().join("/")}` : ""}${tradeTotal > 0 ? ` (R$ ${tradeTotal.toFixed(2)} em troca)` : ""}${paymentStatus !== "paid" ? ` · falta receber R$ ${((toPayCents - paidCents) / 100).toFixed(2)}` : ""}${parcels.length > 0 ? ` em ${parcels.length}x (${INTERVAL_LABELS[plan!.interval].toLowerCase()}, 1º vencimento ${plan!.firstDue})` : ""}`,
       after: { ...sale, items: lines.length, tradeIns: input.tradeIns.length },
     });
     await emit("sale.created", { saleId: sale.id, number: sale.number, total: sale.total }, { type: "sale", id: sale.id });

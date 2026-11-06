@@ -42,6 +42,7 @@ export async function createSaleAction(_: FormState, form: FormData): Promise<Fo
       payments,
       installments,
       handoverDate: str(form, "handoverDate") || null,
+      soldOn: str(form, "soldOn") || null,
       fulfillment: str(form, "fulfillment") === "delivery" ? "delivery" : "pickup",
       discount: str(form, "discount"),
       notes: optional(form, "notes"),
