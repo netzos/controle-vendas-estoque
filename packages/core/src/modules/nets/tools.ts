@@ -60,6 +60,8 @@ const ALWAYS = new Set([
   "sales_list", "sales_create", "sales_dashboard", "stock_overview", "stock_move",
   // Dar baixa em pagamento é do dia a dia: sempre à mão, para virar cartão como a venda (pedido nº 20).
   "sales_receive", "receivables_list",
+  // Depois da baixa, a Netz pergunta se o cliente já levou e marca a retirada (pedido nº 22).
+  "followups_complete",
 ]);
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

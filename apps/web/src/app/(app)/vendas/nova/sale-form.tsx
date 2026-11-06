@@ -79,6 +79,8 @@ export function SaleForm({
   const [newCustomer, setNewCustomer] = useState<{ name: string; phone: string } | null>(null);
   // Dia combinado para o cliente retirar (ou receber, na entrega).
   const [handover, setHandover] = useState("");
+  // Melhoria 23: dia em que a venda aconteceu (vazio = hoje).
+  const [soldOn, setSoldOn] = useState("");
   // Preço negociado por item; vazio = preço do cadastro.
   const [prices, setPrices] = useState<Record<string, string>>({});
   // Itens que o cliente entrega como parte do pagamento.
@@ -103,6 +105,7 @@ export function SaleForm({
       setSplit(null);
       setPlan(null);
       setHandover("");
+      setSoldOn("");
       setPayment("");
       setCustomerId("");
       setCustomerSearch("");
@@ -193,6 +196,7 @@ export function SaleForm({
         <input type="hidden" name="paymentMethod" value={payment} />
       )}
       <input type="hidden" name="handoverDate" value={handover} />
+      <input type="hidden" name="soldOn" value={soldOn && soldOn < today ? soldOn : ""} />
       <input type="hidden" name="customerId" value={customerId} />
       {newCustomer && <input type="hidden" name="newCustomerName" value={newCustomer.name} />}
       {newCustomer && <input type="hidden" name="newCustomerPhone" value={newCustomer.phone} />}
@@ -385,10 +389,18 @@ export function SaleForm({
           </div>
         )}
 
+        {lines.length > 0 && (
+          <div className="field handover-field">
+            <label htmlFor="soldOn">Data da venda</label>
+            <input id="soldOn" type="date" max={today} value={soldOn || today} onChange={(e) => setSoldOn(e.target.value === today ? "" : e.target.value)} />
+            {soldOn && soldOn < today && <span className="muted">Venda de outro dia: entra no painel e nos relatórios em {soldOn.split("-").reverse().join("/")}.</span>}
+          </div>
+        )}
+
         {handoverReady && lines.length > 0 && (
           <div className="field handover-field">
             <label htmlFor="handoverDate">{way === "delivery" ? "Data da entrega (opcional)" : "Data da retirada (opcional)"}</label>
-            <input id="handoverDate" type="date" min={today} value={handover} onChange={(e) => setHandover(e.target.value)} />
+            <input id="handoverDate" type="date" min={soldOn || today} value={handover} onChange={(e) => setHandover(e.target.value)} />
           </div>
         )}
 
