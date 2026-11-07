@@ -1,0 +1,19 @@
+{
+  "env": {
+    "NETZOS_HOOK_URL": "https://netzos.app/core-api/hooks/systems/devsys_7827f4f3-52e1-47f6-9de5-0752c5c2d55e"
+  },
+  "hooks": {
+    "PermissionRequest": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/netzos-permissao.sh\"",
+            "timeout": 150
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -7,3 +7,6 @@ dist/
 coverage/
 *.tsbuildinfo
 next-env.d.ts
+
+# Claude Code: configuração local (token do conector do NetzOS)
+.claude/settings.local.json
