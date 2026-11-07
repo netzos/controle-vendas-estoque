@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useEffect } from "react";
 import { Field, FormMessage, SubmitButton } from "@/components/form";
 import { receivePaymentAction } from "./actions";
 
@@ -16,8 +16,11 @@ const METHODS = [
  * Receber o que falta de uma venda com pagamento parcial (ou tudo, se ficou a receber).
  * Na venda parcelada, installmentId diz qual parcela recebe primeiro; o que passar vai para as seguintes.
  */
-export function ReceivePaymentForm({ saleId, open, installmentId, hint }: { saleId: string; open: string; installmentId?: string; hint?: string }) {
+export function ReceivePaymentForm({ saleId, open, installmentId, hint, onDone }: { saleId: string; open: string; installmentId?: string; hint?: string; onDone?: () => void }) {
   const [state, action] = useActionState(receivePaymentAction, null);
+  useEffect(() => {
+    if (state?.ok) onDone?.();
+  }, [state, onDone]);
   const openLabel = Number(open).toFixed(2).replace(".", ",");
   return (
     <form action={action} className="receive-form">

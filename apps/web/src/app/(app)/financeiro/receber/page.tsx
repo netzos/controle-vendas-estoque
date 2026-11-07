@@ -4,7 +4,7 @@ import { requirePermission } from "@/lib/auth";
 import { query } from "@/lib/actions";
 import { money, whatsappLink } from "@/lib/format";
 import { Kpi } from "@/components/charts";
-import { ReceivePaymentForm } from "../../vendas/receive-form";
+import { ReceiveDialog } from "./receive-dialog";
 
 export const metadata = { title: "A receber" };
 
@@ -122,10 +122,13 @@ export default async function ReceivablesPage({ searchParams }: { searchParams: 
                     <td data-label="Situação"><span className={`tag inst-tag ${i.status}`}>{INSTALLMENT_STATUS_LABELS[i.status]}</span></td>
                     <td>
                       {canReceive && (
-                        <details className="row-action">
-                          <summary className="button secondary small">Receber</summary>
-                          <ReceivePaymentForm saleId={i.saleId} open={i.open} installmentId={i.installmentId ?? undefined} hint={i.number !== null ? "Se passar, vai para as próximas parcelas." : undefined} />
-                        </details>
+                        <ReceiveDialog
+                          saleId={i.saleId}
+                          open={i.open}
+                          installmentId={i.installmentId ?? undefined}
+                          hint={i.number !== null ? "Se passar, vai para as próximas parcelas." : undefined}
+                          title={`Receber de ${i.customerName ?? "Consumidor"} · venda nº ${i.saleNumber}${i.number !== null ? ` · parcela ${i.number}/${i.count}` : ""}`}
+                        />
                       )}
                     </td>
                   </tr>
