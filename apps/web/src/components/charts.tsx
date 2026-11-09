@@ -3,6 +3,8 @@ import { ScrollEnd } from "./scroll-end";
 // Gráficos simples em SVG, desenhados no servidor. Uma série, uma cor (tinta),
 // sem eixo duplo; o valor exato aparece ao passar o mouse e na tabela ao lado.
 
+// Uma série só: mesmo visual do gráfico de faturamento (grade, todas as datas,
+// valor em cima de cada barra), sem legenda.
 export function BarChart({
   data,
   height = 220,
@@ -14,33 +16,7 @@ export function BarChart({
   format: (v: number) => string;
   emptyText?: string;
 }) {
-  const max = Math.max(...data.map((d) => d.value), 0);
-  if (max === 0) return <p className="chart-empty">{emptyText}</p>;
-  const w = 100 / data.length;
-  const labelEvery = data.length > 16 ? Math.ceil(data.length / 8) : 1;
-  const peak = data.reduce((a, d, i) => (d.value > data[a]!.value ? i : a), 0);
-  return (
-    <figure className="bar-chart" style={{ height }}>
-      <div className="bar-plot" role="img" aria-label={`Maior valor: ${data[peak]!.label}, ${format(data[peak]!.value)}`}>
-        <span className="bar-max">{format(max)}</span>
-        {data.map((d, i) => (
-          <div key={d.label} className="bar-slot" style={{ width: `${w}%` }}>
-            <div className={`bar${i === peak ? " peak" : ""}`} style={{ height: `${Math.max((d.value / max) * 100, d.value > 0 ? 1.5 : 0)}%` }} />
-            <span className="bar-tip">
-              <strong>{d.label}</strong>
-              {format(d.value)}
-              {d.detail && <em>{d.detail}</em>}
-            </span>
-          </div>
-        ))}
-      </div>
-      <div className="bar-labels">
-        {data.map((d, i) => (
-          <span key={d.label} style={{ width: `${w}%` }}>{i % labelEvery === 0 ? d.label : ""}</span>
-        ))}
-      </div>
-    </figure>
-  );
+  return <GroupedBarChart points={data} height={height} format={format} axis={compactNumber} emptyText={emptyText} />;
 }
 
 export function RankList({
@@ -192,15 +168,21 @@ const niceStep = (v: number) => {
   const p = 10 ** Math.floor(Math.log10(raw));
   return [1, 2, 2.5, 5, 10].find((m) => m * p >= raw)! * p;
 };
-const compactMoney = (v: number) =>
+const compactNumber = (v: number) =>
   v >= 1000 ? `${(v / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} mil` : v.toLocaleString("pt-BR", { maximumFractionDigits: 0 });
+
+// Valor curto em cima da barra: "850", "2,6 mil"; com muitas barras, "2,6k".
+const barValue = (v: number, dense: boolean) =>
+  v >= 1000
+    ? `${(v / 1000).toLocaleString("pt-BR", { maximumFractionDigits: v >= 10000 ? 0 : 1 })}${dense ? "k" : " mil"}`
+    : v.toLocaleString("pt-BR", { maximumFractionDigits: 0 });
 
 export function GroupedBarChart({
   points,
   second,
   previous,
   format,
-  axis = compactMoney,
+  axis = compactNumber,
   height = 240,
   labels,
   emptyText = "Sem dados no período.",
@@ -211,7 +193,7 @@ export function GroupedBarChart({
   format: (v: number) => string;
   axis?: (v: number) => string;
   height?: number;
-  labels: { current: string; previous?: string };
+  labels?: { current: string; previous?: string };
   emptyText?: string;
 }) {
   const max = Math.max(...points.map((p) => p.value), ...(second?.values ?? []), ...(previous ?? []), 0);
@@ -223,14 +205,17 @@ export function GroupedBarChart({
   const h = (v: number) => (v > 0 ? `${Math.max((v / top) * 100, 1)}%` : "0%");
   const peak = points.reduce((a, p, i) => (p.value > points[a]!.value ? i : a), 0);
   const hasPrev = !!previous && previous.some((v) => v > 0);
+  const dense = n > 14;
   const grid = Array.from({ length: lines }, (_, i) => (lines - i) / lines);
   return (
     <figure className="gchart">
-      <div className="gchart-legend">
-        <span><i className="sq ink" /> {labels.current}</span>
-        {second && <span><i className="sq mid" /> {second.name}</span>}
-        {hasPrev && labels.previous && <span><i className="sw dash" /> {labels.previous}</span>}
-      </div>
+      {labels && (second || hasPrev) && (
+        <div className="gchart-legend">
+          <span><i className="sq ink" /> {labels.current}</span>
+          {second && <span><i className="sq mid" /> {second.name}</span>}
+          {hasPrev && labels.previous && <span><i className="sw dash" /> {labels.previous}</span>}
+        </div>
+      )}
       <div className="gchart-body">
         <div className="gchart-axis" style={{ height }}>
           {grid.map((g) => <span key={g} style={{ bottom: `${g * 100}%` }}>{axis(top * g)}</span>)}
@@ -244,6 +229,7 @@ export function GroupedBarChart({
                 const prev = previous?.[i];
                 return (
                   <div key={`${p.label}-${i}`} className="gchart-slot" tabIndex={0}>
+                    {p.value > 0 && <span className={`gchart-val${dense ? " dense" : ""}`} style={{ bottom: `${(p.value / top) * 100}%` }}>{barValue(p.value, dense)}</span>}
                     <div className="gchart-pair">
                       <div className="gbar cur" style={{ height: h(p.value) }} />
                       {second && <div className="gbar second" style={{ height: h(second.values[i] ?? 0) }} />}
@@ -251,7 +237,7 @@ export function GroupedBarChart({
                     {hasPrev && prev !== undefined && prev > 0 && <span className="prev-mark" style={{ bottom: `${(prev / top) * 100}%` }} />}
                     <span className={`gchart-tip${i < 2 ? " left" : i > n - 3 ? " right" : ""}`}>
                       <strong>{p.sub ? `${p.sub}, ${p.label}` : p.label}</strong>
-                      <span><i className="sq ink" /> {format(p.value)}</span>
+                      <span>{second && <i className="sq ink" />} {format(p.value)}</span>
                       {second && <span><i className="sq mid" /> {format(second.values[i] ?? 0)}</span>}
                       {prev !== undefined && <em>Antes: {format(prev)}</em>}
                       {p.detail && <em>{p.detail}</em>}

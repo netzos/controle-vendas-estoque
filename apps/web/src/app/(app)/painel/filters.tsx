@@ -4,7 +4,7 @@ import type { Actor } from "@erp/core";
 import { query } from "@/lib/actions";
 import { PeriodPicker } from "@/components/period-picker";
 
-// Filtros do Painel ficam no endereço (?periodo=&de=&ate=&filial=&vendedor=),
+// Padrão: últimos 7 dias. Filtros do Painel ficam no endereço (?periodo=&de=&ate=&filial=&vendedor=),
 // então o link guarda o recorte e as sub-abas levam o mesmo recorte junto.
 
 export type PanelParams = { periodo?: string; de?: string; ate?: string; filial?: string; vendedor?: string; agrupar?: string };
@@ -32,7 +32,7 @@ const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
 export function parseFilters(p: PanelParams): InsightFilters {
   const custom = p.de && p.ate && DAY.test(p.de) && DAY.test(p.ate);
-  const period = custom ? "custom" : (INSIGHT_PERIODS as readonly string[]).includes(p.periodo ?? "") && p.periodo !== "custom" ? (p.periodo as InsightPeriod) : "30d";
+  const period = custom ? "custom" : (INSIGHT_PERIODS as readonly string[]).includes(p.periodo ?? "") && p.periodo !== "custom" ? (p.periodo as InsightPeriod) : "7d";
   return {
     period,
     from: custom ? p.de : undefined,
@@ -76,10 +76,10 @@ export async function PanelHeader({
 }) {
   const branches = can(actor, "branches.view") ? await query(listBranches, {}) : [];
   // Período atual (sem as datas) e filtros, para montar cada link.
-  const periodo = filters.period === "custom" ? undefined : filters.period === "30d" ? undefined : filters.period;
+  const periodo = filters.period === "custom" ? undefined : filters.period === "7d" ? undefined : filters.period;
   const dates = filters.period === "custom" ? { de: range.from, ate: range.to } : {};
   const keep = { filial: params.filial, vendedor: params.vendedor };
-  const links = Object.fromEntries(PERIODS.map((p) => [p.key, panelLink(path, keep, { periodo: p.key === "30d" ? undefined : p.key })]));
+  const links = Object.fromEntries(PERIODS.map((p) => [p.key, panelLink(path, keep, { periodo: p.key === "7d" ? undefined : p.key })]));
   const current = { periodo, ...dates, ...keep };
   const label = filters.period === "custom" ? "Período escolhido" : PERIODS.find((p) => p.key === filters.period)?.label ?? "Período";
   const showSellers = sellers && sellers.length > 1;
