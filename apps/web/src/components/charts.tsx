@@ -1,3 +1,5 @@
+import { ScrollEnd } from "./scroll-end";
+
 // Gráficos simples em SVG, desenhados no servidor. Uma série, uma cor (tinta),
 // sem eixo duplo; o valor exato aparece ao passar o mouse e na tabela ao lado.
 
@@ -181,66 +183,93 @@ export function LineChart({
 }
 
 // Uma barra por dia (ou hora/semana/mês): faturamento em tinta e lucro em cinza,
-// lado a lado. O período anterior aparece como um risco tracejado na altura do
-// faturamento de antes. Lucro negativo não desenha barra, mas aparece na dica.
+// lado a lado, com linhas de grade e todas as datas embaixo. Com muitas barras o
+// gráfico rola para o lado (abre no fim, nos dias mais recentes). O período
+// anterior aparece como um risco tracejado. Lucro negativo não desenha barra.
+// Passo redondo das linhas de grade (1, 2, 2,5 ou 5 × 10ⁿ), com até 5 linhas.
+const niceStep = (v: number) => {
+  const raw = v / 4;
+  const p = 10 ** Math.floor(Math.log10(raw));
+  return [1, 2, 2.5, 5, 10].find((m) => m * p >= raw)! * p;
+};
+const compactMoney = (v: number) =>
+  v >= 1000 ? `${(v / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} mil` : v.toLocaleString("pt-BR", { maximumFractionDigits: 0 });
+
 export function GroupedBarChart({
   points,
   second,
   previous,
   format,
-  height = 220,
+  axis = compactMoney,
+  height = 240,
   labels,
   emptyText = "Sem dados no período.",
 }: {
-  points: { label: string; value: number; detail?: string }[];
+  points: { label: string; value: number; detail?: string; sub?: string }[];
   second?: { name: string; values: number[] };
   previous?: number[];
   format: (v: number) => string;
+  axis?: (v: number) => string;
   height?: number;
   labels: { current: string; previous?: string };
   emptyText?: string;
 }) {
   const max = Math.max(...points.map((p) => p.value), ...(second?.values ?? []), ...(previous ?? []), 0);
   if (max === 0) return <p className="chart-empty">{emptyText}</p>;
+  const step = niceStep(max);
+  const lines = Math.ceil(max / step);
+  const top = step * lines;
   const n = points.length;
-  const w = 100 / n;
-  const h = (v: number) => (v > 0 ? `${Math.max((v / max) * 100, 1.5)}%` : "0%");
-  const labelEvery = Math.max(1, Math.ceil(n / 8));
+  const h = (v: number) => (v > 0 ? `${Math.max((v / top) * 100, 1)}%` : "0%");
   const peak = points.reduce((a, p, i) => (p.value > points[a]!.value ? i : a), 0);
   const hasPrev = !!previous && previous.some((v) => v > 0);
+  const grid = Array.from({ length: lines }, (_, i) => (lines - i) / lines);
   return (
-    <figure className="bar-chart group-chart" style={{ height: height + 60 }}>
-      <div className="line-legend">
+    <figure className="gchart">
+      <div className="gchart-legend">
         <span><i className="sq ink" /> {labels.current}</span>
         {second && <span><i className="sq mid" /> {second.name}</span>}
         {hasPrev && labels.previous && <span><i className="sw dash" /> {labels.previous}</span>}
       </div>
-      <div className="bar-plot" role="img" aria-label={`Maior valor: ${points[peak]!.label}, ${format(points[peak]!.value)}`}>
-        <span className="bar-max">{format(max)}</span>
-        {points.map((p, i) => {
-          const prev = previous?.[i];
-          return (
-            <div key={`${p.label}-${i}`} className={`bar-slot${n > 20 ? " dense" : ""}`} style={{ width: `${w}%` }}>
-              <div className="bar-pair">
-                <div className="gbar cur" style={{ height: h(p.value) }} />
-                {second && <div className="gbar second" style={{ height: h(second.values[i] ?? 0) }} />}
-              </div>
-              {hasPrev && prev !== undefined && prev > 0 && <span className="prev-mark" style={{ bottom: `${(prev / max) * 100}%` }} />}
-              <span className="bar-tip">
-                <strong>{p.label}</strong>
-                {format(p.value)}
-                {second && <em>{second.name}: {format(second.values[i] ?? 0)}</em>}
-                {prev !== undefined && <em>Antes: {format(prev)}</em>}
-                {p.detail && <em>{p.detail}</em>}
-              </span>
+      <div className="gchart-body">
+        <div className="gchart-axis" style={{ height }}>
+          {grid.map((g) => <span key={g} style={{ bottom: `${g * 100}%` }}>{axis(top * g)}</span>)}
+          <span style={{ bottom: 0 }}>0</span>
+        </div>
+        <ScrollEnd className="gchart-scroll">
+          <div className="gchart-inner" style={{ minWidth: `${n * 32}px` }}>
+            <div className="gchart-plot" style={{ height }} role="img" aria-label={`Maior valor: ${points[peak]!.label}, ${format(points[peak]!.value)}`}>
+              {grid.map((g) => <i key={g} className="gchart-grid" style={{ bottom: `${g * 100}%` }} />)}
+              {points.map((p, i) => {
+                const prev = previous?.[i];
+                return (
+                  <div key={`${p.label}-${i}`} className="gchart-slot" tabIndex={0}>
+                    <div className="gchart-pair">
+                      <div className="gbar cur" style={{ height: h(p.value) }} />
+                      {second && <div className="gbar second" style={{ height: h(second.values[i] ?? 0) }} />}
+                    </div>
+                    {hasPrev && prev !== undefined && prev > 0 && <span className="prev-mark" style={{ bottom: `${(prev / top) * 100}%` }} />}
+                    <span className={`gchart-tip${i < 2 ? " left" : i > n - 3 ? " right" : ""}`}>
+                      <strong>{p.sub ? `${p.sub}, ${p.label}` : p.label}</strong>
+                      <span><i className="sq ink" /> {format(p.value)}</span>
+                      {second && <span><i className="sq mid" /> {format(second.values[i] ?? 0)}</span>}
+                      {prev !== undefined && <em>Antes: {format(prev)}</em>}
+                      {p.detail && <em>{p.detail}</em>}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
-          );
-        })}
-      </div>
-      <div className="bar-labels">
-        {points.map((p, i) => (
-          <span key={`${p.label}-${i}`} style={{ width: `${w}%` }}>{i % labelEvery === 0 ? p.label : ""}</span>
-        ))}
+            <div className="gchart-labels">
+              {points.map((p, i) => (
+                <span key={`${p.label}-${i}`}>
+                  {p.label}
+                  {p.sub && <small>{p.sub}</small>}
+                </span>
+              ))}
+            </div>
+          </div>
+        </ScrollEnd>
       </div>
     </figure>
   );

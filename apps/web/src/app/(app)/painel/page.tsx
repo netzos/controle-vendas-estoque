@@ -5,7 +5,14 @@ import { query } from "@/lib/actions";
 import { db } from "@/lib/db";
 import { money, quantity } from "@/lib/format";
 import { GroupedBarChart, Kpi } from "@/components/charts";
-import { PanelHeader, panelLink, parseFilters, previousLabel, type PanelParams } from "./filters";
+import { PanelHeader, panelLink, parseFilters, previousLabel, WEEKDAYS_SHORT, type PanelParams } from "./filters";
+
+const GROUPS = [
+  { key: "dia", step: "day", label: "Dia" },
+  { key: "semana", step: "week", label: "Semana" },
+  { key: "mes", step: "month", label: "Mês" },
+] as const;
+const MONTHS = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
 
 export const metadata = { title: "Painel" };
 
@@ -50,11 +57,23 @@ export default async function PanelOverview({ searchParams }: { searchParams: Pr
 
       <section className="card">
         <div className="card-head">
-          <h2>Faturamento e lucro {o.step === "hour" ? "por hora" : o.step === "day" ? "por dia" : o.step === "week" ? "por semana" : "por mês"}</h2>
-          <span className="muted">{money(c.revenue)}</span>
+          <div>
+            <h2>Faturamento e lucro {o.step === "hour" ? "por hora" : o.step === "day" ? "por dia" : o.step === "week" ? "por semana" : "por mês"}</h2>
+            <span className="muted">{money(c.revenue)} no período</span>
+          </div>
+          <nav className="segmented" aria-label="Agrupar por">
+            {GROUPS.map((g) => (
+              <Link key={g.key} href={panelLink("/painel", params, { agrupar: g.key })} className={o.step === g.step ? "active" : ""} scroll={false}>{g.label}</Link>
+            ))}
+          </nav>
         </div>
         <GroupedBarChart
-          points={o.series.map((s) => ({ label: s.label, value: n(s.revenue), detail: `${s.count} ${s.count === 1 ? "venda" : "vendas"}` }))}
+          points={o.series.map((s) => ({
+            label: o.step === "month" ? `${MONTHS[Number(s.key.slice(5, 7)) - 1]}/${s.key.slice(2, 4)}` : s.label,
+            sub: o.step === "day" ? WEEKDAYS_SHORT[new Date(`${s.key}T12:00:00Z`).getUTCDay()] : undefined,
+            value: n(s.revenue),
+            detail: `${s.count} ${s.count === 1 ? "venda" : "vendas"}`,
+          }))}
           second={{ name: "Lucro bruto", values: o.series.map((s) => n(s.profit)) }}
           previous={o.previousSeries.map((s) => n(s.revenue))}
           labels={{ current: "Faturamento", previous: `Faturamento de ${previousLabel(o.range)}` }}
