@@ -1145,10 +1145,13 @@ td small.unit { display: inline; font-size: 12.5px; }
 .gchart .sq.mid { background: #b9c0cc; }
 .gchart .sw.dash { display: inline-block; width: 18px; height: 0; border-top: 1.5px dashed var(--faint); vertical-align: middle; margin-right: 4px; }
 .gchart-body { display: flex; gap: 8px; }
-.gchart-axis { position: relative; flex: none; width: 46px; }
+.gchart-axis { position: relative; flex: none; width: 46px; margin-top: 20px; }
 .gchart-axis span { position: absolute; right: 0; transform: translateY(50%); font-size: 11px; color: var(--faint); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .gchart-scroll { flex: 1; min-width: 0; overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; padding-bottom: 4px; }
+.gchart-inner { padding-top: 20px; }
 .gchart-plot { position: relative; display: flex; align-items: flex-end; border-bottom: 1px solid var(--border); }
+.gchart-val { position: absolute; left: 0; right: 0; margin-bottom: 4px; text-align: center; font-size: 11.5px; font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; white-space: nowrap; pointer-events: none; letter-spacing: -.01em; }
+.gchart-val.dense { font-size: 10px; letter-spacing: -.03em; }
 .gchart-grid { position: absolute; left: 0; right: 0; height: 0; border-top: 1px dashed rgba(15, 17, 21, .08); pointer-events: none; }
 .gchart-slot { position: relative; flex: 1; height: 100%; display: flex; align-items: flex-end; justify-content: center; padding: 0 2px; border-radius: 10px 10px 0 0; outline: none; transition: background .12s; }
 .gchart-slot:hover, .gchart-slot:focus { background: rgba(15, 17, 21, .045); }
