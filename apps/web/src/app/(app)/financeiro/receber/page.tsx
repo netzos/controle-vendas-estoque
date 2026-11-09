@@ -109,6 +109,11 @@ export default async function ReceivablesPage({ searchParams }: { searchParams: 
                     <td data-label="Vencimento">
                       {i.dueDate ? day(i.dueDate) : <span className="muted">sem data</span>}
                       {i.daysLate > 0 && <small className="warn-text">{i.daysLate} {i.daysLate === 1 ? "dia" : "dias"} de atraso</small>}
+                      {/* Ainda não venceu: diz quando vence, para não parecer atrasada. */}
+                      {i.dueDate && i.daysLate === 0 && (() => {
+                        const days = Math.round((Date.parse(i.dueDate) - Date.parse(r.today)) / 86400000);
+                        return <small className="muted">{days === 0 ? "vence hoje" : days === 1 ? "vence amanhã" : `vence em ${days} dias`}</small>;
+                      })()}
                     </td>
                     <td data-label="Cliente">{i.customerName ?? <span className="muted">Consumidor</span>}</td>
                     <td data-label="Venda">

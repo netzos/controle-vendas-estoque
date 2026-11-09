@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { Icon } from "@/components/icons";
 import { LogoMark } from "@/components/logo";
-import { NetsMessages, RecordingBar, useNetsConversation } from "@/components/nets-chat";
+import { AttachButton, NetsMessages, RecordingBar, useNetsConversation } from "@/components/nets-chat";
 
 const SUGGESTIONS = ["Quanto vendi hoje?", "O que está com estoque baixo?", "Quem está me devendo?"];
 
@@ -98,6 +98,7 @@ export function NetsScreen({ firstName }: { firstName: string }) {
             void send();
           }}
         >
+          <AttachButton chat={chat} className="netz-attach-btn" size={22} />
           <textarea
             ref={field}
             value={draft}

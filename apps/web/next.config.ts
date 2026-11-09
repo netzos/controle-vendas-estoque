@@ -4,8 +4,8 @@ const config: NextConfig = {
   transpilePackages: ["@erp/core", "@erp/db"],
   serverExternalPackages: ["pg"],
   poweredByHeader: false,
-  // Fotos chegam já reduzidas no navegador; 3 MB dá folga para PNG.
-  experimental: { serverActions: { bodySizeLimit: "3mb" } },
+  // Fotos chegam já reduzidas no navegador; 5 MB cabe o PDF de comprovante (até 4 MB).
+  experimental: { serverActions: { bodySizeLimit: "5mb" } },
   async headers() {
     return [
       {

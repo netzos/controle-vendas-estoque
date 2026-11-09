@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { can, enabledFeatures, listProducts, resolveRange, summarizeSales, type PaymentMethod, FULFILLMENTS, INSTALLMENT_STATUS_LABELS, INTERVAL_LABELS, PAYMENT_STATUS_LABELS, getOrganization, getSale, getSaleFollowup, listBranches, listSales, listStepTypes, orgDate, PAYMENT_LABELS, PAYMENT_LATER_LABEL, handoverDateReady, isPaymentLater } from "@erp/core";
+import { can, enabledFeatures, listProducts, resolveRange, summarizeSales, type PaymentMethod, FULFILLMENTS, INSTALLMENT_STATUS_LABELS, INTERVAL_LABELS, PAYMENT_STATUS_LABELS, getOrganization, getSale, getSaleFollowup, listBranches, listSales, listStepTypes, orgDate, PAYMENT_LABELS, PAYMENT_LATER_LABEL, handoverDateReady, isPaymentLater, listSaleAttachments } from "@erp/core";
 import { requirePermission } from "@/lib/auth";
 import { query } from "@/lib/actions";
 import { db } from "@/lib/db";
@@ -13,6 +13,7 @@ import { AddStepsForm, StepRow } from "../entregas/steps";
 import { DeliverForm } from "./deliver-form";
 import { PeriodPicker } from "@/components/period-picker";
 import { receiptLink } from "@/lib/receipt";
+import { SaleReceipts } from "./receipts";
 
 type ListParams = { q?: string; receber?: string; situacao?: string; filial?: string; periodo?: string; de?: string; ate?: string; forma?: string };
 
@@ -91,6 +92,10 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
     ? await Promise.all([query(getSaleFollowup, { saleId: selected.id }), query(listStepTypes, {})])
     : [null, []];
   const canSteps = can(actor, "deliveries.manage");
+  // Comprovantes (foto ou PDF) da venda, com a conferência automática.
+  const seesReceipts = !!selected && features.has("attachments");
+  const receipts = seesReceipts ? await query(listSaleAttachments, { saleId: selected.id }).catch(() => []) : [];
+  const receiptsByInstallment = new Set(receipts.map((r) => r.installmentId).filter(Boolean));
   // Corrigir itens: venda concluída e ainda não paga por inteiro (melhoria 17).
   const canEdit = !!selected && selected.status === "completed" && can(actor, "sales.create") && !actor.platformView &&
     !(selected.paymentStatus === "paid" && Number(selected.paidTotal) > 0);
@@ -219,7 +224,7 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
                         <td data-label="Parcela">{i.number}/{selected.installments.length}</td>
                         <td data-label="Vencimento">{day(i.dueDate)}</td>
                         <td data-label="Valor" className="num">{money(i.amount)}</td>
-                        <td data-label="Pago" className="num">{Number(i.paidAmount) > 0 ? money(i.paidAmount) : "—"}{i.paidOn && <small className="muted">em {day(i.paidOn)}</small>}</td>
+                        <td data-label="Pago" className="num">{Number(i.paidAmount) > 0 ? money(i.paidAmount) : "—"}{i.paidOn && <small className="muted">em {day(i.paidOn)}</small>}{receiptsByInstallment.has(i.id) && <small className="muted">com comprovante</small>}</td>
                         <td data-label="Situação"><span className={`tag inst-tag ${i.status}`}>{INSTALLMENT_STATUS_LABELS[i.status]}</span></td>
                       </tr>
                     ))}
@@ -259,6 +264,23 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
                   />
                 )}
               </div>
+            );
+          })()}
+          {seesReceipts && selected.status === "completed" && (() => {
+            // Parcela sugerida: a última paga (o comprovante costuma ser dela) ou, sem nenhuma paga, a próxima em aberto.
+            const paid = [...selected.installments].filter((i) => i.paidOn).sort((a, b) => (a.paidOn! < b.paidOn! ? 1 : -1))[0];
+            const next = selected.installments.find((i) => i.status !== "paid" && i.status !== "cancelled");
+            return (
+              <SaleReceipts
+                saleId={selected.id}
+                attachments={receipts}
+                installments={selected.installments.filter((i) => i.status !== "cancelled").map((i) => ({
+                  id: i.id,
+                  label: `Parcela ${i.number}/${selected.installments.length} · ${day(i.dueDate)} · ${money(i.amount)}`,
+                }))}
+                defaultInstallment={(paid ?? next)?.id}
+                canManage={can(actor, "sales.receive") && !actor.platformView}
+              />
             );
           })()}
           {followup && (

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Icon } from "./icons";
+import { shrinkPhoto } from "@/lib/photo";
 
 // Conversa com a Netz: a mesma lógica serve o balão (computador e telas do
 // painel) e a tela cheia do celular (/netz), que abre primeiro no app.
@@ -16,6 +17,8 @@ export type NetsMessage = {
   action: { title: string; service: string } | null;
   actionStatus: "pending" | "running" | "done" | "failed" | "cancelled" | "expired" | null;
   actionResult: string | null;
+  attachmentId?: string | null;
+  attachmentType?: string | null;
 };
 
 const ACTION_LABEL: Record<string, string> = {
@@ -296,7 +299,7 @@ export function useNetsConversation(active: boolean) {
       if (audio && data.id) rememberAudio(data.id, audio.blob);
       // Aparece na hora, sem esperar a próxima leitura da conversa.
       if (data.id) {
-        const mine: NetsMessage = { id: data.id, role: "user", body: text, context, status: "queued", action: null, actionStatus: null, actionResult: null };
+        const mine: NetsMessage = { id: data.id, role: "user", body: text, context, status: "queued", action: null, actionStatus: null, actionResult: null, attachmentId: null, attachmentType: null };
         setMessages((ms) => (ms.some((m) => m.id === data.id) ? ms : [...ms, mine]));
         setPending(true);
       }
@@ -305,6 +308,37 @@ export function useNetsConversation(active: boolean) {
       setTick((v) => v + 1);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Falha ao enviar. Tente de novo.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Comprovante (foto ou PDF): a foto é reduzida aqui antes de subir; o texto digitado vai junto.
+  const sendFile = async (file: File) => {
+    if (busy || pending) return;
+    setBusy(true);
+    setError("");
+    try {
+      const isPdf = file.type === "application/pdf" || /\.pdf$/i.test(file.name);
+      const body = new FormData();
+      body.set("file", isPdf ? file : (await shrinkPhoto(file)).blob);
+      body.set("name", file.name);
+      body.set("text", draftRef.current.trim());
+      body.set("context", where());
+      body.set("requestId", crypto.randomUUID());
+      const res = await fetch("/api/nets/anexo", { method: "POST", body });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Falha ao enviar o arquivo.");
+      if (data.id) {
+        const text = draftRef.current.trim() || (isPdf ? "Mandei um PDF de comprovante." : "Mandei uma foto de comprovante.");
+        const mine: NetsMessage = { id: data.id, role: "user", body: text, context: where(), status: "queued", action: null, actionStatus: null, actionResult: null, attachmentId: data.attachmentId, attachmentType: data.attachmentType };
+        setMessages((ms) => (ms.some((m) => m.id === data.id) ? ms : [...ms, mine]));
+        setPending(true);
+      }
+      setDraft("");
+      setTick((v) => v + 1);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Não foi possível ler este arquivo. Tente outro.");
     } finally {
       setBusy(false);
     }
@@ -329,7 +363,7 @@ export function useNetsConversation(active: boolean) {
     (message) => setError(message),
   );
 
-  return { messages, loaded, pending, draft, setDraft, busy, error, setError, send, decide, voice };
+  return { messages, loaded, pending, draft, setDraft, busy, error, setError, send, sendFile, decide, voice };
 }
 
 export type NetsConversation = ReturnType<typeof useNetsConversation>;
@@ -360,7 +394,10 @@ export function NetsMessages({ chat, listRef, intro, initials }: { chat: NetsCon
           {m.role === "user" && spokenLength(m.context) !== null ? (
             <VoiceBubble id={m.id} seconds={spokenLength(m.context)!} transcript={m.body} initials={initials} />
           ) : (
-            <div className="nets-bubble-text"><Rich text={m.body} /></div>
+            <>
+              {m.attachmentId && <AttachmentPreview id={m.attachmentId} type={m.attachmentType ?? null} />}
+              <div className="nets-bubble-text"><Rich text={m.body} /></div>
+            </>
           )}
           {m.action && (
             <div className={`nets-action ${m.actionStatus}`}>
@@ -384,6 +421,51 @@ export function NetsMessages({ chat, listRef, intro, initials }: { chat: NetsCon
       )}
       {pending && <div className="nets-msg assistant"><div className="nets-bubble-text nets-typing" aria-label="A Netz está respondendo"><i /><i /><i /></div></div>}
     </div>
+  );
+}
+
+/** Miniatura do comprovante na conversa; toca para abrir em tamanho real. */
+function AttachmentPreview({ id, type }: { id: string; type: string | null }) {
+  const pdf = type === "application/pdf";
+  return (
+    <a className={`nets-file${pdf ? " pdf" : ""}`} href={`/anexos/${id}`} target="_blank" rel="noreferrer">
+      {pdf ? (
+        <><Icon name="clip" size={16} /> Comprovante em PDF</>
+      ) : (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={`/anexos/${id}`} alt="Comprovante enviado" loading="lazy" />
+      )}
+    </a>
+  );
+}
+
+/** Botão de clipe: escolhe foto (ou tira na hora, no celular) ou PDF do comprovante. */
+export function AttachButton({ chat, className, size = 18 }: { chat: NetsConversation; className?: string; size?: number }) {
+  const input = useRef<HTMLInputElement>(null);
+  return (
+    <>
+      <button
+        type="button"
+        className={className ?? "nets-icon-btn"}
+        aria-label="Anexar comprovante (foto ou PDF)"
+        title="Anexar comprovante (foto ou PDF)"
+        disabled={chat.busy || chat.pending || chat.voice.state !== "idle"}
+        onClick={() => input.current?.click()}
+      >
+        <Icon name="clip" size={size} />
+      </button>
+      <input
+        ref={input}
+        type="file"
+        accept="image/jpeg,image/png,image/webp,image/heic,application/pdf"
+        hidden
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          e.target.value = "";
+          if (f) void chat.sendFile(f);
+        }}
+      />
+    </>
   );
 }
 

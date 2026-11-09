@@ -6,6 +6,7 @@ import { z } from "zod";
 import { can, resolveActor, type Actor, type Channel } from "../../context.ts";
 import { AppError, forbidden, parseInput } from "../../errors.ts";
 import { runService } from "../../service.ts";
+import { runAttachmentChecks } from "../sales/attachment-check.ts";
 import { agentComplementImprovement, agentCreateImprovement, agentListImprovements } from "../improvements/service.ts";
 import { cleanReply } from "./clean.ts";
 import { currentNetsManual } from "./guidance.ts";
@@ -26,6 +27,15 @@ export const NETS_DAILY_LIMIT = 200;
 const MAX_STEPS = 12;
 const RESULT_LIMIT = 8000;
 const HISTORY = 30;
+// Quantas mensagens recentes levam o arquivo do comprovante junto (as mais antigas levam só a marca [Anexo: ...]).
+const RECENT_FILES = 6;
+
+function fileBlock(f: { contentType: string; data: Buffer }): Anthropic.Beta.BetaContentBlockParam {
+  const data = f.data.toString("base64");
+  return f.contentType === "application/pdf"
+    ? { type: "document", source: { type: "base64", media_type: "application/pdf", data } }
+    : { type: "image", source: { type: "base64", media_type: f.contentType as "image/jpeg" | "image/png" | "image/webp", data } };
+}
 
 export type NetsActionStatus = "pending" | "running" | "done" | "failed" | "cancelled" | "expired";
 
@@ -49,6 +59,9 @@ export interface NetsMessage {
   action: Pick<NetsAction, "title" | "service"> | null;
   actionStatus: NetsActionStatus | null;
   actionResult: string | null;
+  /** Comprovante (foto ou PDF) que veio com a mensagem. */
+  attachmentId: string | null;
+  attachmentType: string | null;
   createdAt: Date;
 }
 
@@ -71,7 +84,10 @@ export const defaultNetsModel: NetsModel = (req) => {
   return client.beta.messages.create({ ...req, betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" });
 };
 
-const COLUMNS = `id, role, body, context, status, action, action_status AS "actionStatus", action_result AS "actionResult", created_at AS "createdAt"`;
+const COLUMNS = `id, role, body, context, status, action, action_status AS "actionStatus", action_result AS "actionResult",
+  attachment_id AS "attachmentId",
+  (SELECT a.content_type FROM controle_vendas_estoque.sale_attachments a WHERE a.id = attachment_id) AS "attachmentType",
+  created_at AS "createdAt"`;
 
 function asUser<T>(db: Db, actor: Pick<Actor, "organizationId" | "userId">, fn: (tx: Tx) => Promise<T>) {
   return withTenant(db, { organizationId: actor.organizationId, userId: actor.userId }, fn);
@@ -105,6 +121,7 @@ const postInput = z.object({
   requestId: z.string().uuid(),
   text: z.string().trim().min(1, "Escreva a mensagem.").max(12000, "Use até 12.000 caracteres."),
   context: z.string().trim().max(200).nullable().optional(),
+  attachmentId: z.string().uuid().nullable().optional(),
 });
 
 /** Guarda a mensagem da pessoa. queued: true quando a Netz ainda vai responder. */
@@ -137,9 +154,9 @@ export async function postNetsMessage(db: Db, actor: Actor, raw: z.input<typeof 
     );
     const enabled = netsConfigured();
     const { rows } = await tx.query<{ id: string }>(
-      `INSERT INTO controle_vendas_estoque.nets_messages (organization_id, user_id, role, body, context, channel, status, request_id)
-       VALUES ($1, $2, 'user', $3, $4, $5, $6, $7) RETURNING id`,
-      [actor.organizationId, actor.userId, input.text, input.context ?? null, channelOf(actor.channel), enabled ? "queued" : "done", input.requestId],
+      `INSERT INTO controle_vendas_estoque.nets_messages (organization_id, user_id, role, body, context, channel, status, request_id, attachment_id)
+       VALUES ($1, $2, 'user', $3, $4, $5, $6, $7, $8) RETURNING id`,
+      [actor.organizationId, actor.userId, input.text, input.context ?? null, channelOf(actor.channel), enabled ? "queued" : "done", input.requestId, input.attachmentId ?? null],
     );
     if (!enabled) {
       await insertReply(tx, actor, "Ainda não estou ligada nesta instalação: falta cadastrar a chave da Anthropic (ANTHROPIC_API_KEY) na Vercel. Assim que ela entrar, eu respondo por aqui.");
@@ -214,6 +231,27 @@ export async function decideNetsAction(db: Db, actor: Actor, raw: z.input<typeof
   return { status, queued };
 }
 
+/** Confere o comprovante recém-ligado e devolve uma frase com o resultado. */
+async function checkLinkedAttachment(db: Db, owner: { organizationId: string; userId: string }, id: string, model?: NetsModel): Promise<string> {
+  if (!/^[0-9a-f-]{36}$/i.test(id)) return "";
+  try {
+    await runAttachmentChecks(db, owner, { ids: [id], model });
+    const { rows } = await asUser(db, owner, (tx) =>
+      tx.query<{ status: string | null; note: string | null }>(
+        "SELECT check_status AS status, check_note AS note FROM controle_vendas_estoque.sale_attachments WHERE id = $1",
+        [id],
+      ),
+    );
+    const r = rows[0];
+    if (!r?.status || r.status === "pending") return "";
+    const head = r.status === "match" ? "Conferi o comprovante: bate com a venda." : r.status === "mismatch" ? "Atenção: o comprovante não bate com a venda." : r.status === "unreadable" ? "Não consegui ler o comprovante direito." : "";
+    return [head, r.note].filter(Boolean).join(" ");
+  } catch (err) {
+    console.error("attachment check after link failed", err instanceof Error ? err.message : err);
+    return "";
+  }
+}
+
 // Turno da Netz ------------------------------------------------------------------
 
 const STATUS_NOTE: Record<NetsActionStatus, string> = {
@@ -228,7 +266,12 @@ const STATUS_NOTE: Record<NetsActionStatus, string> = {
 // A hora vai em cada mensagem (e não no topo) para o histórico não mudar de
 // um minuto para o outro: assim a conversa já enviada sai do cache, bem mais barata.
 function historyText(r: Row, clock: Intl.DateTimeFormat): string {
-  if (r.role === "user") return `[${clock.format(r.createdAt)}] ${r.context ? `[Tela: ${r.context}]\n` : ""}${r.body}`;
+  if (r.role === "user") {
+    const file = r.attachmentId
+      ? `\n[Anexo: comprovante ${r.attachmentId} (${r.attachmentType === "application/pdf" ? "PDF" : "foto"})]`
+      : "";
+    return `[${clock.format(r.createdAt)}] ${r.context ? `[Tela: ${r.context}]\n` : ""}${r.body}${file}`;
+  }
   if (!r.action) return r.body;
   const result = r.actionResult ? `; resultado: ${clip(r.actionResult, 600)}` : "";
   return `${r.body}\n\n[Ação proposta: ${r.action.title} — ${STATUS_NOTE[r.actionStatus ?? "expired"]}${result}]`;
@@ -423,13 +466,18 @@ export async function processNetsTurn(
     await finish("Você não tem permissão para conversar com a Netz. Peça a quem administra a empresa.");
     return;
   }
+  // Comprovante ligado à venda: confere na hora e já conta o resultado.
+  let checked = "";
+  if (trigger.role === "assistant" && trigger.action?.service === "sales.attachments.link" && trigger.actionStatus === "done") {
+    checked = await checkLinkedAttachment(db, owner, String(trigger.action.input.attachmentId ?? ""), deps.model);
+  }
   if (trigger.role === "assistant" && trigger.action && trigger.actionStatus === "done" && !trigger.action.next) {
-    await finish(confirmationText(trigger.action, trigger.actionResult));
+    await finish([confirmationText(trigger.action, trigger.actionResult), checked].filter(Boolean).join("\n\n"));
     return;
   }
 
   try {
-    const { history, system, timezone } = await asUser(db, owner, async (tx) => {
+    const { history, system, timezone, files } = await asUser(db, owner, async (tx) => {
       const { rows } = await tx.query<Row>(
         `SELECT ${COLUMNS} FROM controle_vendas_estoque.nets_messages
           WHERE organization_id = $1 AND user_id = $2 AND created_at <= (SELECT created_at FROM controle_vendas_estoque.nets_messages WHERE id = $3)
@@ -438,20 +486,29 @@ export async function processNetsTurn(
       );
       const prompt = await systemPrompt(tx, actor);
       await tx.query("UPDATE controle_vendas_estoque.nets_messages SET guidance_version = $2 WHERE id = $1", [trigger.id, prompt.version]);
-      return { history: rows.reverse(), system: prompt.blocks, timezone: prompt.timezone };
+      // Comprovantes das mensagens mais recentes vão como imagem/PDF: a Netz lê e confere.
+      const ids = rows.slice(0, RECENT_FILES).map((r) => r.attachmentId).filter((id): id is string => !!id);
+      const files = ids.length
+        ? (await tx.query<{ id: string; contentType: string; data: Buffer }>(
+            `SELECT id, content_type AS "contentType", data FROM controle_vendas_estoque.sale_attachments WHERE id = ANY($1)`,
+            [ids],
+          )).rows
+        : [];
+      return { history: rows.reverse(), system: prompt.blocks, timezone: prompt.timezone, files: new Map(files.map((f) => [f.id, f])) };
     });
     const clock = new Intl.DateTimeFormat("pt-BR", { timeZone: timezone, day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
     const messages: Anthropic.Beta.BetaMessageParam[] = [];
     for (const r of history) {
       if (messages.length === 0 && r.role !== "user") continue;
-      messages.push({ role: r.role, content: historyText(r, clock) });
+      const file = r.role === "user" && r.attachmentId ? files.get(r.attachmentId) : undefined;
+      messages.push({ role: r.role, content: file ? [fileBlock(file), { type: "text", text: historyText(r, clock) }] : historyText(r, clock) });
     }
     if (trigger.role === "assistant") {
       const ok = trigger.actionStatus === "done";
       messages.push({
         role: "user",
         content: ok
-          ? "[sistema] A pessoa confirmou a ação acima e ela foi executada (veja o resultado). Diga em poucas palavras o que foi feito e, se o pedido tinha mais passos, siga para o próximo."
+          ? `[sistema] A pessoa confirmou a ação acima e ela foi executada (veja o resultado). Diga em poucas palavras o que foi feito e, se o pedido tinha mais passos, siga para o próximo.${checked ? `\n[sistema] Conferência do comprovante: ${checked}` : ""}`
           : "[sistema] A pessoa confirmou a ação acima, mas ela deu erro (veja o resultado). Explique em palavras simples e, se der, proponha a correção.",
       });
     }

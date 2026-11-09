@@ -14,6 +14,7 @@ import * as supplierProducts from "../catalog/supplier-products.ts";
 import * as costs from "../costs/costs.ts";
 import * as commissions from "../commissions/commissions.ts";
 import * as organizations from "../organizations/service.ts";
+import * as attachments from "../sales/attachments.ts";
 import * as followups from "../sales/followups.ts";
 import * as insights from "../sales/insights.ts";
 import * as sales from "../sales/sales.ts";
@@ -34,6 +35,12 @@ const EXCLUDED = new Set([
   "products.images.get",
   "customers.photo.set",
   "customers.photo.get",
+  // Comprovantes: arquivo só pelo painel; a Netz liga à venda o que a pessoa mandou (sales.attachments.link).
+  "sales.attachments.get",
+  "sales.attachments.add",
+  "sales.attachments.stash",
+  "sales.attachments.remove",
+  "sales.attachments.recheck",
   "organization.today",
   // A Netz importa listas com propor_lote (um cartão só).
   "customers.import",
@@ -62,6 +69,8 @@ const ALWAYS = new Set([
   "sales_receive", "receivables_list",
   // Depois da baixa, a Netz pergunta se o cliente já levou e marca a retirada (pedido nº 22).
   "followups_complete",
+  // Foto ou PDF de comprovante na conversa: ligar à venda certa.
+  "sales_attachments_link",
 ]);
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -94,7 +103,7 @@ function trim(node: unknown): unknown {
 
 const ALL: AnyService[] = [
   organizations, settings, audit, members, roles, parties, products, customFields, images, remove, supplierProducts,
-  movements, sales, insights, followups, costs, commissions,
+  movements, sales, insights, followups, attachments, costs, commissions,
 ]
   .flatMap((m) => Object.values(m))
   .filter(isService)

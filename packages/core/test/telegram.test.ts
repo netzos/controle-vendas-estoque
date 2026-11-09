@@ -181,7 +181,37 @@ describe("Netz no Telegram", () => {
     await handleTelegramUpdate(t.app, { update_id: nextUpdate++, message: { message_id: 1, chat: { id: -5, type: "group" }, from: tgUser, text: "oi" } }, { api: f.api });
     assert.match(f.sent()[0]!, /privado/);
     await handleTelegramUpdate(t.app, { update_id: nextUpdate++, message: { message_id: 2, chat: { id: 777, type: "private" }, from: tgUser } }, { api: f.api });
-    assert.match(f.sent()[1]!, /texto e áudio/);
+    assert.match(f.sent()[1]!, /texto, áudio/);
+  });
+
+  it("foto de comprovante vai para a Netz junto com a mensagem", async () => {
+    const f = fakeApi();
+    const { url } = await createTelegramLink(t.app, owner, { api: f.api });
+    await handleTelegramUpdate(t.app, text(`/start ${url.split("start=")[1]}`), { api: f.api });
+    f.api.download = async () => new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3]);
+    const seen: string[] = [];
+    const model: NetsModel = async (req) => {
+      const last = req.messages.at(-1)!.content as Array<{ type: string }>;
+      seen.push(...last.map((b) => b.type));
+      return script([{ type: "text", text: "Li um Pix de R$ 300,00. É da venda do João?" }])(req);
+    };
+    await handleTelegramUpdate(t.app, {
+      update_id: nextUpdate++,
+      message: { message_id: nextUpdate, chat: { id: 777, type: "private" }, from: tgUser, photo: [{ file_id: "p1", width: 90, height: 90, file_size: 100 }, { file_id: "p2", width: 1280, height: 960, file_size: 900 }] },
+    }, { api: f.api, model });
+    assert.deepEqual(f.calls.find((c) => c.method === "getFile")!.params, { file_id: "p2" });
+    assert.deepEqual(seen, ["image", "text"]);
+    assert.equal(f.sent().at(-1), "Li um Pix de R$ 300,00. É da venda do João?");
+    const asked = (await listNetsMessages(t.app, owner)).messages.filter((m) => m.role === "user").at(-1)!;
+    assert.equal(asked.body, "Mandei uma foto de comprovante.");
+    assert.ok(asked.attachmentId);
+
+    // Arquivo que não é foto nem PDF: avisa e não guarda.
+    await handleTelegramUpdate(t.app, {
+      update_id: nextUpdate++,
+      message: { message_id: nextUpdate, chat: { id: 777, type: "private" }, from: tgUser, document: { file_id: "d1", mime_type: "application/zip", file_name: "x.zip" } },
+    }, { api: f.api, model });
+    assert.match(f.sent().at(-1)!, /foto ou PDF/);
   });
 
   it("áudio é transcrito e vira mensagem para a Netz", async () => {
