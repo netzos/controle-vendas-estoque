@@ -4,7 +4,7 @@ import { requirePermission } from "@/lib/auth";
 import { query } from "@/lib/actions";
 import { db } from "@/lib/db";
 import { money, quantity } from "@/lib/format";
-import { Kpi, LineChart } from "@/components/charts";
+import { GroupedBarChart, Kpi } from "@/components/charts";
 import { PanelHeader, panelLink, parseFilters, previousLabel, type PanelParams } from "./filters";
 
 export const metadata = { title: "Painel" };
@@ -53,7 +53,7 @@ export default async function PanelOverview({ searchParams }: { searchParams: Pr
           <h2>Faturamento e lucro {o.step === "hour" ? "por hora" : o.step === "day" ? "por dia" : o.step === "week" ? "por semana" : "por mês"}</h2>
           <span className="muted">{money(c.revenue)}</span>
         </div>
-        <LineChart
+        <GroupedBarChart
           points={o.series.map((s) => ({ label: s.label, value: n(s.revenue), detail: `${s.count} ${s.count === 1 ? "venda" : "vendas"}` }))}
           second={{ name: "Lucro bruto", values: o.series.map((s) => n(s.profit)) }}
           previous={o.previousSeries.map((s) => n(s.revenue))}

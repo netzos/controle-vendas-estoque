@@ -180,6 +180,72 @@ export function LineChart({
   );
 }
 
+// Uma barra por dia (ou hora/semana/mês): faturamento em tinta e lucro em cinza,
+// lado a lado. O período anterior aparece como um risco tracejado na altura do
+// faturamento de antes. Lucro negativo não desenha barra, mas aparece na dica.
+export function GroupedBarChart({
+  points,
+  second,
+  previous,
+  format,
+  height = 220,
+  labels,
+  emptyText = "Sem dados no período.",
+}: {
+  points: { label: string; value: number; detail?: string }[];
+  second?: { name: string; values: number[] };
+  previous?: number[];
+  format: (v: number) => string;
+  height?: number;
+  labels: { current: string; previous?: string };
+  emptyText?: string;
+}) {
+  const max = Math.max(...points.map((p) => p.value), ...(second?.values ?? []), ...(previous ?? []), 0);
+  if (max === 0) return <p className="chart-empty">{emptyText}</p>;
+  const n = points.length;
+  const w = 100 / n;
+  const h = (v: number) => (v > 0 ? `${Math.max((v / max) * 100, 1.5)}%` : "0%");
+  const labelEvery = Math.max(1, Math.ceil(n / 8));
+  const peak = points.reduce((a, p, i) => (p.value > points[a]!.value ? i : a), 0);
+  const hasPrev = !!previous && previous.some((v) => v > 0);
+  return (
+    <figure className="bar-chart group-chart" style={{ height: height + 60 }}>
+      <div className="line-legend">
+        <span><i className="sq ink" /> {labels.current}</span>
+        {second && <span><i className="sq mid" /> {second.name}</span>}
+        {hasPrev && labels.previous && <span><i className="sw dash" /> {labels.previous}</span>}
+      </div>
+      <div className="bar-plot" role="img" aria-label={`Maior valor: ${points[peak]!.label}, ${format(points[peak]!.value)}`}>
+        <span className="bar-max">{format(max)}</span>
+        {points.map((p, i) => {
+          const prev = previous?.[i];
+          return (
+            <div key={`${p.label}-${i}`} className={`bar-slot${n > 20 ? " dense" : ""}`} style={{ width: `${w}%` }}>
+              <div className="bar-pair">
+                <div className="gbar cur" style={{ height: h(p.value) }} />
+                {second && <div className="gbar second" style={{ height: h(second.values[i] ?? 0) }} />}
+              </div>
+              {hasPrev && prev !== undefined && prev > 0 && <span className="prev-mark" style={{ bottom: `${(prev / max) * 100}%` }} />}
+              <span className="bar-tip">
+                <strong>{p.label}</strong>
+                {format(p.value)}
+                {second && <em>{second.name}: {format(second.values[i] ?? 0)}</em>}
+                {prev !== undefined && <em>Antes: {format(prev)}</em>}
+                {p.detail && <em>{p.detail}</em>}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+      <div className="bar-labels">
+        {points.map((p, i) => (
+          <span key={`${p.label}-${i}`} style={{ width: `${w}%` }}>{i % labelEvery === 0 ? p.label : ""}</span>
+        ))}
+      </div>
+    </figure>
+  );
+}
+
 // Quadro dia da semana × hora: quanto mais escuro, mais vendeu.
 export function Heatmap({
   cells,

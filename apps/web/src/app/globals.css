@@ -1137,3 +1137,18 @@ td small.unit { display: inline; font-size: 12.5px; }
 .install-icon { vertical-align: -4px; }
 .install-note { margin: 16px 0 14px; font-size: 13.5px; }
 .install-ok { width: 100%; height: 50px; font-size: 16px; }
+
+/* Barras agrupadas: faturamento (tinta) e lucro (cinza) lado a lado, um par por dia. */
+.group-chart .bar-plot { flex: 1; }
+.group-chart .bar-slot { padding: 0 2px; }
+.bar-pair { display: flex; align-items: flex-end; justify-content: center; gap: 2px; width: 100%; max-width: 44px; height: 100%; }
+.gbar { flex: 1; min-width: 0; border-radius: 4px 4px 0 0; transition: opacity .1s; }
+.gbar.cur { background: var(--accent); }
+.gbar.second { background: #b9c0cc; }
+.group-chart .bar-slot.dense { padding: 0 1px; }
+.group-chart .bar-slot.dense .bar-pair { gap: 1px; }
+.group-chart .bar-slot.dense .gbar { border-radius: 2px 2px 0 0; }
+.group-chart .bar-slot:hover { background: rgba(15, 17, 21, .04); }
+.prev-mark { position: absolute; left: 12%; right: 12%; height: 0; border-top: 1.5px dashed var(--faint); pointer-events: none; }
+.line-legend .sq { display: inline-block; width: 10px; height: 10px; border-radius: 3px; vertical-align: middle; margin-right: 4px; background: var(--accent); }
+.line-legend .sq.mid { background: #b9c0cc; }
