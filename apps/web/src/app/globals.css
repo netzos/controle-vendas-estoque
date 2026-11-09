@@ -960,6 +960,11 @@ summary .edit-hint { float: right; font-size: 13px; color: var(--muted); font-we
 
 /* Data de retirada/entrega na venda */
 .handover-field { margin: 12px 0 0; }
+.pay-cell { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.sale-date-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-bottom: 12px; }
+.sale-date-bar label { font-weight: 600; font-size: 14px; }
+.sale-date-bar input { width: auto; }
+.sale-date-bar .muted { flex-basis: 100%; font-size: 13px; }
 .handover-form { display: flex; flex-direction: column; gap: 6px; margin: 12px 0; }
 .handover-form label { font-weight: 500; font-size: 14px; }
 .handover-form input[type="date"] { width: auto; }

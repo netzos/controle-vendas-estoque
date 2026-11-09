@@ -14,6 +14,9 @@ import { DeliverForm } from "./deliver-form";
 import { PeriodPicker } from "@/components/period-picker";
 import { receiptLink } from "@/lib/receipt";
 import { SaleReceipts } from "./receipts";
+import { SaleDateForm } from "./sale-date-form";
+import { ReceiveDialog } from "../financeiro/receber/receive-dialog";
+import { Icon } from "@/components/icons";
 
 type ListParams = { q?: string; receber?: string; situacao?: string; filial?: string; periodo?: string; de?: string; ate?: string; forma?: string };
 
@@ -108,6 +111,10 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
   const current: ListParams = { ...keep, periodo: periodKey === "all" || periodKey === "custom" ? undefined : periodKey, de: custom ? params.de : undefined, ate: custom ? params.ate : undefined };
   const rangeText = range ? (range.from === range.to ? day(range.from) : `${day(range.from)} a ${day(range.to)}`) : "";
   const handoverWord = (f: string) => (f === "delivery" ? "Entrega" : "Retirada");
+  // Dia no fuso da empresa: a venda pode ser de outro dia que o do lançamento (retroativa ou agendada).
+  const isoDay = new Intl.DateTimeFormat("en-CA", { timeZone: org.timezone, year: "numeric", month: "2-digit", day: "2-digit" });
+  const lancada = (s: { soldAt: Date; createdAt: Date }) => isoDay.format(s.soldAt) !== isoDay.format(s.createdAt);
+  const canReceive = can(actor, "sales.receive") && !actor.platformView;
 
   return (
     <>
@@ -135,6 +142,7 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
           <p className="muted">
             {fmt.format(selected.soldAt)} · {FULFILLMENTS[selected.fulfillment]}
             {selected.handoverDate && <> em <b>{day(selected.handoverDate)}</b></>} · {selected.customerName ?? "Consumidor"} · por {selected.userName}
+            {lancada(selected) && <> · lançada em {fmt.format(selected.createdAt)}</>}
           </p>
           {selected.status === "completed" && (
             <p>
@@ -200,6 +208,9 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
               }, new Map<string, { productId: string; name: string; quantity: string; unitPrice: string }>()).values()]}
               products={editProducts.filter((p) => p.status === "active").map((p) => ({ id: p.id, name: p.name, price: String(Number(p.salePrice)) }))}
             />
+          )}
+          {selected.status === "completed" && can(actor, "sales.create") && !actor.platformView && (
+            <SaleDateForm saleId={selected.id} value={isoDay.format(selected.soldAt)} />
           )}
           {handoverReady && selected.status === "completed" && can(actor, "sales.create") && (
             <HandoverDateForm
@@ -368,17 +379,29 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
                 {sales.map((s) => (
                   <tr key={s.id} className="clickable">
                     <td data-label="Nº"><Link href={`/vendas?id=${s.id}`}>{s.number}</Link></td>
-                    <td data-label="Data">{fmt.format(s.soldAt)}</td>
+                    <td data-label="Data">
+                      {fmt.format(s.soldAt)}
+                      {lancada(s) && <small className="muted">{s.soldAt > s.createdAt ? "agendada" : "lançada"} em {fmt.format(s.createdAt)}</small>}
+                    </td>
                     <td data-label="Cliente">{s.customerName ?? <span className="muted">Consumidor</span>}</td>
                     {multi && <td data-label="Filial">{s.branchName ?? <span className="muted">—</span>}</td>}
                     <td data-label="Pagamento">
                       {s.status === "completed" && s.paymentStatus !== "paid" ? (
+                        <span className="pay-cell">
                         <span className={`tag pay-tag ${s.paymentStatus}`}>
                           {s.installmentCount > 0
                             ? `${s.installmentCount}x · falta ${money(Number(s.total) - Number(s.tradeInTotal) - Number(s.paidTotal))}`
                             : s.paymentStatus === "partial"
                             ? `Parcial · falta ${money(Number(s.total) - Number(s.tradeInTotal) - Number(s.paidTotal))}`
                             : isPaymentLater(s) ? `${PAYMENT_LATER_LABEL} · a receber` : "A receber"}
+                        </span>
+                        {canReceive && (
+                          <ReceiveDialog
+                            saleId={s.id}
+                            open={(Number(s.total) - Number(s.tradeInTotal) - Number(s.paidTotal)).toFixed(2)}
+                            title={`Receber pagamento · venda nº ${s.number}`}
+                          />
+                        )}
                         </span>
                       ) : s.status === "completed" ? (
                         <span className="tag pay-tag paid">Pago · {PAYMENT_LABELS[s.paymentMethod]}</span>
@@ -398,7 +421,14 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
                         <span className="muted">Na hora</span>
                       )}
                     </td>
-                    <td data-label="Itens" className="num sm-hide">{s.itemCount}</td>
+                    <td data-label="Itens" className="num sm-hide">
+                      {s.itemCount}
+                      {s.attachmentCount > 0 && (
+                        <small className="muted" title={`${s.attachmentCount} ${s.attachmentCount === 1 ? "comprovante" : "comprovantes"}`}>
+                          <Icon name="clip" size={12} /> {s.attachmentCount}
+                        </small>
+                      )}
+                    </td>
                     <td data-label="Total" className="num"><strong className={s.status === "cancelled" ? "strike muted" : ""}>{money(s.total)}</strong></td>
                   </tr>
                 ))}

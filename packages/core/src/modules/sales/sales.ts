@@ -113,6 +113,10 @@ export interface Sale {
   itemCount: number;
   cancelledAt: Date | null;
   cancelReason: string | null;
+  /** Quando a venda foi lançada no sistema (pode ser diferente do dia da venda: retroativa ou agendada). */
+  createdAt: Date;
+  /** Comprovantes (foto ou PDF) anexados. */
+  attachmentCount: number;
 }
 
 const SALE_COLUMNS = `s.id, s.number, s.customer_id AS "customerId", c.name AS "customerName", c.phone AS "customerPhone",
@@ -123,7 +127,8 @@ const SALE_COLUMNS = `s.id, s.number, s.customer_id AS "customerId", c.name AS "
   s.delivery_fee::text AS "deliveryFee", s.fulfillment, (to_jsonb(s) ->> 'handover_date') AS "handoverDate",
   (SELECT f.status FROM controle_vendas_estoque.sale_followups f WHERE f.sale_id = s.id) AS "followupStatus", s.cost_total::text AS "costTotal", s.notes, s.sold_at AS "soldAt", u.name AS "userName",
   (SELECT count(*) FROM controle_vendas_estoque.sale_items i WHERE i.sale_id = s.id)::int AS "itemCount",
-  s.cancelled_at AS "cancelledAt", s.cancel_reason AS "cancelReason"`;
+  s.cancelled_at AS "cancelledAt", s.cancel_reason AS "cancelReason", s.created_at AS "createdAt",
+  (SELECT count(*) FROM controle_vendas_estoque.sale_attachments a WHERE a.sale_id = s.id)::int AS "attachmentCount"`;
 const SALE_FROM = `controle_vendas_estoque.sales s
   JOIN controle_vendas_estoque.users u ON u.id = s.created_by
   LEFT JOIN controle_vendas_estoque.customers c ON c.id = s.customer_id`;
@@ -184,7 +189,7 @@ export const createSale = defineService({
     handoverDate: handoverDateField.describe("Dia combinado para o cliente retirar (ou receber, se for entrega), AAAA-MM-DD. Opcional."),
     // Melhoria 23: venda que aconteceu em outro dia (lançada depois). A data de
     // lançamento (created_at) continua sendo agora, para auditoria.
-    soldOn: handoverDateField.describe("Dia em que a venda aconteceu, AAAA-MM-DD, só quando foi antes de hoje (venda retroativa: ontem, dia 5...). Omitido = agora."),
+    soldOn: handoverDateField.describe("Dia da venda, AAAA-MM-DD, quando não é hoje: antes de hoje (venda retroativa: ontem, dia 5...) ou depois (venda agendada: o cliente leva amanhã; use o dia da retirada/entrega). Omitido = agora."),
     discount: decimalField(2, "Desconto").default("0"),
     // Parcelado / a prazo: o que vier em payments é a entrada; o resto vira
     // parcelas com vencimento. "single" = uma data só (fiado com data combinada).
@@ -360,12 +365,14 @@ export const createSale = defineService({
     if (input.soldOn) {
       const d = await tx.query<{ today: string; at: string | null }>(
         `SELECT (now() AT TIME ZONE o.timezone)::date::text AS today,
-                CASE WHEN $1::date < (now() AT TIME ZONE o.timezone)::date
+                ((now() AT TIME ZONE o.timezone)::date + 366)::text AS "maxDay",
+                CASE WHEN $1::date <> (now() AT TIME ZONE o.timezone)::date
                      THEN (($1::date + time '12:00') AT TIME ZONE o.timezone)::text END AS at
            FROM controle_vendas_estoque.organizations o WHERE o.id = $2`,
         [input.soldOn, actor.organizationId],
       );
-      if (input.soldOn > d.rows[0]!.today) throw new AppError("invalid_input", "A data da venda não pode ser no futuro.");
+      // Venda agendada (pedido de 2026-11-09): pode ser num dia futuro, até um ano.
+      if (input.soldOn > (d.rows[0] as unknown as { maxDay: string }).maxDay) throw new AppError("invalid_input", "A data da venda pode ser no máximo daqui a um ano.");
       soldAt = d.rows[0]!.at;
     }
 
@@ -403,7 +410,8 @@ export const createSale = defineService({
     for (const p of payments) {
       await tx.query(
         `INSERT INTO controle_vendas_estoque.sale_payments (organization_id, sale_id, method, amount, created_by, paid_at)
-         VALUES ($1, $2, $3, $4, $5, coalesce($6::timestamptz, now()))`,
+         VALUES ($1, $2, $3, $4, $5, least(coalesce($6::timestamptz, now()), now()))`,
+        // Venda agendada: o dinheiro entrou hoje, não no dia da retirada.
         [actor.organizationId, sale.id, p.method, p.amount, actor.userId, soldAt],
       );
     }
@@ -480,7 +488,7 @@ export const createSale = defineService({
       action: "sale.create",
       entityType: "sale",
       entityId: sale.id,
-      summary: `Venda nº ${sale.number} de R$ ${sale.total}${soldAt ? ` feita em ${input.soldOn!.split("-").reverse().join("/")}` : ""}${tradeTotal > 0 ? ` (R$ ${tradeTotal.toFixed(2)} em troca)` : ""}${paymentStatus !== "paid" ? ` · falta receber R$ ${((toPayCents - paidCents) / 100).toFixed(2)}` : ""}${parcels.length > 0 ? ` em ${parcels.length}x (${INTERVAL_LABELS[plan!.interval].toLowerCase()}, 1º vencimento ${plan!.firstDue})` : ""}`,
+      summary: `Venda nº ${sale.number} de R$ ${sale.total}${soldAt ? ` ${input.soldOn! > new Date().toISOString().slice(0, 10) ? "agendada para" : "feita em"} ${input.soldOn!.split("-").reverse().join("/")}` : ""}${tradeTotal > 0 ? ` (R$ ${tradeTotal.toFixed(2)} em troca)` : ""}${paymentStatus !== "paid" ? ` · falta receber R$ ${((toPayCents - paidCents) / 100).toFixed(2)}` : ""}${parcels.length > 0 ? ` em ${parcels.length}x (${INTERVAL_LABELS[plan!.interval].toLowerCase()}, 1º vencimento ${plan!.firstDue})` : ""}`,
       after: { ...sale, items: lines.length, tradeIns: input.tradeIns.length },
     });
     await emit("sale.created", { saleId: sale.id, number: sale.number, total: sale.total }, { type: "sale", id: sale.id });
@@ -765,6 +773,40 @@ export const setHandoverDate = defineService({
         : `Venda nº ${rows[0].number}: data de retirada/entrega tirada`,
     });
     return { id: input.id, number: rows[0].number, handoverDate: input.handoverDate ?? null };
+  },
+});
+
+/** Muda o dia de uma venda já lançada (esqueceu de lançar no dia, ou é agendada). A hora fica a mesma. */
+export const setSaleDate = defineService({
+  name: "sales.set_date",
+  description: "Muda o dia de uma venda já registrada: retroativa (aconteceu antes) ou agendada (o cliente leva num dia futuro). A hora fica a mesma",
+  permission: "sales.create",
+  risk: 2,
+  input: z.object({ id: z.string().uuid(), soldOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Data inválida.") }),
+  async handler({ tx, audit }, input) {
+    const { rows } = await tx.query<{ number: number; before: string }>(
+      `WITH old AS (
+         SELECT s.id, (s.sold_at AT TIME ZONE o.timezone)::date::text AS d
+           FROM controle_vendas_estoque.sales s JOIN controle_vendas_estoque.organizations o ON o.id = s.organization_id
+          WHERE s.id = $1 FOR UPDATE OF s)
+       UPDATE controle_vendas_estoque.sales s
+          SET sold_at = (($2::date + (s.sold_at AT TIME ZONE o.timezone)::time) AT TIME ZONE o.timezone)
+         FROM controle_vendas_estoque.organizations o, old
+        WHERE s.id = old.id AND o.id = s.organization_id AND $2::date <= (now() AT TIME ZONE o.timezone)::date + 366
+        RETURNING s.number, old.d AS before`,
+      [input.id, input.soldOn],
+    );
+    if (!rows[0]) {
+      const exists = await tx.query("SELECT 1 FROM controle_vendas_estoque.sales WHERE id = $1", [input.id]);
+      if (!exists.rowCount) throw notFound("Venda");
+      throw new AppError("invalid_input", "A data da venda pode ser no máximo daqui a um ano.");
+    }
+    const br = (d: string) => d.split("-").reverse().join("/");
+    await audit({
+      action: "sale.date", entityType: "sale", entityId: input.id,
+      summary: `Venda nº ${rows[0].number}: dia mudado de ${br(rows[0].before)} para ${br(input.soldOn)}`,
+    });
+    return { id: input.id, number: rows[0].number, soldOn: input.soldOn };
   },
 });
 

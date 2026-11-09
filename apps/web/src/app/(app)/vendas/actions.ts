@@ -1,9 +1,10 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { redirect } from "next/navigation";
 import type { z } from "zod";
-import { cancelSale, completeSaleFollowup, createCustomer, createSale, deleteSale, getOrganization, getSale, receiveSalePayment, runService, setHandoverDate, updateSale } from "@erp/core";
+import { addSaleAttachment, cancelSale, completeSaleFollowup, createCustomer, createSale, deleteSale, getOrganization, getSale, receiveSalePayment, runAttachmentChecks, runService, setHandoverDate, setSaleDate, updateSale } from "@erp/core";
 import { receiptLink } from "@/lib/receipt";
 import { money } from "@/lib/format";
 import { currentActor } from "@/lib/auth";
@@ -91,6 +92,30 @@ export async function receivePaymentAction(_: FormState, form: FormData): Promis
     { saleId: str(form, "saleId"), method: str(form, "method") as "pix", amount: str(form, "amount"), installmentId: optional(form, "installmentId"), notes: optional(form, "notes") },
     { successMessage: "Pagamento registrado." },
   );
+  if (state?.ok) {
+    // Comprovante junto com o recebimento (opcional): fica na venda, na parcela recebida.
+    const file = form.get("receipt");
+    if (file instanceof Blob && file.size > 0) {
+      const attached = await perform(
+        addSaleAttachment,
+        { saleId: str(form, "saleId"), installmentId: optional(form, "installmentId"), data: new Uint8Array(await file.arrayBuffer()), fileName: file instanceof File ? file.name : null },
+        { successMessage: "Pagamento registrado com o comprovante." },
+      );
+      if (attached?.ok) {
+        const actor = await currentActor();
+        after(() => runAttachmentChecks(db(), { organizationId: actor.organizationId, userId: actor.userId }));
+        state.message = attached.message;
+      } else {
+        state.message = `Pagamento registrado, mas o comprovante não foi guardado: ${attached?.message ?? "erro"}`;
+      }
+    }
+    revalidatePath("/", "layout");
+  }
+  return state;
+}
+
+export async function setSaleDateAction(_: FormState, form: FormData): Promise<FormState> {
+  const state = await perform(setSaleDate, { id: str(form, "id"), soldOn: str(form, "soldOn") }, { successMessage: "Data da venda salva." });
   if (state?.ok) revalidatePath("/", "layout");
   return state;
 }
