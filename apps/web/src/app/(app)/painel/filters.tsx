@@ -7,7 +7,9 @@ import { PeriodPicker } from "@/components/period-picker";
 // Filtros do Painel ficam no endereço (?periodo=&de=&ate=&filial=&vendedor=),
 // então o link guarda o recorte e as sub-abas levam o mesmo recorte junto.
 
-export type PanelParams = { periodo?: string; de?: string; ate?: string; filial?: string; vendedor?: string };
+export type PanelParams = { periodo?: string; de?: string; ate?: string; filial?: string; vendedor?: string; agrupar?: string };
+
+const GROUPS = { dia: "day", semana: "week", mes: "month" } as const;
 
 const PERIODS: { key: InsightPeriod; label: string }[] = [
   { key: "today", label: "Hoje" },
@@ -37,6 +39,7 @@ export function parseFilters(p: PanelParams): InsightFilters {
     to: custom ? p.ate : undefined,
     branchId: p.filial && UUID.test(p.filial) ? p.filial : undefined,
     sellerId: p.vendedor && UUID.test(p.vendedor) ? p.vendedor : undefined,
+    group: p.agrupar && p.agrupar in GROUPS ? GROUPS[p.agrupar as keyof typeof GROUPS] : undefined,
   };
 }
 

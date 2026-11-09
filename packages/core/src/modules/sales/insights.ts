@@ -19,6 +19,7 @@ export const insightFilters = z.object({
   to: DATE.optional().describe("Último dia (incluído), só com period=custom"),
   branchId: z.string().uuid().optional().describe("Só as vendas desta filial"),
   sellerId: z.string().uuid().optional().describe("Só as vendas registradas por esta pessoa"),
+  group: z.enum(["day", "week", "month"]).optional().describe("Agrupar a evolução por dia, semana ou mês; sem isso escolhe sozinho pelo tamanho do período"),
 });
 export type InsightFilters = z.infer<typeof insightFilters>;
 
@@ -188,10 +189,10 @@ export interface SeriesPoint {
   count: number;
 }
 
-/** Faturamento e lucro ao longo do período: por hora (1 dia), dia (até 62), semana (até 182) ou mês. */
+/** Faturamento e lucro ao longo do período: o agrupamento escolhido ou, sem escolha, por hora (1 dia), dia (até 62), semana (até 182) ou mês. */
 async function series(tx: Tx, actor: Actor, r: InsightRange, f: InsightFilters, from: string, to: string): Promise<{ step: SeriesStep; points: SeriesPoint[] }> {
   const days = daysBetween(from, to);
-  const step: SeriesStep = days === 1 ? "hour" : days <= 62 ? "day" : days <= 182 ? "week" : "month";
+  const step: SeriesStep = f.group ?? (days === 1 ? "hour" : days <= 62 ? "day" : days <= 182 ? "week" : "month");
   const params = scopeParams(from, to, r, f, actor);
   const sql =
     step === "hour"

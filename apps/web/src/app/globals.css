@@ -1139,16 +1139,33 @@ td small.unit { display: inline; font-size: 12.5px; }
 .install-ok { width: 100%; height: 50px; font-size: 16px; }
 
 /* Barras agrupadas: faturamento (tinta) e lucro (cinza) lado a lado, um par por dia. */
-.group-chart .bar-plot { flex: 1; }
-.group-chart .bar-slot { padding: 0 2px; }
-.bar-pair { display: flex; align-items: flex-end; justify-content: center; gap: 2px; width: 100%; max-width: 44px; height: 100%; }
-.gbar { flex: 1; min-width: 0; border-radius: 4px 4px 0 0; transition: opacity .1s; }
-.gbar.cur { background: var(--accent); }
-.gbar.second { background: #b9c0cc; }
-.group-chart .bar-slot.dense { padding: 0 1px; }
-.group-chart .bar-slot.dense .bar-pair { gap: 1px; }
-.group-chart .bar-slot.dense .gbar { border-radius: 2px 2px 0 0; }
-.group-chart .bar-slot:hover { background: rgba(15, 17, 21, .04); }
-.prev-mark { position: absolute; left: 12%; right: 12%; height: 0; border-top: 1.5px dashed var(--faint); pointer-events: none; }
-.line-legend .sq { display: inline-block; width: 10px; height: 10px; border-radius: 3px; vertical-align: middle; margin-right: 4px; background: var(--accent); }
-.line-legend .sq.mid { background: #b9c0cc; }
+.gchart { margin: 0; }
+.gchart-legend { display: flex; gap: 16px; flex-wrap: wrap; color: var(--muted); font-size: 13px; margin-bottom: 14px; }
+.gchart .sq { display: inline-block; width: 10px; height: 10px; border-radius: 3px; vertical-align: middle; margin-right: 4px; background: var(--accent); }
+.gchart .sq.mid { background: #b9c0cc; }
+.gchart .sw.dash { display: inline-block; width: 18px; height: 0; border-top: 1.5px dashed var(--faint); vertical-align: middle; margin-right: 4px; }
+.gchart-body { display: flex; gap: 8px; }
+.gchart-axis { position: relative; flex: none; width: 46px; }
+.gchart-axis span { position: absolute; right: 0; transform: translateY(50%); font-size: 11px; color: var(--faint); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.gchart-scroll { flex: 1; min-width: 0; overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; padding-bottom: 4px; }
+.gchart-plot { position: relative; display: flex; align-items: flex-end; border-bottom: 1px solid var(--border); }
+.gchart-grid { position: absolute; left: 0; right: 0; height: 0; border-top: 1px dashed rgba(15, 17, 21, .08); pointer-events: none; }
+.gchart-slot { position: relative; flex: 1; height: 100%; display: flex; align-items: flex-end; justify-content: center; padding: 0 2px; border-radius: 10px 10px 0 0; outline: none; transition: background .12s; }
+.gchart-slot:hover, .gchart-slot:focus { background: rgba(15, 17, 21, .045); }
+.gchart-pair { display: flex; align-items: flex-end; justify-content: center; gap: 2px; width: 100%; max-width: 46px; height: 100%; }
+.gbar { flex: 1; min-width: 0; border-radius: 6px 6px 2px 2px; transition: opacity .12s; }
+.gbar.cur { background: linear-gradient(180deg, #3a3f49 0%, var(--accent) 100%); box-shadow: 0 4px 10px -6px rgba(15, 17, 21, .6); }
+.gbar.second { background: linear-gradient(180deg, #d3d8e0 0%, #b3bac6 100%); }
+.gchart-slot:hover .gbar, .gchart-slot:focus .gbar { opacity: .82; }
+.prev-mark { position: absolute; left: 14%; right: 14%; height: 0; border-top: 1.5px dashed var(--faint); pointer-events: none; }
+.gchart-tip { position: absolute; top: 4px; left: 50%; transform: translateX(-50%); display: none; flex-direction: column; gap: 2px; background: rgba(15, 17, 21, .92); backdrop-filter: blur(8px); color: #fff; padding: 9px 12px; border-radius: 12px; font-size: 12px; white-space: nowrap; z-index: 5; pointer-events: none; box-shadow: 0 10px 24px -10px rgba(0, 0, 0, .5); }
+.gchart-tip.left { left: 0; transform: none; }
+.gchart-tip.right { left: auto; right: 0; transform: none; }
+.gchart-tip strong { font-size: 12.5px; margin-bottom: 2px; }
+.gchart-tip .sq.mid { background: #c9cfda; }
+.gchart-tip .sq.ink { background: #fff; }
+.gchart-tip em { font-style: normal; opacity: .7; }
+.gchart-slot:hover .gchart-tip, .gchart-slot:focus .gchart-tip { display: flex; }
+.gchart-labels { display: flex; margin-top: 8px; }
+.gchart-labels span { flex: 1; display: flex; flex-direction: column; align-items: center; font-size: 10.5px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; line-height: 1.25; letter-spacing: -.01em; }
+.gchart-labels small { font-size: 10px; color: var(--faint); }
