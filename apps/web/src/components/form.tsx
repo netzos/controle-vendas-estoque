@@ -3,10 +3,10 @@
 import { useFormStatus } from "react-dom";
 import type { FormState } from "@/lib/actions";
 
-export function SubmitButton({ children, className, pendingText }: { children: React.ReactNode; className?: string; pendingText?: string }) {
+export function SubmitButton({ children, className, pendingText, disabled }: { children: React.ReactNode; className?: string; pendingText?: string; disabled?: boolean }) {
   const { pending } = useFormStatus();
   return (
-    <button type="submit" className={className} disabled={pending}>
+    <button type="submit" className={className} disabled={pending || disabled}>
       {pending ? (pendingText ?? "Salvando...") : children}
     </button>
   );

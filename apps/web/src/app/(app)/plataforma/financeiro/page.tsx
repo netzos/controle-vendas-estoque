@@ -24,6 +24,7 @@ const FEATURE_LABELS: Record<string, string> = {
   panel_audio: "Áudios no painel",
   improvements_analysis: "Análise de melhorias com IA",
   nets_guidance: "Propostas para o manual da Netz",
+  receipt_check: "Conferência de comprovantes",
 };
 
 type Row = { o: PlatformOrganizationRow; cost: number; margin: number };

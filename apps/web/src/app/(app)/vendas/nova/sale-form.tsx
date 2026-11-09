@@ -81,6 +81,9 @@ export function SaleForm({
   const [handover, setHandover] = useState("");
   // Melhoria 23: dia em que a venda aconteceu (vazio = hoje).
   const [soldOn, setSoldOn] = useState("");
+  // Mexeu na data à mão: a data de retirada para de puxar a data da venda.
+  const [dateTouched, setDateTouched] = useState(false);
+  const br = (d: string) => d.split("-").reverse().join("/");
   // Preço negociado por item; vazio = preço do cadastro.
   const [prices, setPrices] = useState<Record<string, string>>({});
   // Itens que o cliente entrega como parte do pagamento.
@@ -196,7 +199,7 @@ export function SaleForm({
         <input type="hidden" name="paymentMethod" value={payment} />
       )}
       <input type="hidden" name="handoverDate" value={handover} />
-      <input type="hidden" name="soldOn" value={soldOn && soldOn < today ? soldOn : ""} />
+      <input type="hidden" name="soldOn" value={soldOn && soldOn !== today ? soldOn : ""} />
       <input type="hidden" name="customerId" value={customerId} />
       {newCustomer && <input type="hidden" name="newCustomerName" value={newCustomer.name} />}
       {newCustomer && <input type="hidden" name="newCustomerPhone" value={newCustomer.phone} />}
@@ -218,6 +221,21 @@ export function SaleForm({
       />
 
       <section className="card pos-catalog">
+        {/* Data da venda sempre à vista: hoje, de outro dia (retroativa) ou agendada para um dia futuro. */}
+        <div className="sale-date-bar">
+          <label htmlFor="soldOn">Data da venda</label>
+          <input
+            id="soldOn"
+            type="date"
+            value={soldOn || today}
+            onChange={(e) => {
+              setDateTouched(true);
+              setSoldOn(e.target.value === today ? "" : e.target.value);
+            }}
+          />
+          {soldOn && soldOn < today && <span className="muted">Venda de outro dia: entra no painel e nos relatórios em {br(soldOn)}.</span>}
+          {soldOn && soldOn > today && <span className="muted">Venda agendada: conta no dia {br(soldOn)}.</span>}
+        </div>
         <input type="search" placeholder="Buscar produto por nome ou código" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Buscar produto" />
         {products.length === 0 ? (
           <p className="chart-empty">Cadastre produtos para começar a vender.</p>
@@ -389,18 +407,21 @@ export function SaleForm({
           </div>
         )}
 
-        {lines.length > 0 && (
-          <div className="field handover-field">
-            <label htmlFor="soldOn">Data da venda</label>
-            <input id="soldOn" type="date" max={today} value={soldOn || today} onChange={(e) => setSoldOn(e.target.value === today ? "" : e.target.value)} />
-            {soldOn && soldOn < today && <span className="muted">Venda de outro dia: entra no painel e nos relatórios em {soldOn.split("-").reverse().join("/")}.</span>}
-          </div>
-        )}
-
         {handoverReady && lines.length > 0 && (
           <div className="field handover-field">
             <label htmlFor="handoverDate">{way === "delivery" ? "Data da entrega (opcional)" : "Data da retirada (opcional)"}</label>
-            <input id="handoverDate" type="date" min={soldOn || today} value={handover} onChange={(e) => setHandover(e.target.value)} />
+            <input
+              id="handoverDate"
+              type="date"
+              min={soldOn && soldOn < today ? soldOn : today}
+              value={handover}
+              onChange={(e) => {
+                const v = e.target.value;
+                setHandover(v);
+                // Venda agendada: o cliente leva noutro dia, então a venda é desse dia (pedido de 2026-11-09).
+                if (!dateTouched) setSoldOn(v > today ? v : "");
+              }}
+            />
           </div>
         )}
 

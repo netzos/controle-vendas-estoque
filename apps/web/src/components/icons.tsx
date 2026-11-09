@@ -1,7 +1,7 @@
 import type { NavIcon } from "@/lib/navigation";
 
 // Ícones de traço simples (24×24), no estilo do layout de referência.
-const PATHS: Record<NavIcon | "logout" | "logo" | "search" | "mic" | "send" | "minus" | "stop" | "menu" | "chevron" | "trash" | "grid" | "play" | "pause", string> = {
+const PATHS: Record<NavIcon | "logout" | "logo" | "search" | "mic" | "send" | "minus" | "stop" | "menu" | "chevron" | "trash" | "grid" | "play" | "pause" | "clip", string> = {
   home: "M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z",
   plus: "M12 5v14M5 12h14",
   users: "M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM2 21v-1a6 6 0 0 1 6-6h2a6 6 0 0 1 6 6v1M16 3.5a4 4 0 0 1 0 7.5M22 21v-1a6 6 0 0 0-4-5.6",
@@ -29,6 +29,7 @@ const PATHS: Record<NavIcon | "logout" | "logo" | "search" | "mic" | "send" | "m
   trash: "M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3",
   play: "M8 5v14l11-7z",
   pause: "M8 5v14M16 5v14",
+  clip: "M20 11.5 12.2 19.3a5 5 0 0 1-7.1-7.1l8.5-8.5a3.3 3.3 0 0 1 4.7 4.7l-8.5 8.5a1.7 1.7 0 0 1-2.4-2.4l7.8-7.8",
   grid: "M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z",
 };
 

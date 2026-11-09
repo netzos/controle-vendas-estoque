@@ -9,6 +9,8 @@ import { listUserOrganizations } from "../../auth/session.ts";
 import { appUrl } from "../../mail.ts";
 import { transcribeAudioDetailed, transcriptionConfigured, type Transcriber } from "../../transcribe.ts";
 import { recordTranscriptionUsage } from "../../usage.ts";
+import { runService } from "../../service.ts";
+import { MAX_ATTACHMENT_BYTES, stashSaleAttachment } from "../sales/attachments.ts";
 import { decideNetsAction, postNetsMessage, processNetsTurn, type NetsModel } from "../nets/service.ts";
 import { telegramApi, telegramConfigured, telegramWebhookSecret, type TelegramApi } from "./api.ts";
 
@@ -385,6 +387,9 @@ interface TgMessage {
   voice?: TgMedia;
   audio?: TgMedia & { file_name?: string };
   video_note?: TgMedia;
+  /** Foto: o Telegram manda vários tamanhos, do menor para o maior. */
+  photo?: Array<TgMedia & { width: number; height: number }>;
+  document?: TgMedia & { file_name?: string };
 }
 
 interface TgMedia {
@@ -568,6 +573,35 @@ async function connect(db: Db, api: TelegramApi, msg: TgMessage, code: string) {
   );
 }
 
+const RECEIPT_TYPES = /^(image\/(jpeg|png|webp)|application\/pdf)$/;
+
+/** Foto ou PDF de comprovante: guarda solto, para a Netz ligar à venda. Devolve null quando já avisou a pessoa. */
+async function keepReceipt(db: Db, actor: Actor, api: TelegramApi, msg: TgMessage): Promise<{ id: string; kind: string } | null> {
+  const photo = msg.photo?.length ? [...msg.photo].reverse().find((p) => (p.file_size ?? 0) <= MAX_ATTACHMENT_BYTES) : undefined;
+  const doc = msg.document;
+  const media = photo ?? doc;
+  if (!media) return null;
+  if (doc && !photo && !RECEIPT_TYPES.test(doc.mime_type ?? "")) {
+    await send(api, msg.chat.id, "Esse tipo de arquivo eu não guardo. Mande o comprovante como foto ou PDF.");
+    return null;
+  }
+  if ((media.file_size ?? 0) > MAX_ATTACHMENT_BYTES) {
+    await send(api, msg.chat.id, "Esse arquivo é grande demais (até 4 MB). Mande uma foto ou um PDF menor.");
+    return null;
+  }
+  await api.call("sendChatAction", { chat_id: msg.chat.id, action: "typing" }).catch(() => {});
+  const file = await api.call<{ file_path?: string }>("getFile", { file_id: media.file_id });
+  if (!file.file_path) throw new Error("Telegram getFile sem file_path");
+  const data = await api.download(file.file_path);
+  try {
+    const r = await runService(db, stashSaleAttachment, actor, { data, fileName: doc?.file_name ?? null, source: "telegram" });
+    return { id: r.id, kind: r.contentType === "application/pdf" ? "PDF" : "foto" };
+  } catch (err) {
+    await send(api, msg.chat.id, err instanceof AppError ? err.message : "Não consegui guardar o arquivo. Tente de novo.");
+    return null;
+  }
+}
+
 /** Baixa o áudio e transcreve. Devolve null quando já avisou a pessoa. */
 async function hear(db: Db, owner: { organizationId: string; userId: string }, api: TelegramApi, msg: TgMessage, transcribe?: Transcriber): Promise<string | null> {
   const voice = msg.voice ?? msg.video_note;
@@ -663,8 +697,14 @@ async function onMessage(db: Db, api: TelegramApi, update: TelegramUpdate, deps:
     // A legenda do áudio, se houver, vai junto.
     said = text ? `${heard}\n\n${text}` : heard;
   }
+  let attachment: { id: string; kind: string } | null = null;
+  if (msg.photo?.length || msg.document) {
+    attachment = await keepReceipt(db, actor, api, msg);
+    if (!attachment) return;
+    if (!said) said = attachment.kind === "PDF" ? "Mandei um PDF de comprovante." : "Mandei uma foto de comprovante.";
+  }
   if (!said) {
-    await send(api, msg.chat.id, "Por enquanto eu entendo texto e áudio. Foto chega em breve.");
+    await send(api, msg.chat.id, "Por enquanto eu entendo texto, áudio, foto e PDF de comprovante.");
     return;
   }
 
@@ -674,6 +714,7 @@ async function onMessage(db: Db, api: TelegramApi, update: TelegramUpdate, deps:
       requestId: stableUuid(`tg:${update.update_id}`),
       text: said.slice(0, 12000),
       context: spoken ? "Telegram, voz transcrita" : "Telegram",
+      attachmentId: attachment?.id ?? null,
     });
   } catch (err) {
     await send(api, msg.chat.id, err instanceof AppError ? err.message : "Não consegui receber a mensagem. Tente de novo.");

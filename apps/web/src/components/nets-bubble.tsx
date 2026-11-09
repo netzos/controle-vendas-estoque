@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { Icon } from "./icons";
-import { NetsMessages, RecordingBar, useNetsConversation } from "./nets-chat";
+import { AttachButton, NetsMessages, RecordingBar, useNetsConversation } from "./nets-chat";
 
 type Position = { right: number; bottom: number };
 
@@ -103,6 +103,7 @@ export function NetsBubble() {
                 }
               }}
             />
+            <AttachButton chat={chat} />
             {voice.supported && (
               <button
                 type="button"

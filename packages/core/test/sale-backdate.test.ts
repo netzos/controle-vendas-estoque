@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { after, before, describe, it } from "node:test";
-import { createProduct, createSale, getSale, listSales, listUnits, runService, type Actor } from "../src/index.ts";
+import { createProduct, createSale, getSale, listSales, listUnits, runService, setSaleDate, type Actor } from "../src/index.ts";
 import { actorFor, seedCompany, setupTestDb, type TestDb } from "./helpers.ts";
 
 // Pedido nº 23: venda com data retroativa.
@@ -39,13 +39,30 @@ describe("venda retroativa", () => {
     assert.deepEqual((await runService(t.app, listSales, owner, { from: ontem, to: ontem })).map((x) => x.number), [v.number]);
   });
 
-  it("hoje vale agora e futuro é recusado", async () => {
+  it("hoje vale agora; venda agendada fica no dia futuro e o pagamento, hoje", async () => {
     const v = await runService(t.app, createSale, owner, { paymentMethod: "pix", soldOn: day(0), items: [{ productId: lata, quantity: "1" }] });
     const s = await runService(t.app, getSale, owner, { id: v.id });
     assert.ok(Date.now() - new Date(s.soldAt).getTime() < 60_000);
+    const amanha = day(1);
+    const ag = await runService(t.app, createSale, owner, { paymentMethod: "pix", soldOn: amanha, items: [{ productId: lata, quantity: "12" }] });
+    const sa = await runService(t.app, getSale, owner, { id: ag.id });
+    assert.equal(new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date(sa.soldAt)), amanha);
+    assert.ok(Date.now() - new Date(sa.payments[0]!.paidAt).getTime() < 60_000, "o Pix entrou hoje");
     await assert.rejects(
-      runService(t.app, createSale, owner, { paymentMethod: "pix", soldOn: day(2), items: [{ productId: lata, quantity: "1" }] }),
-      /futuro/,
+      runService(t.app, createSale, owner, { paymentMethod: "pix", soldOn: day(400), items: [{ productId: lata, quantity: "1" }] }),
+      /um ano/,
     );
+  });
+
+  it("muda o dia de uma venda já lançada, mantendo a hora", async () => {
+    const v = await runService(t.app, createSale, owner, { paymentMethod: "pix", items: [{ productId: lata, quantity: "1" }] });
+    const before = await runService(t.app, getSale, owner, { id: v.id });
+    await runService(t.app, setSaleDate, owner, { id: v.id, soldOn: day(-3) });
+    const after_ = await runService(t.app, getSale, owner, { id: v.id });
+    const fmt = (d: Date) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo", dateStyle: "short", timeStyle: "short", hourCycle: "h23" }).format(new Date(d));
+    assert.equal(fmt(after_.soldAt).slice(0, 10), day(-3));
+    assert.equal(fmt(after_.soldAt).slice(-5), fmt(before.soldAt).slice(-5));
+    assert.notEqual(new Date(after_.createdAt).getTime(), new Date(after_.soldAt).getTime());
+    await assert.rejects(runService(t.app, setSaleDate, owner, { id: v.id, soldOn: day(400) }), /um ano/);
   });
 });
