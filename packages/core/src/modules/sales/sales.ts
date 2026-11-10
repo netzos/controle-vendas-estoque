@@ -484,7 +484,12 @@ export const createSale = defineService({
       after: { ...sale, items: lines.length, tradeIns: input.tradeIns.length },
     });
     await emit("sale.created", { saleId: sale.id, number: sale.number, total: sale.total }, { type: "sale", id: sale.id });
-    return sale;
+    // Melhoria 24: diz se a retirada/entrega ficou em aberto, para oferecer marcar logo depois da venda.
+    const fs = await tx.query<{ status: "open" | "done" | "cancelled" }>(
+      "SELECT status FROM controle_vendas_estoque.sale_followups WHERE sale_id = $1",
+      [sale.id],
+    );
+    return { ...sale, followupStatus: fs.rows[0]?.status ?? null };
   },
 });
 

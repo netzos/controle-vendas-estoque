@@ -30,6 +30,7 @@ export default async function NewSalePage() {
         today={today}
         handoverReady={handoverReady}
         canCreateCustomer={can(actor, "customers.manage")}
+        canReceive={can(actor, "sales.receive")}
         defaultFulfillment={settings["sales.default_fulfillment"]}
         stepDefaults={stepTypes.map((t) => ({ name: t.name, days: t.defaultDays, responsible: t.defaultResponsible, cost: t.defaultCost }))}
         customers={customers.map((c) => ({ id: c.id, name: c.name, address: addressLine(c), phone: c.phone ?? "" }))}

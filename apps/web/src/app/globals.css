@@ -827,6 +827,11 @@ summary .edit-hint { float: right; font-size: 13px; color: var(--muted); font-we
 .pay-tag.partial { background: #fff4e0; color: #9a5b00; }
 .pay-tag.pending { background: #fdecec; color: #b42318; }
 .pay-tag.paid { background: var(--success-soft); color: var(--success); }
+/* Melhoria 24: convite para marcar retirada e recebimento logo depois da venda. */
+.next-steps { border: 1px solid var(--border, rgba(0,0,0,.12)); border-radius: 12px; padding: 12px; margin: 8px 0 12px; display: grid; gap: 8px; }
+.next-steps p { margin: 0; }
+.next-steps .deliver-form { margin: 0; }
+.next-steps .link-button { justify-self: start; }
 .deliver-form { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 8px 0 12px; }
 .pay-list { list-style: none; padding: 0; margin: 0 0 10px; display: flex; flex-direction: column; gap: 8px; }
 .pay-list li { display: grid; grid-template-columns: 1fr auto auto; gap: 12px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border); }

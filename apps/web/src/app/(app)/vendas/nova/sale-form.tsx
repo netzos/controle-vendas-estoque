@@ -7,6 +7,7 @@ import {
   DELIVERY_STEP, FULFILLMENTS, INTERVAL_LABELS, ITEM_TYPES, ORDER_STEP, dueDates, splitCents, type Fulfillment, type InstallmentInterval, type ItemType,
 } from "@erp/core/labels";
 import { createSaleAction } from "../actions";
+import { SaleNextSteps } from "./next-steps";
 
 export interface PosProduct {
   id: string;
@@ -48,6 +49,7 @@ export function SaleForm({
   defaultFulfillment,
   handoverReady,
   canCreateCustomer,
+  canReceive,
 }: {
   products: PosProduct[];
   /** Endereço e telefone do cadastro preenchem a entrega quando o cliente é escolhido. */
@@ -62,6 +64,8 @@ export function SaleForm({
   handoverReady: boolean;
   /** Pode cadastrar cliente novo direto na venda. */
   canCreateCustomer: boolean;
+  /** Pode registrar recebimento (oferta logo depois da venda, melhoria 24). */
+  canReceive: boolean;
 }) {
   const [state, action] = useActionState(createSaleAction, null);
   const [search, setSearch] = useState("");
@@ -254,6 +258,7 @@ export function SaleForm({
         {state?.ok && state.link && (
           <a className="button secondary block receipt-button" href={state.link} target="_blank" rel="noreferrer">Mandar recibo pelo WhatsApp</a>
         )}
+        {state?.ok && state.sale && <SaleNextSteps key={state.sale.id} sale={state.sale} canDeliver={canManageSteps} canReceive={canReceive} />}
 
         <div className="customer-pick">
           <label htmlFor="customerSearch">Cliente</label>

@@ -11,6 +11,8 @@ export type FormState = {
   fieldErrors?: Record<string, string>;
   /** Link de ação depois do sucesso (ex.: recibo pelo WhatsApp). */
   link?: string;
+  /** Melhoria 24: venda recém-registrada, para oferecer marcar retirada e recebimento na hora. */
+  sale?: { id: string; number: number; fulfillment: string; followupOpen: boolean; open: string; installments: boolean };
 } | null;
 
 // Converte erros de domínio em mensagem para o formulário. Erros inesperados
