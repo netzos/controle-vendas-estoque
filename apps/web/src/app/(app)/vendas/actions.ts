@@ -63,6 +63,14 @@ export async function createSaleAction(_: FormState, form: FormData): Promise<Fo
           : sale.paymentStatus !== "paid" ? `. Falta receber ${money(open)}.` : ""
       }`,
       link,
+      sale: {
+        id: sale.id,
+        number: sale.number,
+        fulfillment: detail.fulfillment,
+        followupOpen: sale.followupStatus === "open",
+        open: open.toFixed(2),
+        installments: sale.installments.length > 0,
+      },
     };
   } catch (err) {
     return toFormState(err);
