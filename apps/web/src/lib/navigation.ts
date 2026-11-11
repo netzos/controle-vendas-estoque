@@ -165,6 +165,7 @@ export const NAVIGATION: NavGroup[] = [
       { label: "Grupos de custo", href: "/custos/tipos", permission: "costs.view", feature: "costs", phase: 2, section: "Listas usadas nos cadastros", description: "Aluguel, frete, energia…" },
       // O dia a dia do Telegram é o botão do topo; aqui ficam a ligação e o Desligar.
       { label: "Meu Telegram", href: "/assistente/telegram", permission: "nets.use", feature: "telegram", phase: 2, section: "Netz", description: "Ligar ou desligar a Netz no seu Telegram" },
+      { label: "Meu WhatsApp", href: "/assistente/whatsapp", permission: "nets.use", feature: "whatsapp", phase: 2, section: "Netz", description: "Ligar ou desligar a Netz no seu WhatsApp" },
     ],
   },
   {
@@ -181,6 +182,7 @@ export const NAVIGATION: NavGroup[] = [
       { label: "Receita e custos", href: "/plataforma/financeiro", developerOnly: true, phase: 1 },
       { label: "Melhorias", href: "/plataforma/melhorias", developerOnly: true, phase: 1 },
       { label: "Comunicação da Netz", href: "/plataforma/comunicacao", developerOnly: true, phase: 1 },
+      { label: "WhatsApp", href: "/plataforma/whatsapp", developerOnly: true, phase: 1 },
       { label: "Liberações", href: "/plataforma/liberacoes", developerOnly: true, phase: 1 },
     ],
   },

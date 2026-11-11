@@ -34,7 +34,7 @@ const IMP_STATUS: Record<ImprovementStatus, string> = {
   new: "Novo", analysis: "Em análise", approved: "Aprovado", building: "Em desenvolvimento", published: "Publicado", rejected: "Recusado",
 };
 const USAGE_FEATURES: Record<string, string> = {
-  netz: "Resposta da Netz", improvements_analysis: "Análise de melhorias", nets_guidance: "Manual da Netz", telegram_audio: "Áudio do Telegram", panel_audio: "Áudio do painel",
+  netz: "Resposta da Netz", improvements_analysis: "Análise de melhorias", nets_guidance: "Manual da Netz", telegram_audio: "Áudio do Telegram", whatsapp_audio: "Áudio do WhatsApp", panel_audio: "Áudio do painel",
 };
 const CHANNEL: Record<string, string> = { web: "Painel", telegram: "Telegram", api: "Integração", system: "Sistema", whatsapp: "WhatsApp" };
 

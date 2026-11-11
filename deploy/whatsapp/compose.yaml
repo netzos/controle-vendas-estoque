@@ -1,0 +1,55 @@
+# Ponte do WhatsApp do netzsales: a mesma do NetzOS (GOWA v9.6.0, imagem fixada),
+# numa caixinha separada. Nenhuma porta aberta no servidor: a Vercel chega nela
+# só pelo túnel da Cloudflare, com usuário e senha.
+name: netzsales-whatsapp
+services:
+  gowa:
+    image: aldinokemal2104/go-whatsapp-web-multidevice:v9.6.0@sha256:6a213a3434f1d94f98b4ee90ee2c71fa391f715ff31bf00734a6240859fe10ba
+    restart: unless-stopped
+    command: [rest]
+    environment:
+      APP_PORT: "3000"
+      APP_HOST: "0.0.0.0"
+      APP_BASIC_AUTH: "${GOWA_BASIC_USER:?Rode setup.sh}:${GOWA_BASIC_PASSWORD:?Rode setup.sh}"
+      APP_UI_ENABLED: "false"
+      APP_UI_AUTO_UPDATE: "false"
+      MCP_ENABLED: "false"
+      WHATSAPP_AUTO_REPLY: ""
+      WHATSAPP_AUTO_MARK_READ: "false"
+      WHATSAPP_AUTO_DOWNLOAD_MEDIA: "true"
+      WHATSAPP_CHAT_STORAGE: "false"
+      # Cada mensagem recebida vira um aviso assinado para o netzsales.
+      WHATSAPP_WEBHOOK: "${NETZSALES_URL:?Rode setup.sh}/api/whatsapp/webhook"
+      WHATSAPP_WEBHOOK_SECRET: "${GOWA_WEBHOOK_SECRET:?Rode setup.sh}"
+      WHATSAPP_WEBHOOK_EVENTS: message
+      WHATSAPP_WEBHOOK_INCLUDE_OUTGOING: "false"
+    volumes:
+      - sessions:/app/storages
+      - statics:/app/statics
+    mem_limit: 512m
+    cpus: 0.5
+    pids_limit: 128
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: "3"}
+
+  # Túnel da Cloudflare: publica a ponte em https://<seu endereço> sem abrir porta.
+  cloudflared:
+    image: cloudflare/cloudflared:2026.9.3
+    command: [tunnel, --no-autoupdate, run]
+    environment:
+      TUNNEL_TOKEN: "${TUNNEL_TOKEN:?Cole o token do túnel no .env}"
+    restart: unless-stopped
+    depends_on: [gowa]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 128m
+    cpus: 0.25
+    pids_limit: 64
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: "3"}
+
+volumes:
+  sessions:
+  statics:
