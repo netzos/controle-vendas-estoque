@@ -92,6 +92,17 @@ describe("painel: visão geral", () => {
     const today = await runService(t.app, dashboardOverview, owner, { period: "today" });
     assert.equal(today.step, "hour");
     assert.equal(today.series.length, 24);
+    assert.deepEqual(today.groups, []);
+  });
+
+  it("no mesmo período deixa ver por dia ou por semana, e ignora o que não cabe", async () => {
+    const w = await runService(t.app, dashboardOverview, owner, { period: "30d", group: "week" });
+    assert.equal(w.step, "week");
+    assert.deepEqual(w.groups, ["day", "week"]);
+    assert.equal(w.series.reduce((s, p) => s + Number(p.revenue), 0), 2150);
+    const m = await runService(t.app, dashboardOverview, owner, { period: "7d", group: "month" });
+    assert.equal(m.step, "day");
+    assert.deepEqual(m.groups, ["day"]);
   });
 });
 
