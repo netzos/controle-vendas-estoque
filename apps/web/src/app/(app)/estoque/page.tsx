@@ -207,6 +207,11 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
                       <td data-label="Situação">
                         {/* Saldo negativo = vendido sem estoque (por encomenda), diferente de zerado. */}
                         <span className={`tag ${stock < 0 ? "warn" : STATUS[r.status].tag}`}>{stock < 0 ? `Vendido sem estoque · faltam ${quantity(String(-stock))}` : STATUS[r.status].label}</span>
+                        {r.neverStocked && stock < 0 && (
+                          <small className="muted" style={{ display: "block" }}>
+                            Nunca entrou no estoque. <Link href={`/produtos?id=${r.id}`}>Não consome estoque? Ajuste o tipo</Link>
+                          </small>
+                        )}
                       </td>
                     </tr>
                   );

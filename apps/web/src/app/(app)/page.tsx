@@ -166,7 +166,15 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
                 <ul className="mini-list">
                   {alerts.slice(0, 6).map((r) => (
                     <li key={r.id}>
-                      <span>{r.name}</span>
+                      <span>
+                        {r.name}
+                        {/* Só saiu em vendas e nunca entrou: quase sempre é produto que não consome estoque. */}
+                        {r.neverStocked && Number(r.stockQty) < 0 && (
+                          <small className="muted" style={{ display: "block" }}>
+                            Nunca entrou no estoque. <Link href={`/produtos?id=${r.id}`}>Não consome estoque? Ajuste o tipo</Link>
+                          </small>
+                        )}
+                      </span>
                       <span className={`tag ${r.status === "out" ? "off" : "warn"}`}>
                         {Number(r.stockQty) < 0 ? `Faltam ${quantity(String(-Number(r.stockQty)))} ${r.unitCode}` : r.status === "out" ? "Zerado" : `${quantity(r.stockQty)} ${r.unitCode}`}
                       </span>

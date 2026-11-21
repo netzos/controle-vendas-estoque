@@ -175,6 +175,9 @@ export interface StockRow {
   status: StockStatus;
   /** Tem fornecedor ligado (Fornecedores › produtos). Sem fornecedor, encomenda não é "pedir ao fornecedor". */
   hasSupplier: boolean;
+  /** Nunca teve entrada (compra, ajuste, saldo inicial): só saiu em vendas. Saldo negativo assim
+   * quase sempre é produto que não consome estoque cadastrado como "Produto em estoque". */
+  neverStocked: boolean;
 }
 
 export interface StockOverview {
@@ -221,7 +224,9 @@ export const stockOverview = defineService({
               round(coalesce(sold.qty, 0) / 30.0, 3)::text AS "avgDaily",
               CASE WHEN coalesce(sold.qty, 0) > 0 THEN round(greatest(p.stock_qty, 0) / (sold.qty / 30.0), 1)::text END AS coverage,
               ls.at AS "lastSaleAt",
-              EXISTS (SELECT 1 FROM controle_vendas_estoque.supplier_products sp WHERE sp.product_id = p.id) AS "hasSupplier"
+              EXISTS (SELECT 1 FROM controle_vendas_estoque.supplier_products sp WHERE sp.product_id = p.id) AS "hasSupplier",
+              NOT EXISTS (SELECT 1 FROM controle_vendas_estoque.stock_movements m
+                           WHERE m.product_id = p.id AND m.quantity > 0 AND m.kind NOT IN ('sale_cancel')) AS "neverStocked"
          FROM controle_vendas_estoque.products p
          JOIN controle_vendas_estoque.units u ON u.id = p.unit_id
          LEFT JOIN controle_vendas_estoque.categories c ON c.id = p.category_id
