@@ -1177,3 +1177,34 @@ td small.unit { display: inline; font-size: 12.5px; }
 .gchart-labels { display: flex; margin-top: 8px; }
 .gchart-labels span { flex: 1; display: flex; flex-direction: column; align-items: center; font-size: 10.5px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; line-height: 1.25; letter-spacing: -.01em; }
 .gchart-labels small { font-size: 10px; color: var(--faint); }
+
+/* Nome da conta no menu lateral: quebra em até duas linhas em vez de cortar */
+.side-foot { padding-bottom: 2px; }
+.side-user .side-label { white-space: normal; overflow: visible; }
+.side-user strong { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; white-space: normal; overflow-wrap: anywhere; line-height: 1.25; }
+.side-user small { white-space: nowrap; }
+
+/* Botão da Netz: pílula de vidro clara com a marca em grafite, no estilo NetzCode (sem robozinho) */
+.nets-fab { height: 52px; min-width: 52px; padding: 0 18px 0 7px; gap: 10px; color: var(--text); font-size: 15px; font-weight: 600; letter-spacing: -.01em;
+  background: linear-gradient(180deg, rgba(255, 255, 255, .86), rgba(255, 255, 255, .66)); -webkit-backdrop-filter: blur(20px) saturate(170%); backdrop-filter: blur(20px) saturate(170%);
+  border: 1px solid rgba(255, 255, 255, .95); box-shadow: 0 1px 0 #fff inset, 0 0 0 1px rgba(15, 17, 21, .07), 0 14px 34px -12px rgba(15, 17, 21, .35); transition: transform .15s ease, box-shadow .15s ease; }
+.nets-fab:hover { transform: translateY(-1px); box-shadow: 0 1px 0 #fff inset, 0 0 0 1px rgba(15, 17, 21, .1), 0 18px 40px -12px rgba(15, 17, 21, .42); }
+.nets-fab-mark { width: 38px; height: 38px; flex: none; display: grid; place-items: center; border-radius: 12px; color: #fff; background: linear-gradient(180deg, #2f343c, #14161a); box-shadow: 0 1px 0 rgba(255, 255, 255, .18) inset, 0 4px 10px -3px rgba(15, 17, 21, .5); }
+.nets-fab.open { background: rgba(255, 255, 255, .92); border: 1px solid rgba(15, 17, 21, .1); }
+.nets-dot { top: 4px; right: auto; left: 36px; background: #14161a; border-color: #fff; }
+@media (max-width: 860px) {
+  .nets-fab { height: 48px; min-width: 48px; padding: 0 15px 0 6px; font-size: 14px; }
+  .nets-fab-mark { width: 36px; height: 36px; border-radius: 11px; }
+}
+
+/* Celular: a logo do topo não fica mais coberta pelo nome da empresa */
+@media (max-width: 860px) {
+  .topbar .brand-name { flex: none; }
+  .topbar-actions { flex: 1; flex-wrap: nowrap; }
+  .org-name { display: inline-flex; align-items: center; min-width: 0; max-width: 100%; overflow: hidden; }
+  .org-select { max-width: 100%; text-overflow: ellipsis; }
+}
+@media (max-width: 460px) {
+  .org-add { font-size: 0; margin-left: 8px; }
+  .org-add::before { content: "+"; font-size: 18px; line-height: 1; }
+}

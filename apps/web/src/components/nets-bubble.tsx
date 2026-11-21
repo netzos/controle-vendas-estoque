@@ -139,7 +139,7 @@ export function NetsBubble() {
           }
         }}
       >
-        <Icon name="bot" size={22} />
+        <span className="nets-fab-mark" aria-hidden="true"><Icon name="bot" size={17} /></span>
         <span className="nets-fab-label">Netz</span>
         {!open && draft.trim() && <span className="nets-dot" aria-hidden="true" />}
       </button>
