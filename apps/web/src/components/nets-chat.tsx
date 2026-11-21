@@ -16,7 +16,30 @@ export type NetsMessage = {
   action: { title: string; service: string } | null;
   actionStatus: "pending" | "running" | "done" | "failed" | "cancelled" | "expired" | null;
   actionResult: string | null;
+  createdAt: string;
 };
+
+// Horário de Brasília embaixo de cada mensagem, como no WhatsApp:
+// só a hora quando é de hoje, "ontem" e depois a data.
+const TZ = "America/Sao_Paulo";
+const dayKey = (d: Date) => d.toLocaleDateString("en-CA", { timeZone: TZ });
+export function messageTime(iso: string, now = new Date()): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const hour = d.toLocaleTimeString("pt-BR", { timeZone: TZ, hour: "2-digit", minute: "2-digit" });
+  if (dayKey(d) === dayKey(now)) return hour;
+  if (dayKey(d) === dayKey(new Date(now.getTime() - 86400000))) return `ontem ${hour}`;
+  const sameYear = dayKey(d).slice(0, 4) === dayKey(now).slice(0, 4);
+  const date = d.toLocaleDateString("pt-BR", { timeZone: TZ, day: "2-digit", month: "2-digit", ...(sameYear ? {} : { year: "numeric" }) });
+  return `${date} ${hour}`;
+}
+
+function MessageTime({ iso }: { iso: string }) {
+  const label = messageTime(iso);
+  if (!label) return null;
+  const full = new Date(iso).toLocaleString("pt-BR", { timeZone: TZ, dateStyle: "full", timeStyle: "short" });
+  return <time className="nets-time" dateTime={iso} title={full}>{label}</time>;
+}
 
 const ACTION_LABEL: Record<string, string> = {
   running: "Executando...",
@@ -296,7 +319,7 @@ export function useNetsConversation(active: boolean) {
       if (audio && data.id) rememberAudio(data.id, audio.blob);
       // Aparece na hora, sem esperar a próxima leitura da conversa.
       if (data.id) {
-        const mine: NetsMessage = { id: data.id, role: "user", body: text, context, status: "queued", action: null, actionStatus: null, actionResult: null };
+        const mine: NetsMessage = { id: data.id, role: "user", body: text, context, status: "queued", action: null, actionStatus: null, actionResult: null, createdAt: new Date().toISOString() };
         setMessages((ms) => (ms.some((m) => m.id === data.id) ? ms : [...ms, mine]));
         setPending(true);
       }
@@ -375,6 +398,7 @@ export function NetsMessages({ chat, listRef, intro, initials }: { chat: NetsCon
               )}
             </div>
           )}
+          <MessageTime iso={m.createdAt} />
         </div>
       ))}
       {chat.voice.outgoing && (
