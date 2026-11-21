@@ -187,7 +187,7 @@ export function GroupedBarChart({
   labels,
   emptyText = "Sem dados no período.",
 }: {
-  points: { label: string; value: number; detail?: string; sub?: string }[];
+  points: { label: string; value: number; detail?: string; sub?: string; title?: string; partial?: boolean }[];
   second?: { name: string; values: number[] };
   previous?: number[];
   format: (v: number) => string;
@@ -222,7 +222,7 @@ export function GroupedBarChart({
           <span style={{ bottom: 0 }}>0</span>
         </div>
         <ScrollEnd className="gchart-scroll">
-          <div className="gchart-inner" style={{ minWidth: `${n * 32}px` }}>
+          <div className="gchart-inner" style={{ minWidth: `${n * (second ? 40 : 32)}px` }}>
             <div className="gchart-plot" style={{ height }} role="img" aria-label={`Maior valor: ${points[peak]!.label}, ${format(points[peak]!.value)}`}>
               {grid.map((g) => <i key={g} className="gchart-grid" style={{ bottom: `${g * 100}%` }} />)}
               {points.map((p, i) => {
@@ -230,17 +230,18 @@ export function GroupedBarChart({
                 return (
                   <div key={`${p.label}-${i}`} className="gchart-slot" tabIndex={0}>
                     {p.value > 0 && <span className={`gchart-val${dense ? " dense" : ""}`} style={{ bottom: `${(p.value / top) * 100}%` }}>{barValue(p.value, dense)}</span>}
-                    <div className="gchart-pair">
+                    <div className={`gchart-pair${p.partial ? " partial" : ""}`}>
                       <div className="gbar cur" style={{ height: h(p.value) }} />
                       {second && <div className="gbar second" style={{ height: h(second.values[i] ?? 0) }} />}
                     </div>
                     {hasPrev && prev !== undefined && prev > 0 && <span className="prev-mark" style={{ bottom: `${(prev / top) * 100}%` }} />}
                     <span className={`gchart-tip${i < 2 ? " left" : i > n - 3 ? " right" : ""}`}>
-                      <strong>{p.sub ? `${p.sub}, ${p.label}` : p.label}</strong>
+                      <strong>{p.title ?? (p.sub ? `${p.sub}, ${p.label}` : p.label)}</strong>
                       <span>{second && <i className="sq ink" />} {format(p.value)}</span>
                       {second && <span><i className="sq mid" /> {format(second.values[i] ?? 0)}</span>}
                       {prev !== undefined && <em>Antes: {format(prev)}</em>}
                       {p.detail && <em>{p.detail}</em>}
+                      {p.partial && <em>Só os dias que estão dentro do período</em>}
                     </span>
                   </div>
                 );
@@ -248,7 +249,7 @@ export function GroupedBarChart({
             </div>
             <div className="gchart-labels">
               {points.map((p, i) => (
-                <span key={`${p.label}-${i}`}>
+                <span key={`${p.label}-${i}`} title={p.title}>
                   {p.label}
                   {p.sub && <small>{p.sub}</small>}
                 </span>

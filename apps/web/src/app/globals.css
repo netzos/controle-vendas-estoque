@@ -1165,6 +1165,7 @@ td small.unit { display: inline; font-size: 12.5px; }
 .gbar.cur { background: linear-gradient(180deg, #3a3f49 0%, var(--accent) 100%); box-shadow: 0 4px 10px -6px rgba(15, 17, 21, .6); }
 .gbar.second { background: linear-gradient(180deg, #d3d8e0 0%, #b3bac6 100%); }
 .gchart-slot:hover .gbar, .gchart-slot:focus .gbar { opacity: .82; }
+.gchart-pair.partial .gbar { opacity: .45; }
 .prev-mark { position: absolute; left: 14%; right: 14%; height: 0; border-top: 1.5px dashed var(--faint); pointer-events: none; }
 .gchart-tip { position: absolute; top: 4px; left: 50%; transform: translateX(-50%); display: none; flex-direction: column; gap: 2px; background: rgba(15, 17, 21, .92); backdrop-filter: blur(8px); color: #fff; padding: 9px 12px; border-radius: 12px; font-size: 12px; white-space: nowrap; z-index: 5; pointer-events: none; box-shadow: 0 10px 24px -10px rgba(0, 0, 0, .5); }
 .gchart-tip.left { left: 0; transform: none; }

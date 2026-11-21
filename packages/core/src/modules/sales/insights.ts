@@ -189,10 +189,17 @@ export interface SeriesPoint {
   count: number;
 }
 
-/** Faturamento e lucro ao longo do período: o agrupamento escolhido ou, sem escolha, por hora (1 dia), dia (até 62), semana (até 182) ou mês. */
+/** Agrupamentos que fazem sentido para o tamanho do período (mais de uma barra de verdade). */
+export function seriesGroups(days: number): ("day" | "week" | "month")[] {
+  if (days === 1) return [];
+  return [...(days <= 400 ? (["day"] as const) : []), ...(days >= 14 ? (["week"] as const) : []), ...(days >= 45 ? (["month"] as const) : [])];
+}
+
+/** Faturamento e lucro ao longo do período: o agrupamento escolhido (se couber no período) ou, sem escolha, por hora (1 dia), dia (até 62), semana (até 182) ou mês. Semana começa na segunda. */
 async function series(tx: Tx, actor: Actor, r: InsightRange, f: InsightFilters, from: string, to: string): Promise<{ step: SeriesStep; points: SeriesPoint[] }> {
   const days = daysBetween(from, to);
-  const step: SeriesStep = f.group ?? (days === 1 ? "hour" : days <= 62 ? "day" : days <= 182 ? "week" : "month");
+  const fits = f.group && seriesGroups(daysBetween(r.from, r.to)).includes(f.group);
+  const step: SeriesStep = fits ? f.group! : days === 1 ? "hour" : days <= 62 ? "day" : days <= 182 ? "week" : "month";
   const params = scopeParams(from, to, r, f, actor);
   const sql =
     step === "hour"
@@ -221,6 +228,8 @@ export interface DashboardOverview {
   current: InsightTotals;
   previous: InsightTotals;
   step: SeriesStep;
+  /** Agrupamentos que o botão Dia/Semana/Mês oferece para este período. */
+  groups: ("day" | "week" | "month")[];
   series: SeriesPoint[];
   /** Mesmo número de pontos do período anterior, para a linha de comparação. */
   previousSeries: SeriesPoint[];
@@ -261,6 +270,7 @@ export const dashboardOverview = defineService({
       current,
       previous,
       step: now.step,
+      groups: seriesGroups(daysBetween(r.from, r.to)),
       series: now.points,
       previousSeries: before.points.slice(0, now.points.length),
       receivable: open.rows[0]!,

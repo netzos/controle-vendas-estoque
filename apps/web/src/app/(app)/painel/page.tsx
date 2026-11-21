@@ -5,7 +5,7 @@ import { query } from "@/lib/actions";
 import { db } from "@/lib/db";
 import { money, quantity } from "@/lib/format";
 import { GroupedBarChart, Kpi } from "@/components/charts";
-import { PanelHeader, panelLink, parseFilters, previousLabel, WEEKDAYS_SHORT, type PanelParams } from "./filters";
+import { PanelHeader, panelLink, parseFilters, WEEKDAYS_SHORT, type PanelParams } from "./filters";
 
 const GROUPS = [
   { key: "dia", step: "day", label: "Dia" },
@@ -13,6 +13,33 @@ const GROUPS = [
   { key: "mes", step: "month", label: "Mês" },
 ] as const;
 const MONTHS = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
+const UNIT = {
+  hour: { per: "por hora", each: "por hora" },
+  day: { per: "por dia", each: "por dia" },
+  week: { per: "por semana", each: "por semana" },
+  month: { per: "por mês", each: "por mês" },
+} as const;
+
+const ddmm = (d: string) => `${d.slice(8, 10)}/${d.slice(5, 7)}`;
+const addDays = (d: string, k: number) => new Date(Date.parse(`${d}T12:00:00Z`) + k * 86_400_000).toISOString().slice(0, 10);
+
+// Rótulo de cada barra. Semana e mês mostram só os dias que caem dentro do período
+// (a primeira e a última podem ser pedaços), para não parecer que faltou venda.
+function bucket(key: string, step: string, from: string, to: string): { label: string; sub?: string; title: string; partial?: boolean } {
+  if (step === "hour") return { label: `${key}h`, title: `${key}h` };
+  if (step === "day") {
+    const wd = WEEKDAYS_SHORT[new Date(`${key}T12:00:00Z`).getUTCDay()]!;
+    return { label: ddmm(key), sub: wd, title: `${wd}, ${ddmm(key)}` };
+  }
+  const monthEnd = () => new Date(Date.UTC(Number(key.slice(0, 4)), Number(key.slice(5, 7)), 0)).toISOString().slice(0, 10);
+  const end = step === "week" ? addDays(key, 6) : monthEnd();
+  const a = key < from ? from : key;
+  const z = end > to ? to : end;
+  const partial = a !== key || z !== end;
+  if (step === "week") return { label: ddmm(a), sub: a === z ? "1 dia" : `a ${ddmm(z)}`, title: `Semana de ${ddmm(a)} a ${ddmm(z)}`, partial };
+  const m = `${MONTHS[Number(key.slice(5, 7)) - 1]}/${key.slice(2, 4)}`;
+  return { label: m, sub: partial ? `${a.slice(8, 10)} a ${z.slice(8, 10)}` : undefined, title: partial ? `${m}, de ${ddmm(a)} a ${ddmm(z)}` : m, partial };
+}
 
 export const metadata = { title: "Painel" };
 
@@ -58,25 +85,27 @@ export default async function PanelOverview({ searchParams }: { searchParams: Pr
       <section className="card">
         <div className="card-head">
           <div>
-            <h2>Faturamento e lucro {o.step === "hour" ? "por hora" : o.step === "day" ? "por dia" : o.step === "week" ? "por semana" : "por mês"}</h2>
-            <span className="muted">{money(c.revenue)} no período</span>
+            <h2>Faturamento e lucro {UNIT[o.step].per}</h2>
+            <span className="muted">
+              {money(c.revenue)} no período
+              {o.series.length > 1 && ` · média ${money(String(n(c.revenue) / o.series.length))} ${UNIT[o.step].each}`}
+            </span>
           </div>
-          <nav className="segmented" aria-label="Agrupar por">
-            {GROUPS.map((g) => (
-              <Link key={g.key} href={panelLink("/painel", params, { agrupar: g.key })} className={o.step === g.step ? "active" : ""} scroll={false}>{g.label}</Link>
-            ))}
-          </nav>
+          {o.groups.length > 1 && (
+            <nav className="segmented" aria-label="Agrupar barras por">
+              {GROUPS.filter((g) => o.groups.includes(g.step)).map((g) => (
+                <Link key={g.key} href={panelLink("/painel", params, { agrupar: g.key })} className={o.step === g.step ? "active" : ""} scroll={false}>{g.label}</Link>
+              ))}
+            </nav>
+          )}
         </div>
         <GroupedBarChart
-          points={o.series.map((s) => ({
-            label: o.step === "month" ? `${MONTHS[Number(s.key.slice(5, 7)) - 1]}/${s.key.slice(2, 4)}` : s.label,
-            sub: o.step === "day" ? WEEKDAYS_SHORT[new Date(`${s.key}T12:00:00Z`).getUTCDay()] : undefined,
-            value: n(s.revenue),
-            detail: `${s.count} ${s.count === 1 ? "venda" : "vendas"}`,
-          }))}
+          points={o.series.map((s) => {
+            const b = bucket(s.key, o.step, o.range.from, o.range.to);
+            return { label: b.label, sub: b.sub, title: b.title, partial: b.partial, value: n(s.revenue), detail: `${s.count} ${s.count === 1 ? "venda" : "vendas"}` };
+          })}
           second={{ name: "Lucro bruto", values: o.series.map((s) => n(s.profit)) }}
-          previous={o.previousSeries.map((s) => n(s.revenue))}
-          labels={{ current: "Faturamento", previous: `Faturamento de ${previousLabel(o.range)}` }}
+          labels={{ current: "Faturamento" }}
           format={money}
           emptyText="Nenhuma venda neste período."
         />
