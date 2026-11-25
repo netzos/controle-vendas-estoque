@@ -774,6 +774,66 @@ export const setHandoverDate = defineService({
 });
 
 /**
+ * Melhoria 27: trocar o dia de uma venda já registrada (lançou hoje, mas foi
+ * dia 22). Três conferências: só quem pode cancelar vendas, repetir o número
+ * da venda e dizer o motivo. Número, pagamentos, estoque e etapas não mudam;
+ * o antes, o depois e quem trocou ficam no histórico de alterações.
+ */
+export const changeSaleDate = defineService({
+  name: "sales.change_date",
+  description:
+    "Troca o dia em que uma venda já registrada aconteceu (ex.: lançada hoje, mas foi dia 22). Só para quem pode cancelar vendas. Exige repetir o número da venda (confirmNumber) e o motivo. Não aceita data no futuro. Número, pagamentos, estoque e etapas continuam iguais.",
+  permission: "sales.cancel",
+  risk: 3,
+  input: z.object({
+    id: z.string().uuid(),
+    soldOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Escolha o dia da venda."),
+    confirmNumber: z.coerce.number().int("Digite o número da venda."),
+    reason: z.string().trim().min(5, "Diga o motivo da troca (pelo menos 5 letras).").max(300),
+  }),
+  async handler({ tx, audit, emit }, input) {
+    const found = await tx.query<{ number: number; status: string; total: string; oldDay: string; today: string }>(
+      `SELECT s.number, s.status, s.total::text AS total,
+              (s.sold_at AT TIME ZONE o.timezone)::date::text AS "oldDay",
+              (now() AT TIME ZONE o.timezone)::date::text AS today
+         FROM controle_vendas_estoque.sales s JOIN controle_vendas_estoque.organizations o ON o.id = s.organization_id
+        WHERE s.id = $1 FOR UPDATE OF s`,
+      [input.id],
+    );
+    const sale = found.rows[0];
+    if (!sale) throw notFound("Venda");
+    if (sale.status === "cancelled") throw new AppError("conflict", `A venda nº ${sale.number} está cancelada.`);
+    if (input.confirmNumber !== sale.number) {
+      throw new AppError("invalid_input", `Para confirmar, digite o número desta venda (${sale.number}).`);
+    }
+    if (Number.isNaN(Date.parse(input.soldOn))) throw new AppError("invalid_input", "Data inválida.");
+    if (input.soldOn > sale.today) throw new AppError("invalid_input", "A data da venda não pode ser no futuro.");
+    if (input.soldOn === sale.oldDay) throw new AppError("invalid_input", "A venda já está com esse dia.");
+
+    // Voltou para o dia do lançamento: usa a hora real do lançamento; outro dia: meio-dia.
+    await tx.query(
+      `UPDATE controle_vendas_estoque.sales s
+          SET sold_at = CASE WHEN $2::date = (s.created_at AT TIME ZONE o.timezone)::date THEN s.created_at
+                             ELSE (($2::date + time '12:00') AT TIME ZONE o.timezone) END
+         FROM controle_vendas_estoque.organizations o
+        WHERE s.id = $1 AND o.id = s.organization_id`,
+      [input.id, input.soldOn],
+    );
+    const br = (d: string) => d.split("-").reverse().join("/");
+    await audit({
+      action: "sale.change_date",
+      entityType: "sale",
+      entityId: input.id,
+      summary: `Venda nº ${sale.number}: dia trocado de ${br(sale.oldDay)} para ${br(input.soldOn)} (${input.reason})`,
+      before: { soldOn: sale.oldDay },
+      after: { soldOn: input.soldOn, reason: input.reason },
+    });
+    await emit("sale.updated", { saleId: input.id, number: sale.number, total: sale.total }, { type: "sale", id: input.id });
+    return { id: input.id, number: sale.number, soldOn: input.soldOn, previous: sale.oldDay };
+  },
+});
+
+/**
  * Melhoria 17: corrigir uma venda já registrada (o cliente levou mais, mudou o
  * preço...) sem excluir e lançar de novo. Mantém o número, os pagamentos, a
  * troca e as etapas; acerta o estoque só pela diferença e recalcula os totais.

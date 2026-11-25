@@ -9,6 +9,7 @@ import { Notice } from "@/components/remove-record";
 import { ReceivePaymentForm } from "./receive-form";
 import { HandoverDateForm } from "./handover-form";
 import { EditSaleForm } from "./edit-form";
+import { SaleDateForm } from "./sale-date-form";
 import { AddStepsForm, StepRow } from "../entregas/steps";
 import { DeliverForm } from "./deliver-form";
 import { PeriodPicker } from "@/components/period-picker";
@@ -96,6 +97,9 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
     !(selected.paymentStatus === "paid" && Number(selected.paidTotal) > 0);
   const editProducts = canEdit ? await query(listProducts, { limit: 500 }) : [];
   const fmt = new Intl.DateTimeFormat("pt-BR", { timeZone: org.timezone, dateStyle: "short", timeStyle: "short" });
+  // AAAA-MM-DD no fuso da empresa (trocar o dia da venda, melhoria 27).
+  const isoDay = (d: Date | string) => new Intl.DateTimeFormat("en-CA", { timeZone: org.timezone }).format(new Date(d));
+  const canChangeDate = !!selected && selected.status === "completed" && can(actor, "sales.cancel") && !actor.platformView;
   // "2026-11-02" → "02/11"; o ano só aparece quando não é o atual.
   const year = String(new Date().getFullYear());
   const day = (d: string) => { const [y, m, dd] = d.split("-"); return y === year ? `${dd}/${m}` : `${dd}/${m}/${y}`; };
@@ -195,6 +199,9 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
               }, new Map<string, { productId: string; name: string; quantity: string; unitPrice: string }>()).values()]}
               products={editProducts.filter((p) => p.status === "active").map((p) => ({ id: p.id, name: p.name, price: String(Number(p.salePrice)) }))}
             />
+          )}
+          {canChangeDate && (
+            <SaleDateForm saleId={selected.id} number={selected.number} soldOn={isoDay(selected.soldAt)} today={isoDay(new Date())} />
           )}
           {handoverReady && selected.status === "completed" && can(actor, "sales.create") && (
             <HandoverDateForm
