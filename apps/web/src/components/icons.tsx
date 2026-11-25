@@ -12,7 +12,8 @@ const PATHS: Record<NavIcon | "logout" | "logo" | "search" | "mic" | "send" | "m
   wallet: "M3 7a2 2 0 0 1 2-2h13v4M3 7v11a2 2 0 0 0 2 2h15V9H5a2 2 0 0 1-2-2zM16 14.5h.01",
   coins: "M8 8.5a5 2.5 0 1 0 10 0 5 2.5 0 1 0-10 0M8 8.5v4c0 1.4 2.2 2.5 5 2.5s5-1.1 5-2.5v-4M3 13a5 2.5 0 0 0 5 2.5M3 13v4c0 1.4 2.2 2.5 5 2.5 1.6 0 3-.4 4-1M3 13c0-1.1 1.4-2 3.4-2.4",
   chart: "M4 20V10M10 20V4M16 20v-7M21 20H3",
-  bot: "M5 9h14v10H5zM12 5v4M9 14h.01M15 14h.01M2 13v2M22 13v2",
+  // Netz: balão de conversa de pontas retas com o quadradinho da marca NetzCode (substitui o robozinho).
+  bot: "M4 5.5h16v11H10l-4.5 3.5v-3.5H4zM14.5 8.5h2.5V11h-2.5z",
   zap: "M13 2 4 14h7l-1 8 9-12h-7z",
   bulb: "M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z",
   shield: "M12 3 4 6v6c0 5 3.4 8.2 8 9 4.6-.8 8-4 8-9V6zM9 12l2 2 4-4",
