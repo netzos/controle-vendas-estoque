@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import type { z } from "zod";
-import { cancelSale, completeSaleFollowup, createCustomer, createSale, deleteSale, getOrganization, getSale, receiveSalePayment, runService, setHandoverDate, updateSale } from "@erp/core";
+import { cancelSale, changeSaleDate, completeSaleFollowup, createCustomer, createSale, deleteSale, getOrganization, getSale, receiveSalePayment, runService, setHandoverDate, updateSale } from "@erp/core";
 import { receiptLink } from "@/lib/receipt";
 import { money } from "@/lib/format";
 import { currentActor } from "@/lib/auth";
@@ -109,6 +109,17 @@ export async function setHandoverDateAction(_: FormState, form: FormData): Promi
     { id: str(form, "id"), handoverDate: str(form, "handoverDate") || null },
     { successMessage: str(form, "handoverDate") ? "Data salva." : "Data tirada.", revalidate: "/vendas" },
   );
+}
+
+export async function changeSaleDateAction(_: FormState, form: FormData): Promise<FormState> {
+  const state = await perform(
+    changeSaleDate,
+    { id: str(form, "id"), soldOn: str(form, "soldOn"), confirmNumber: str(form, "confirmNumber"), reason: str(form, "reason") },
+    { successMessage: "Dia da venda trocado. Ficou registrado no histórico de alterações." },
+  );
+  // Painel e relatórios usam o dia da venda.
+  if (state?.ok) revalidatePath("/", "layout");
+  return state;
 }
 
 export async function updateSaleAction(_: FormState, form: FormData): Promise<FormState> {
